@@ -11,7 +11,10 @@ import { buildContext } from './graphql/context.js';
 import { db } from './db/index.js';
 import { ensureAdminExists } from './services/auth.js';
 import { indexMediaLibrary } from './services/media-indexer.js';
-import path from 'path';
+import { startMediaWatcher } from './services/media-watcher.js';
+import { getWebCompatibleVideo, markTranscodeAccessed, startTranscodeCleanup } from './services/video-transcode.js';
+import path from 'node:path';
+import fs from 'node:fs';
 
 const fastify = Fastify({
   logger: true
@@ -39,6 +42,75 @@ await fastify.register(fastifyStatic, {
   prefix: '/thumbnails/'
 });
 
+// Serve media files
+await fastify.register(fastifyStatic, {
+  root: path.resolve(config.mediaLibraryPath),
+  prefix: '/media/',
+  decorateReply: false,
+  acceptRanges: true,
+  cacheControl: true,
+  maxAge: '1d'
+});
+
+// On-demand video transcoding endpoint
+fastify.get('/video/:id', async (request, reply) => {
+  const { id } = request.params as { id: string };
+  
+  try {
+    // Get video info from database
+    const result = await db.query(
+      'SELECT file_path, mime_type FROM media_assets WHERE id = $1',
+      [id]
+    );
+    
+    if (result.rows.length === 0) {
+      return reply.code(404).send({ error: 'Video not found' });
+    }
+    
+    const { file_path, mime_type } = result.rows[0];
+    
+    if (!mime_type.startsWith('video/')) {
+      return reply.code(400).send({ error: 'Not a video file' });
+    }
+    
+    // Get web-compatible video (transcode if needed)
+    const videoPath = await getWebCompatibleVideo(file_path, id);
+    
+    // Mark as accessed for cleanup tracking
+    markTranscodeAccessed(videoPath);
+    
+    // Stream the video with range support
+    const stat = fs.statSync(videoPath);
+    const fileSize = stat.size;
+    const range = request.headers.range;
+    
+    if (range) {
+      const parts = range.replace(/bytes=/, '').split('-');
+      const start = Number.parseInt(parts[0], 10);
+      const end = parts[1] ? Number.parseInt(parts[1], 10) : fileSize - 1;
+      const chunksize = (end - start) + 1;
+      const stream = fs.createReadStream(videoPath, { start, end });
+      
+      reply.code(206);
+      reply.header('Content-Range', `bytes ${start}-${end}/${fileSize}`);
+      reply.header('Accept-Ranges', 'bytes');
+      reply.header('Content-Length', chunksize);
+      reply.header('Content-Type', 'video/mp4');
+      
+      return reply.send(stream);
+    } else {
+      reply.header('Content-Length', fileSize);
+      reply.header('Content-Type', 'video/mp4');
+      
+      const stream = fs.createReadStream(videoPath);
+      return reply.send(stream);
+    }
+  } catch (error) {
+    fastify.log.error('Error serving video:', error);
+    return reply.code(500).send({ error: 'Error serving video' });
+  }
+});
+
 // GraphQL
 await fastify.register(mercurius, {
   schema,
@@ -62,10 +134,17 @@ const start = async () => {
     // Ensure admin exists (first-time setup)
     await ensureAdminExists();
 
-    // Index media library on startup
-    fastify.log.info('Starting media library indexing...');
+    // Index existing media library
+    fastify.log.info('Starting initial media library indexing...');
     await indexMediaLibrary();
-    fastify.log.info('Media library indexed');
+    fastify.log.info('Initial media library indexed');
+
+    // Start file system watcher
+    fastify.log.info('Starting media file watcher...');
+    startMediaWatcher();
+
+    // Start transcode cleanup service
+    startTranscodeCleanup();
 
     await fastify.listen({ 
       port: config.port, 

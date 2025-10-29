@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "@remix-run/react";
 import { createGraphQLClient, getAuthToken, clearAuthToken } from "~/lib/api";
-import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
+import { Card, CardContent } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
+import { MediaAssetViewer } from "~/components/MediaAssetViewer";
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
@@ -15,6 +16,7 @@ const MEDIA_ASSETS_QUERY = `
       mimeType
       fileSize
       thumbnailUrl
+      transcodedUrl
       createdAt
     }
   }
@@ -52,6 +54,8 @@ interface MediaAsset {
 
 export default function Dashboard() {
   const [mediaAssets, setMediaAssets] = useState<MediaAsset[]>([]);
+  const [selectedAsset, setSelectedAsset] = useState<MediaAsset | null>(null);
+  const [isViewerOpen, setIsViewerOpen] = useState(false);
   const [view, setView] = useState<"grid" | "tree">("grid");
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState<{ username: string; role: string } | null>(null);
@@ -92,6 +96,16 @@ export default function Dashboard() {
   const handleLogout = () => {
     clearAuthToken();
     navigate("/login");
+  };
+
+  const handleAssetClick = (asset: MediaAsset) => {
+    setSelectedAsset(asset);
+    setIsViewerOpen(true);
+  };
+
+  const handleCloseViewer = () => {
+    setIsViewerOpen(false);
+    setSelectedAsset(null);
   };
 
   const loadMediaAssets = async () => {
@@ -163,7 +177,11 @@ export default function Dashboard() {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
           {mediaAssets.map((asset) => (
-            <Card key={asset.id} className="overflow-hidden">
+            <Card
+              key={asset.id}
+              className="overflow-hidden cursor-pointer hover:shadow-lg transition-shadow"
+              onClick={() => handleAssetClick(asset)}
+            >
               <div className="aspect-square bg-gray-200 relative">
                 {asset.thumbnailUrl ? (
                   <img
@@ -180,7 +198,7 @@ export default function Dashboard() {
               <CardContent className="p-4">
                 <h3 className="font-medium truncate">{asset.fileName}</h3>
                 <p className="text-sm text-gray-500">
-                  {(parseInt(asset.fileSize) / 1024 / 1024).toFixed(2)} MB
+                  {(Number.parseInt(asset.fileSize) / 1024 / 1024).toFixed(2)} MB
                 </p>
                 <p className="text-xs text-gray-400">{asset.mimeType}</p>
               </CardContent>
@@ -194,6 +212,13 @@ export default function Dashboard() {
           </div>
         )}
       </main>
+
+      <MediaAssetViewer
+        asset={selectedAsset}
+        isOpen={isViewerOpen}
+        onClose={handleCloseViewer}
+        apiUrl={API_URL}
+      />
     </div>
   );
 }

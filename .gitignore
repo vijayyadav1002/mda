@@ -12,3 +12,5 @@ coverage
 # Docker
 .docker/
 *.sql.bak
+media-files
+apps/backend/cache

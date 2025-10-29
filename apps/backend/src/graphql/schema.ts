@@ -17,6 +17,8 @@ export const schema = `
     duration: Float
     thumbnailPath: String
     thumbnailUrl: String
+    transcodedPath: String
+    transcodedUrl: String
     indexedAt: String!
     createdAt: String!
     updatedAt: String!

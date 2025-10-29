@@ -74,6 +74,8 @@ export const resolvers = {
         duration: row.duration,
         thumbnailPath: row.thumbnail_path,
         thumbnailUrl: row.thumbnail_path ? `/thumbnails/${path.basename(row.thumbnail_path)}` : null,
+        transcodedPath: row.transcoded_path,
+        transcodedUrl: row.transcoded_path ? `/transcoded/${path.basename(row.transcoded_path)}` : null,
         indexedAt: row.indexed_at.toISOString(),
         createdAt: row.created_at.toISOString(),
         updatedAt: row.updated_at.toISOString()

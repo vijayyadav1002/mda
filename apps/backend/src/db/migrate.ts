@@ -23,10 +23,22 @@ CREATE TABLE IF NOT EXISTS media_assets (
   height INTEGER,
   duration NUMERIC,
   thumbnail_path TEXT,
+  transcoded_path TEXT,
   indexed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Add transcoded_path column if it doesn't exist (for existing databases)
+DO $$ 
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name = 'media_assets' AND column_name = 'transcoded_path'
+  ) THEN
+    ALTER TABLE media_assets ADD COLUMN transcoded_path TEXT;
+  END IF;
+END $$;
 
 -- Audit logs table
 CREATE TABLE IF NOT EXISTS audit_logs (
