@@ -1,0 +1,10 @@
+{
+  "extends": "@mda/tsconfig/react.json",
+  "include": ["**/*.ts", "**/*.tsx"],
+  "compilerOptions": {
+    "paths": {
+      "~/*": ["./app/*"]
+    },
+    "types": ["@remix-run/node", "vite/client"]
+  }
+}

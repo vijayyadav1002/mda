@@ -1,0 +1,37 @@
+{
+  "name": "@mda/backend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "db:migrate": "tsx src/db/migrate.ts",
+    "db:seed": "tsx src/db/seed.ts",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@fastify/cors": "^10.0.1",
+    "@fastify/jwt": "^9.0.1",
+    "@fastify/multipart": "^9.0.1",
+    "@fastify/static": "^8.0.2",
+    "bcrypt": "^5.1.1",
+    "fastify": "^5.1.0",
+    "graphql": "^16.9.0",
+    "mercurius": "^15.0.0",
+    "pg": "^8.13.1",
+    "sharp": "^0.33.5",
+    "fluent-ffmpeg": "^2.1.3",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@mda/tsconfig": "*",
+    "@types/bcrypt": "^5.0.2",
+    "@types/fluent-ffmpeg": "^2.1.27",
+    "@types/node": "^22.9.3",
+    "@types/pg": "^8.11.10",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  }
+}

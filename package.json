@@ -1,0 +1,26 @@
+{
+  "name": "mda",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Media Asset Management System",
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "clean": "turbo run clean && rm -rf node_modules",
+    "db:migrate": "turbo run db:migrate",
+    "db:seed": "turbo run db:seed"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "devDependencies": {
+    "turbo": "^2.2.3",
+    "typescript": "^5.6.3"
+  },
+  "packageManager": "npm@10.9.0",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

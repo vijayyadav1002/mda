@@ -1,0 +1,43 @@
+{
+  "name": "@mda/web",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "start": "vite preview",
+    "clean": "rm -rf build .cache"
+  },
+  "dependencies": {
+    "@radix-ui/react-dialog": "^1.1.2",
+    "@radix-ui/react-dropdown-menu": "^2.1.2",
+    "@radix-ui/react-label": "^2.1.0",
+    "@radix-ui/react-slot": "^1.1.0",
+    "@remix-run/node": "^2.15.1",
+    "@remix-run/react": "^2.15.1",
+    "@remix-run/serve": "^2.15.1",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "graphql": "^16.9.0",
+    "graphql-request": "^7.1.2",
+    "isbot": "^5.1.17",
+    "lucide-react": "^0.468.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tailwind-merge": "^2.5.5",
+    "tailwindcss-animate": "^1.0.7"
+  },
+  "devDependencies": {
+    "@mda/tsconfig": "*",
+    "@remix-run/dev": "^2.15.1",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.15",
+    "typescript": "^5.6.3",
+    "vite": "^6.0.3",
+    "vite-tsconfig-paths": "^5.1.4"
+  }
+}
