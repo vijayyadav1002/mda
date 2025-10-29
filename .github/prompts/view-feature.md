@@ -1,3 +1,0 @@
-Looking at the current project structure and files, it seems that the project is a media asset management application with both frontend and backend components. The frontend is built using React with Remix Router, while the backend uses Fastify with Mercurius GraphQL and PostgreSQL for data persistence.
-
-Now I want to enhance the media display functionality in the frontend dashboard by ensuring that the thumbnail when clicked opens a larger view of the media asset in a modal dialog. This will improve the user experience by allowing users to preview media assets without navigating away from the dashboard.
