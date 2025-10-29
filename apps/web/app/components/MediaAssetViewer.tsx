@@ -33,6 +33,7 @@ export function MediaAssetViewer({
   apiUrl,
 }: Readonly<MediaAssetViewerProps>) {
   const [imageDimensions, setImageDimensions] = useState({ width: 0, height: 0 });
+  const [currentVideoId, setCurrentVideoId] = useState<string | null>(null);
   
   // Reset dimensions when dialog closes or asset changes
   useEffect(() => {
@@ -40,6 +41,37 @@ export function MediaAssetViewer({
       setImageDimensions({ width: 0, height: 0 });
     }
   }, [isOpen, asset?.id]);
+
+  // Track when a video is opened
+  useEffect(() => {
+    if (isOpen && asset?.mimeType.startsWith('video/')) {
+      setCurrentVideoId(asset.id);
+    }
+  }, [isOpen, asset]);
+
+  // Cleanup transcoded video when dialog closes
+  useEffect(() => {
+    if (!isOpen && currentVideoId) {
+      // Dialog was closed and we have a video ID to clean up
+      console.log(`Cleaning up transcoded video for asset: ${currentVideoId}`);
+      fetch(`${apiUrl}/video/${currentVideoId}/cleanup`, {
+        method: 'DELETE',
+      })
+        .then((response) => {
+          console.log('Cleanup response:', response.status);
+          return response.json();
+        })
+        .then((data) => {
+          console.log('Cleanup result:', data);
+        })
+        .catch((error) => {
+          console.error('Error cleaning up transcoded video:', error);
+        });
+      
+      // Clear the current video ID
+      setCurrentVideoId(null);
+    }
+  }, [isOpen, currentVideoId, apiUrl]);
 
   if (!asset) return null;
 

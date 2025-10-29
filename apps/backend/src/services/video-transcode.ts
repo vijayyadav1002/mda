@@ -198,3 +198,41 @@ export async function getWebCompatibleVideo(videoPath: string, assetId: string):
     return videoPath;
   }
 }
+
+/**
+ * Delete transcoded video for a specific asset immediately
+ */
+export async function deleteTranscodedVideo(videoPath: string, assetId: string): Promise<void> {
+  try {
+    console.log(`[deleteTranscodedVideo] Called for asset ${assetId}, video path: ${videoPath}`);
+    
+    // Generate the same cache key used during transcoding
+    const stats = await fs.stat(videoPath);
+    const cacheKey = crypto
+      .createHash('md5')
+      .update(assetId + videoPath + stats.mtime.toISOString())
+      .digest('hex');
+
+    const transcodedPath = path.join(TRANSCODE_CACHE_PATH, `${cacheKey}.mp4`);
+    console.log(`[deleteTranscodedVideo] Looking for transcoded file: ${transcodedPath}`);
+
+    // Check if transcoded file exists
+    try {
+      await fs.access(transcodedPath);
+      console.log(`[deleteTranscodedVideo] File exists, deleting...`);
+      
+      // Delete the file
+      await fs.unlink(transcodedPath);
+      
+      // Remove from tracking
+      activeTranscodes.delete(transcodedPath);
+      
+      console.log(`✓ Deleted transcoded video: ${path.basename(transcodedPath)}`);
+    } catch (accessError) {
+      // File doesn't exist or was already deleted - this is expected if video was web-compatible
+      console.log(`[deleteTranscodedVideo] No transcoded video found for asset ${assetId} at ${transcodedPath}`, accessError instanceof Error ? accessError.message : '');
+    }
+  } catch (error) {
+    console.error(`[deleteTranscodedVideo] Error for asset ${assetId}:`, error);
+  }
+}
