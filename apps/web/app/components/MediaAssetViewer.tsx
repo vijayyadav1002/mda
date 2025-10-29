@@ -1,4 +1,5 @@
 import { Download, File } from "lucide-react";
+import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -31,7 +32,65 @@ export function MediaAssetViewer({
   onClose,
   apiUrl,
 }: Readonly<MediaAssetViewerProps>) {
+  const [imageDimensions, setImageDimensions] = useState({ width: 0, height: 0 });
+  
+  // Reset dimensions when dialog closes or asset changes
+  useEffect(() => {
+    if (!isOpen) {
+      setImageDimensions({ width: 0, height: 0 });
+    }
+  }, [isOpen, asset?.id]);
+
   if (!asset) return null;
+
+  // Extract relative path from full path (everything after media-files/)
+  const getRelativePath = (fullPath: string) => {
+    const parts = fullPath.split('/media-files/');
+    return parts.length > 1 ? parts[1] : fullPath;
+  };
+
+  const getOriginalImageUrl = () => {
+    return `${apiUrl}/media/${getRelativePath(asset.filePath)}`;
+  };
+
+  const handleImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
+    const img = e.currentTarget;
+    setImageDimensions({ width: img.naturalWidth, height: img.naturalHeight });
+  };
+
+  // Calculate dialog size based on image dimensions
+  const getDialogSize = () => {
+    if (!asset.mimeType.startsWith('image/') || imageDimensions.width === 0) {
+      return 'max-w-4xl'; // Default size for videos and before image loads
+    }
+
+    const viewportWidth = globalThis.window === undefined ? 1920 : globalThis.window.innerWidth;
+    const viewportHeight = globalThis.window === undefined ? 1080 : globalThis.window.innerHeight;
+    
+    // Calculate max width/height (90% of viewport)
+    const maxWidth = viewportWidth * 0.9;
+    const maxHeight = viewportHeight * 0.85; // Leave space for header and details
+
+    // Add padding for dialog chrome (header, details, etc.)
+    const chromeHeight = 300;
+    const availableHeight = maxHeight - chromeHeight;
+
+    const aspectRatio = imageDimensions.width / imageDimensions.height;
+    
+    let dialogWidth = Math.min(imageDimensions.width + 100, maxWidth);
+    const requiredHeight = (dialogWidth - 100) / aspectRatio;
+
+    if (requiredHeight > availableHeight) {
+      dialogWidth = availableHeight * aspectRatio + 100;
+    }
+
+    // Return appropriate size class
+    if (dialogWidth >= viewportWidth * 0.8) return 'max-w-[90vw]';
+    if (dialogWidth >= 1200) return 'max-w-7xl';
+    if (dialogWidth >= 1000) return 'max-w-6xl';
+    if (dialogWidth >= 800) return 'max-w-5xl';
+    return 'max-w-4xl';
+  };
 
   const formatFileSize = (bytes: string) => {
     const size = Number.parseInt(bytes);
@@ -46,19 +105,25 @@ export function MediaAssetViewer({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-[95vw] max-h-[95vh] overflow-hidden p-0 flex flex-col">
-        <DialogHeader className="px-6 py-4 border-b">
+      <DialogContent className={`${getDialogSize()} max-h-[90vh] overflow-hidden p-0 flex flex-col bg-white`}>
+        <DialogHeader className="px-6 py-4 border-b bg-white">
           <DialogTitle>{asset.fileName}</DialogTitle>
         </DialogHeader>
         
-        <div className="flex-1 overflow-auto p-6 space-y-4">
+        <div className="flex-1 overflow-auto p-6 space-y-4 bg-white">
           {/* Media Preview */}
           {asset.mimeType.startsWith('image/') && (
-            <div className="flex items-center justify-center w-full">
+            <div className="flex items-center justify-center w-full overflow-auto max-h-[60vh] bg-gray-50 rounded-lg">
               <img 
-                src={`${apiUrl}${asset.thumbnailUrl}`}
+                src={getOriginalImageUrl()}
                 alt={asset.fileName}
-                className="max-w-full max-h-[calc(95vh-300px)] object-contain"
+                className="w-auto h-auto max-w-none"
+                onLoad={handleImageLoad}
+                onError={(e) => {
+                  console.error('Image load error:', e);
+                  // Fallback to thumbnail if original fails
+                  e.currentTarget.src = `${apiUrl}${asset.thumbnailUrl}`;
+                }}
               />
             </div>
           )}
@@ -67,7 +132,7 @@ export function MediaAssetViewer({
             <div className="flex items-center justify-center w-full bg-black rounded-lg">
               <video 
                 controls
-                className="max-w-full max-h-[calc(95vh-300px)] object-contain"
+                className="max-w-full max-h-[60vh] object-contain"
                 preload="metadata"
                 onError={(e) => {
                   console.error('Video error:', e);
@@ -86,14 +151,16 @@ export function MediaAssetViewer({
           )}
           
           {!asset.mimeType.startsWith('image/') && !asset.mimeType.startsWith('video/') && (
-            <div className="flex items-center justify-center h-64 bg-gray-100">
+            <div className="flex items-center justify-center h-64 bg-gray-100 rounded-lg">
               <div className="text-center">
                 <File className="h-16 w-16 mx-auto text-gray-400" />
                 <p className="mt-2 text-sm text-gray-500">Preview not available</p>
               </div>
             </div>
-          )}          {/* File Details */}
-          <div className="space-y-2 pt-4 border-t">
+          )}
+
+          {/* File Details */}
+          <div className="space-y-2 pt-4 border-t bg-white">
             <div className="grid grid-cols-2 gap-2 text-sm">
               <div>
                 <span className="font-medium">File Name:</span>
@@ -121,7 +188,7 @@ export function MediaAssetViewer({
           </div>
 
           {/* Actions */}
-          <div className="flex justify-end gap-2 pt-4 border-t">
+          <div className="flex justify-end gap-2 pt-4 border-t bg-white">
             <Button variant="outline" onClick={onClose}>
               Close
             </Button>
