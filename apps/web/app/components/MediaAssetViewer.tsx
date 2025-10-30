@@ -1,12 +1,26 @@
-import { Download, File } from "lucide-react";
+import { Download, File, Trash2 } from "lucide-react";
 import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from "~/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "~/components/ui/alert-dialog";
 import { Button } from "~/components/ui/button";
+import { createGraphQLClient } from "~/lib/api";
+import { DELETE_MEDIA_ASSET } from "~/lib/graphql";
 
 interface MediaAsset {
   id: string;
@@ -23,17 +37,41 @@ interface MediaAssetViewerProps {
   readonly asset: MediaAsset | null;
   readonly isOpen: boolean;
   readonly onClose: () => void;
+  readonly onDelete?: () => void;
   readonly apiUrl: string;
+  readonly isAdmin: boolean;
 }
 
 export function MediaAssetViewer({
   asset,
   isOpen,
   onClose,
+  onDelete,
   apiUrl,
+  isAdmin,
 }: Readonly<MediaAssetViewerProps>) {
   const [imageDimensions, setImageDimensions] = useState({ width: 0, height: 0 });
   const [currentVideoId, setCurrentVideoId] = useState<string | null>(null);
+  const [isAlertOpen, setIsAlertOpen] = useState(false);
+
+  const handleDelete = async () => {
+    try {
+      const client = createGraphQLClient(localStorage.getItem('auth_token') || '');
+      const response = await client.request(DELETE_MEDIA_ASSET, {
+        id: asset!.id,
+      });
+      
+      if (response.deleteMediaAsset.success) {
+        setIsAlertOpen(false); // Close the alert dialog
+        onClose(); // Close the main dialog
+        onDelete?.(); // Refresh the media list
+      } else {
+        console.error('Failed to delete:', response.deleteMediaAsset.message);
+      }
+    } catch (error) {
+      console.error('Error deleting media asset:', error);
+    }
+  };
   
   // Reset dimensions when dialog closes or asset changes
   useEffect(() => {
@@ -224,6 +262,34 @@ export function MediaAssetViewer({
             <Button variant="outline" onClick={onClose}>
               Close
             </Button>
+            {isAdmin && (
+              <AlertDialog open={isAlertOpen} onOpenChange={setIsAlertOpen}>
+                <AlertDialogTrigger asChild>
+                  <Button variant="destructive">
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    Delete
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent className="bg-white">
+                  <AlertDialogHeader>
+                    <AlertDialogTitle className="text-gray-900">Are you sure?</AlertDialogTitle>
+                    <AlertDialogDescription className="text-gray-600">
+                      This action cannot be undone. This will permanently delete{' '}
+                      <span className="font-medium text-gray-900">{asset.fileName}</span> and remove the data from the server.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel onClick={() => setIsAlertOpen(false)}>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      onClick={handleDelete}
+                    >
+                      Delete
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
             <Button variant="default">
               <Download className="w-4 h-4 mr-2" />
               Download

@@ -56,9 +56,9 @@ export default function Dashboard() {
   const [mediaAssets, setMediaAssets] = useState<MediaAsset[]>([]);
   const [selectedAsset, setSelectedAsset] = useState<MediaAsset | null>(null);
   const [isViewerOpen, setIsViewerOpen] = useState(false);
+  const [user, setUser] = useState<{ id: string; username: string; role: string } | null>(null);
   const [view, setView] = useState<"grid" | "tree">("grid");
   const [loading, setLoading] = useState(true);
-  const [user, setUser] = useState<{ username: string; role: string } | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -110,6 +110,7 @@ export default function Dashboard() {
 
   const loadMediaAssets = async () => {
     try {
+      setLoading(true);
       const token = getAuthToken();
       if (!token) return;
 
@@ -119,6 +120,11 @@ export default function Dashboard() {
         offset: 0,
       });
 
+      // Clear selected asset if it was deleted
+      if (selectedAsset && !data.mediaAssets.find((asset: MediaAsset) => asset.id === selectedAsset.id)) {
+        setSelectedAsset(null);
+      }
+      
       setMediaAssets(data.mediaAssets);
     } catch (err) {
       console.error("Failed to load media assets:", err);
@@ -217,7 +223,9 @@ export default function Dashboard() {
         asset={selectedAsset}
         isOpen={isViewerOpen}
         onClose={handleCloseViewer}
+        onDelete={() => loadMediaAssets()}
         apiUrl={API_URL}
+        isAdmin={user?.role === 'admin'}
       />
     </div>
   );

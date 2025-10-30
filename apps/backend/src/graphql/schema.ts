@@ -48,6 +48,11 @@ export const schema = `
     mediaAsset: MediaAsset
   }
 
+  type DeleteMediaAssetResponse {
+    success: Boolean!
+    message: String
+  }
+
   type Query {
     me: User
     users: [User!]!
@@ -62,10 +67,9 @@ export const schema = `
     createFirstAdmin(username: String!, password: String!): AuthPayload!
     createUser(username: String!, password: String!, role: String!): User!
     deleteUser(id: ID!): Boolean!
-    
     moveMediaAsset(id: ID!, newPath: String!): MediaAsset!
     renameMediaAsset(id: ID!, newName: String!): MediaAsset!
-    deleteMediaAsset(id: ID!): Boolean!
+    deleteMediaAsset(id: ID!): DeleteMediaAssetResponse!
     compressMediaAsset(id: ID!, quality: Int, overwrite: Boolean): MediaAsset!
   }
 `;
