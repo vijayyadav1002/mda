@@ -145,11 +145,11 @@ export function MediaAssetViewer({
         <div className="flex-1 overflow-auto p-6 space-y-4 bg-white">
           {/* Media Preview */}
           {asset.mimeType.startsWith('image/') && (
-            <div className="flex items-center justify-center w-full overflow-auto max-h-[60vh] bg-gray-50 rounded-lg">
+            <div className="flex items-center justify-center w-full bg-gray-50 rounded-lg">
               <img 
                 src={getOriginalImageUrl()}
                 alt={asset.fileName}
-                className="w-auto h-auto max-w-none"
+                className="w-auto h-auto max-w-full"
                 onLoad={handleImageLoad}
                 onError={(e) => {
                   console.error('Image load error:', e);
