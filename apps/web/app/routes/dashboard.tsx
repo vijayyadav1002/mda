@@ -103,6 +103,7 @@ export default function Dashboard() {
   const [currentChildren, setCurrentChildren] = useState<DirectoryNode[]>([]);
   const [childrenCache, setChildrenCache] = useState<Record<string, DirectoryNode[]>>({});
   const [treeLoading, setTreeLoading] = useState(false);
+  const [fetchingPath, setFetchingPath] = useState<string | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -178,6 +179,8 @@ export default function Dashboard() {
     }
   };
 
+  const normalizePath = (p: string) => p.replace(/\/+$/, "");
+
   const loadDirectoryRoot = async () => {
     try {
       setTreeLoading(true);
@@ -185,10 +188,11 @@ export default function Dashboard() {
       if (!token) return;
       const client = createGraphQLClient(token);
       const data: any = await client.request(DIRECTORY_ROOT_QUERY);
-      setRootDir(data.directoryRoot);
-      setCurrentPath(data.directoryRoot?.path || null);
-      if (data.directoryRoot?.path) {
-        await loadChildrenForPath(data.directoryRoot.path, client);
+      const rootPath = data.directoryRoot?.path ? normalizePath(data.directoryRoot.path) : null;
+      setRootDir(rootPath ? { ...data.directoryRoot, path: rootPath } : data.directoryRoot);
+      setCurrentPath(rootPath || null);
+      if (rootPath) {
+        await loadChildrenForPath(rootPath, client);
       }
     } catch (err) {
       console.error("Failed to load directory root:", err);
@@ -198,29 +202,34 @@ export default function Dashboard() {
   };
 
   const loadChildrenForPath = async (path: string, existingClient?: any) => {
+    const key = normalizePath(path);
+    if (fetchingPath === key) return; // prevent duplicate in-flight calls
     // Cached?
-    if (childrenCache[path]) {
-      setCurrentChildren(childrenCache[path]);
+    if (childrenCache[key]) {
+      setCurrentChildren(childrenCache[key]);
       return;
     }
     try {
       setTreeLoading(true);
+      setFetchingPath(key);
       const token = getAuthToken();
       if (!token) return;
       const client = existingClient || createGraphQLClient(token);
-      const data: any = await client.request(DIRECTORY_CHILDREN_QUERY, { path });
-      setChildrenCache(prev => ({ ...prev, [path]: data.directoryChildren }));
+      const data: any = await client.request(DIRECTORY_CHILDREN_QUERY, { path: key });
+      setChildrenCache(prev => ({ ...prev, [key]: data.directoryChildren }));
       setCurrentChildren(data.directoryChildren);
     } catch (err) {
       console.error("Failed to load directory children:", err);
     } finally {
       setTreeLoading(false);
+      setFetchingPath(null);
     }
   };
 
   const handleDirClick = (path: string) => {
-    setCurrentPath(path);
-    loadChildrenForPath(path);
+    const key = normalizePath(path);
+    setCurrentPath(key);
+    loadChildrenForPath(key);
   };
 
   const fetchAssetById = async (id: string): Promise<MediaAsset | null> => {
@@ -338,8 +347,9 @@ export default function Dashboard() {
                 className="hover:underline"
                 onClick={() => {
                   if (rootDir?.path) {
-                    setCurrentPath(rootDir.path);
-                    loadChildrenForPath(rootDir.path);
+                    const key = normalizePath(rootDir.path);
+                    setCurrentPath(key);
+                    loadChildrenForPath(key);
                   }
                 }}
               >
@@ -360,8 +370,9 @@ export default function Dashboard() {
                       <button
                         className={`hover:underline ${isLast ? 'font-semibold text-gray-900' : ''}`}
                         onClick={() => {
-                          setCurrentPath(acc);
-                          if (!isLast) loadChildrenForPath(acc);
+                          const key = normalizePath(acc);
+                          setCurrentPath(key);
+                          if (!isLast) loadChildrenForPath(key);
                         }}
                         disabled={isLast}
                       >

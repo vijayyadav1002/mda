@@ -156,9 +156,13 @@ export const resolvers = {
     directoryRoot: async (_: any, __: any, context: GraphQLContext) => {
       if (!context.user) throw new Error('Unauthorized');
       const root = config.mediaLibraryPath;
+      let realRoot = root;
+      try {
+        realRoot = await fs.realpath(root);
+      } catch {}
       return {
-        name: path.basename(root),
-        path: root,
+        name: path.basename(realRoot),
+        path: realRoot.replace(/\/+$/, ''),
         type: 'directory',
         children: []
       };
@@ -166,31 +170,52 @@ export const resolvers = {
 
     directoryChildren: async (_: any, args: { path: string }, context: GraphQLContext) => {
       if (!context.user) throw new Error('Unauthorized');
-      const requestedPath = args.path;
 
-      // Ensure requested path is inside the media library root for safety
-      const root = path.resolve(config.mediaLibraryPath);
-      const absRequested = path.resolve(requestedPath);
-      if (!absRequested.startsWith(root)) {
+      const normalize = (p: string) => p.replace(/\/+$/, '');
+
+      // Real paths for consistency (handles symlinks)
+      let rootReal: string;
+      let reqReal: string;
+      try {
+        rootReal = await fs.realpath(config.mediaLibraryPath);
+      } catch {
+        rootReal = path.resolve(config.mediaLibraryPath);
+      }
+      try {
+        reqReal = await fs.realpath(args.path);
+      } catch {
+        reqReal = path.resolve(args.path);
+      }
+      rootReal = normalize(rootReal);
+      reqReal = normalize(reqReal);
+
+      // Safety: ensure path is within root
+      if (!reqReal.startsWith(rootReal)) {
         throw new Error('Path outside of media library');
       }
 
-      const entries = await fs.readdir(absRequested, { withFileTypes: true });
+      const entries = await fs.readdir(reqReal, { withFileTypes: true });
       const nodes = await Promise.all(entries.map(async (entry) => {
-        const full = path.join(absRequested, entry.name);
+        const full = path.join(reqReal, entry.name);
+        let fullReal = full;
+        try {
+          fullReal = await fs.realpath(full);
+        } catch {}
+        fullReal = normalize(fullReal);
+
         if (entry.isDirectory()) {
           return {
             name: entry.name,
-            path: full,
+            path: fullReal,
             type: 'directory',
             children: []
           };
         } else {
-          const result = await db.query('SELECT * FROM media_assets WHERE file_path = $1', [full]);
+          const result = await db.query('SELECT * FROM media_assets WHERE file_path = $1', [fullReal]);
           const row = result.rows[0];
           return {
             name: entry.name,
-            path: full,
+            path: fullReal,
             type: 'file',
             children: [],
             mediaAsset: row ? {
