@@ -153,6 +153,61 @@ export const resolvers = {
       return buildTree(config.mediaLibraryPath);
     },
 
+    directoryRoot: async (_: any, __: any, context: GraphQLContext) => {
+      if (!context.user) throw new Error('Unauthorized');
+      const root = config.mediaLibraryPath;
+      return {
+        name: path.basename(root),
+        path: root,
+        type: 'directory',
+        children: []
+      };
+    },
+
+    directoryChildren: async (_: any, args: { path: string }, context: GraphQLContext) => {
+      if (!context.user) throw new Error('Unauthorized');
+      const requestedPath = args.path;
+
+      // Ensure requested path is inside the media library root for safety
+      const root = path.resolve(config.mediaLibraryPath);
+      const absRequested = path.resolve(requestedPath);
+      if (!absRequested.startsWith(root)) {
+        throw new Error('Path outside of media library');
+      }
+
+      const entries = await fs.readdir(absRequested, { withFileTypes: true });
+      const nodes = await Promise.all(entries.map(async (entry) => {
+        const full = path.join(absRequested, entry.name);
+        if (entry.isDirectory()) {
+          return {
+            name: entry.name,
+            path: full,
+            type: 'directory',
+            children: []
+          };
+        } else {
+          const result = await db.query('SELECT * FROM media_assets WHERE file_path = $1', [full]);
+          const row = result.rows[0];
+          return {
+            name: entry.name,
+            path: full,
+            type: 'file',
+            children: [],
+            mediaAsset: row ? {
+              id: row.id,
+              filePath: row.file_path,
+              fileName: row.file_name,
+              fileSize: row.file_size.toString(),
+              mimeType: row.mime_type,
+              thumbnailUrl: row.thumbnail_path ? `/thumbnails/${path.basename(row.thumbnail_path)}` : null
+            } : null
+          };
+        }
+      }));
+
+      return nodes;
+    },
+
     auditLogs: async (_: any, args: { limit?: number; offset?: number }, context: GraphQLContext) => {
       if (!context.user || context.user.role !== 'admin') {
         throw new Error('Admin access required');

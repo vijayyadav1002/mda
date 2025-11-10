@@ -59,6 +59,8 @@ export const schema = `
     mediaAssets(limit: Int, offset: Int, mimeType: String): [MediaAsset!]!
     mediaAsset(id: ID!): MediaAsset
     directoryTree: DirectoryNode!
+    directoryRoot: DirectoryNode!
+    directoryChildren(path: String!): [DirectoryNode!]!
     auditLogs(limit: Int, offset: Int): [AuditLog!]!
   }
 
