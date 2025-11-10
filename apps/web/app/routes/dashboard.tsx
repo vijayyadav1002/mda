@@ -96,7 +96,6 @@ export default function Dashboard() {
   const [selectedAsset, setSelectedAsset] = useState<MediaAsset | null>(null);
   const [isViewerOpen, setIsViewerOpen] = useState(false);
   const [user, setUser] = useState<{ id: string; username: string; role: string } | null>(null);
-  const [view, setView] = useState<"grid" | "tree">("grid");
   const [loading, setLoading] = useState(true);
   const [rootDir, setRootDir] = useState<DirectoryNode | null>(null);
   const [currentPath, setCurrentPath] = useState<string | null>(null);
@@ -290,57 +289,11 @@ export default function Dashboard() {
       </header>
 
       <main className="container mx-auto px-4 py-8">
-        <div className="mb-6 flex justify-between items-center">
+        <div className="mb-6">
           <h2 className="text-xl font-semibold">Media Library</h2>
-          <div className="space-x-2">
-            <Button
-              variant={view === "grid" ? "default" : "outline"}
-              onClick={() => setView("grid")}
-            >
-              Grid View
-            </Button>
-            <Button
-              variant={view === "tree" ? "default" : "outline"}
-              onClick={() => setView("tree")}
-            >
-              Tree View
-            </Button>
-          </div>
         </div>
 
-        {view === "grid" ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            {mediaAssets.map((asset) => (
-              <Card
-                key={asset.id}
-                className="overflow-hidden cursor-pointer hover:shadow-lg transition-shadow"
-                onClick={() => handleAssetClick(asset)}
-              >
-                <div className="aspect-square bg-gray-200 relative">
-                  {asset.thumbnailUrl ? (
-                    <img
-                      src={`${API_URL}${asset.thumbnailUrl}`}
-                      alt={asset.fileName}
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-gray-400">
-                      No preview
-                    </div>
-                  )}
-                </div>
-                <CardContent className="p-4">
-                  <h3 className="font-medium truncate">{asset.fileName}</h3>
-                  <p className="text-sm text-gray-500">
-                    {(Number.parseInt(asset.fileSize) / 1024 / 1024).toFixed(2)} MB
-                  </p>
-                  <p className="text-xs text-gray-400">{asset.mimeType}</p>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        ) : (
-          <div>
+        <div>
             {/* Breadcrumbs */}
             <div className="flex items-center text-sm text-gray-600 mb-4 gap-2">
               <button
@@ -442,14 +395,7 @@ export default function Dashboard() {
                 );
               })()
             )}
-          </div>
-        )}
-
-        {view === "grid" && mediaAssets.length === 0 && (
-          <div className="text-center py-12">
-            <p className="text-gray-500">No media assets found</p>
-          </div>
-        )}
+        </div>
       </main>
 
       <MediaAssetViewer
@@ -459,6 +405,7 @@ export default function Dashboard() {
         onDelete={() => loadMediaAssets()}
         apiUrl={API_URL}
         isAdmin={user?.role === 'admin'}
+        mediaRootPath={rootDir?.path}
       />
     </div>
   );

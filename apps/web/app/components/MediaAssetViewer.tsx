@@ -40,6 +40,7 @@ interface MediaAssetViewerProps {
   readonly onDelete?: () => void;
   readonly apiUrl: string;
   readonly isAdmin: boolean;
+  readonly mediaRootPath?: string | null;
 }
 
 export function MediaAssetViewer({
@@ -49,6 +50,7 @@ export function MediaAssetViewer({
   onDelete,
   apiUrl,
   isAdmin,
+  mediaRootPath,
 }: Readonly<MediaAssetViewerProps>) {
   const [imageDimensions, setImageDimensions] = useState({ width: 0, height: 0 });
   const [currentVideoId, setCurrentVideoId] = useState<string | null>(null);
@@ -113,10 +115,15 @@ export function MediaAssetViewer({
 
   if (!asset) return null;
 
-  // Extract relative path from full path (everything after media-files/)
+  // Extract relative path from full path.
+  // Prefer stripping configured mediaRootPath; fallback to split on '/media-files/'.
   const getRelativePath = (fullPath: string) => {
+    if (mediaRootPath && fullPath.startsWith(mediaRootPath)) {
+      const rel = fullPath.slice(mediaRootPath.length);
+      return rel.startsWith('/') ? rel.slice(1) : rel;
+    }
     const parts = fullPath.split('/media-files/');
-    return parts.length > 1 ? parts[1] : fullPath;
+    return parts.length > 1 ? parts[1] : fullPath.replace(/^\//, '');
   };
 
   const getOriginalImageUrl = () => {
