@@ -1,35 +1,16 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "@remix-run/react";
-import { createGraphQLClient, getAuthToken, clearAuthToken } from "~/lib/api";
+import { createGraphQLClient, getAuthToken } from "~/lib/api";
 import { Card, CardContent } from "~/components/ui/card";
 import { MediaAssetViewer } from "~/components/MediaAssetViewer";
-import { Folder, Image as ImageIcon } from "lucide-react";
 import { AppShell } from "~/components/AppShell";
+import { Folder, Image as ImageIcon } from "lucide-react";
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
-const MEDIA_ASSETS_QUERY = `
-  query GetMediaAssets($limit: Int, $offset: Int) {
-    mediaAssets(limit: $limit, offset: $offset) {
-      id
-      fileName
-      filePath
-      mimeType
-      fileSize
-      thumbnailUrl
-      transcodedUrl
-      createdAt
-    }
-  }
-`;
-
 const DIRECTORY_ROOT_QUERY = `
   query GetDirectoryRoot {
-    directoryRoot {
-      name
-      path
-      type
-    }
+    directoryRoot { name path type }
   }
 `;
 
@@ -51,6 +32,20 @@ const DIRECTORY_CHILDREN_QUERY = `
   }
 `;
 
+const SINGLE_MEDIA_ASSET_QUERY = `
+  query GetMediaAsset($id: ID!) {
+    mediaAsset(id: $id) {
+      id
+      fileName
+      filePath
+      mimeType
+      fileSize
+      thumbnailUrl
+      createdAt
+    }
+  }
+`;
+
 interface MediaAsset {
   id: string;
   fileName: string;
@@ -65,7 +60,6 @@ interface DirectoryNode {
   name: string;
   path: string;
   type: "directory" | "file";
-  children?: DirectoryNode[];
   mediaAsset?: {
     id: string;
     fileName: string;
@@ -76,33 +70,15 @@ interface DirectoryNode {
   } | null;
 }
 
-const SINGLE_MEDIA_ASSET_QUERY = `
-  query GetMediaAsset($id: ID!) {
-    mediaAsset(id: $id) {
-      id
-      fileName
-      filePath
-      mimeType
-      fileSize
-      thumbnailUrl
-      transcodedUrl
-      createdAt
-    }
-  }
-`;
-
-export default function Dashboard() {
-  const [mediaAssets, setMediaAssets] = useState<MediaAsset[]>([]);
-  const [selectedAsset, setSelectedAsset] = useState<MediaAsset | null>(null);
-  const [isViewerOpen, setIsViewerOpen] = useState(false);
-  const [user, setUser] = useState<{ id: string; username: string; role: string } | null>(null);
-  const [loading, setLoading] = useState(true);
+export default function LibraryRoute() {
+  const [user, setUser] = useState<{ username: string; role: string } | null>(null);
   const [rootDir, setRootDir] = useState<DirectoryNode | null>(null);
   const [currentPath, setCurrentPath] = useState<string | null>(null);
   const [currentChildren, setCurrentChildren] = useState<DirectoryNode[]>([]);
   const [childrenCache, setChildrenCache] = useState<Record<string, DirectoryNode[]>>({});
   const [treeLoading, setTreeLoading] = useState(false);
-  const [fetchingPath, setFetchingPath] = useState<string | null>(null);
+  const [selectedAsset, setSelectedAsset] = useState<MediaAsset | null>(null);
+  const [isViewerOpen, setIsViewerOpen] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -112,70 +88,18 @@ export default function Dashboard() {
       return;
     }
 
-    loadMediaAssets();
-    loadDirectoryRoot();
     loadUser();
+    loadDirectoryRoot();
   }, []);
 
   const loadUser = async () => {
     try {
       const token = getAuthToken();
       if (!token) return;
-
       const client = createGraphQLClient(token);
-      const data: any = await client.request(`
-        query {
-          me {
-            username
-            role
-          }
-        }
-      `);
-
+      const data: any = await client.request(`query { me { username role } }`);
       setUser(data.me);
-    } catch (err) {
-      console.error("Failed to load user:", err);
-    }
-  };
-
-  const handleLogout = () => {
-    clearAuthToken();
-    navigate("/login");
-  };
-
-  const handleAssetClick = (asset: MediaAsset) => {
-    setSelectedAsset(asset);
-    setIsViewerOpen(true);
-  };
-
-  const handleCloseViewer = () => {
-    setIsViewerOpen(false);
-    setSelectedAsset(null);
-  };
-
-  const loadMediaAssets = async () => {
-    try {
-      setLoading(true);
-      const token = getAuthToken();
-      if (!token) return;
-
-      const client = createGraphQLClient(token);
-      const data: any = await client.request(MEDIA_ASSETS_QUERY, {
-        limit: 50,
-        offset: 0,
-      });
-
-      // Clear selected asset if it was deleted
-      if (selectedAsset && !data.mediaAssets.find((asset: MediaAsset) => asset.id === selectedAsset.id)) {
-        setSelectedAsset(null);
-      }
-      
-      setMediaAssets(data.mediaAssets);
-    } catch (err) {
-      console.error("Failed to load media assets:", err);
-    } finally {
-      setLoading(false);
-    }
+    } catch {}
   };
 
   const normalizePath = (p: string) => p.replace(/\/+$/, "");
@@ -193,8 +117,6 @@ export default function Dashboard() {
       if (rootPath) {
         await loadChildrenForPath(rootPath, client);
       }
-    } catch (err) {
-      console.error("Failed to load directory root:", err);
     } finally {
       setTreeLoading(false);
     }
@@ -202,33 +124,21 @@ export default function Dashboard() {
 
   const loadChildrenForPath = async (path: string, existingClient?: any) => {
     const key = normalizePath(path);
-    if (fetchingPath === key) return; // prevent duplicate in-flight calls
-    // Cached?
     if (childrenCache[key]) {
       setCurrentChildren(childrenCache[key]);
       return;
     }
     try {
       setTreeLoading(true);
-      setFetchingPath(key);
       const token = getAuthToken();
       if (!token) return;
       const client = existingClient || createGraphQLClient(token);
       const data: any = await client.request(DIRECTORY_CHILDREN_QUERY, { path: key });
       setChildrenCache(prev => ({ ...prev, [key]: data.directoryChildren }));
       setCurrentChildren(data.directoryChildren);
-    } catch (err) {
-      console.error("Failed to load directory children:", err);
     } finally {
       setTreeLoading(false);
-      setFetchingPath(null);
     }
-  };
-
-  const handleDirClick = (path: string) => {
-    const key = normalizePath(path);
-    setCurrentPath(key);
-    loadChildrenForPath(key);
   };
 
   const fetchAssetById = async (id: string): Promise<MediaAsset | null> => {
@@ -238,52 +148,32 @@ export default function Dashboard() {
       const client = createGraphQLClient(token);
       const data: any = await client.request(SINGLE_MEDIA_ASSET_QUERY, { id });
       return data.mediaAsset as MediaAsset;
-    } catch (err) {
-      console.error("Failed to fetch media asset:", err);
+    } catch {
       return null;
     }
   };
 
+  const handleDirClick = (path: string) => {
+    const key = normalizePath(path);
+    setCurrentPath(key);
+    loadChildrenForPath(key);
+  };
+
   const handleTreeFileClick = async (node: DirectoryNode) => {
     if (!node.mediaAsset) return;
-    // Try to find in already-loaded mediaAssets
-    let asset = mediaAssets.find(a => a.id === node.mediaAsset!.id) || null;
-    if (!asset) {
-      const fetched = await fetchAssetById(node.mediaAsset.id);
-      if (fetched) {
-        asset = fetched;
-      }
-    }
+    let asset = await fetchAssetById(node.mediaAsset.id);
     if (asset) {
-      handleAssetClick(asset);
+      setSelectedAsset(asset);
+      setIsViewerOpen(true);
     }
   };
 
-  const imagesCount = (currentChildren || []).filter(c => c.type === 'file' && c.mediaAsset?.mimeType.startsWith('image/')).length;
-  const videosCount = (currentChildren || []).filter(c => c.type === 'file' && c.mediaAsset?.mimeType.startsWith('video/')).length;
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div>Loading...</div>
-      </div>
-    );
-  }
-
   return (
-    <AppShell username={user?.username} role={user?.role} onLogout={handleLogout}>
+    <AppShell username={user?.username} role={user?.role}>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight">Media Library</h1>
-            <p className="text-sm text-muted-foreground">Browse and manage your files</p>
-          </div>
-          <div className="hidden md:flex gap-3">
-            <Card className="p-4"><div className="text-xs text-muted-foreground">Total</div><div className="text-lg font-semibold">{mediaAssets.length}</div></Card>
-            <Card className="p-4"><div className="text-xs text-muted-foreground">Folders</div><div className="text-lg font-semibold">{currentChildren.filter(c=>c.type==='directory').length}</div></Card>
-            <Card className="p-4"><div className="text-xs text-muted-foreground">Images (in view)</div><div className="text-lg font-semibold">{imagesCount}</div></Card>
-            <Card className="p-4"><div className="text-xs text-muted-foreground">Videos (in view)</div><div className="text-lg font-semibold">{videosCount}</div></Card>
-          </div>
+        <div>
+          <h1 className="text-xl font-semibold tracking-tight">Library</h1>
+          <p className="text-sm text-muted-foreground">Browse your folders</p>
         </div>
 
         {/* Breadcrumbs */}
@@ -329,6 +219,7 @@ export default function Dashboard() {
             });
           })()}
         </div>
+
         {/* Directory contents */}
         {treeLoading || !rootDir ? (
           <div className="text-center py-12">Loading...</div>
@@ -353,6 +244,7 @@ export default function Dashboard() {
                           <span className="text-sm font-medium">{child.name}</span>
                         </div>
                       ) : child.mediaAsset && child.mediaAsset.thumbnailUrl ? (
+                        // eslint-disable-next-line jsx-a11y/alt-text
                         <img
                           src={`${API_URL}${child.mediaAsset.thumbnailUrl}`}
                           alt={child.mediaAsset.fileName}
@@ -366,17 +258,13 @@ export default function Dashboard() {
                         </div>
                       )}
                     </div>
-                    {child.type === 'file' && (
+                    {child.type === 'file' && child.mediaAsset && (
                       <CardContent className="p-4">
-                        <h3 className="font-medium truncate">{child.mediaAsset?.fileName || child.name}</h3>
-                        {child.mediaAsset && (
-                          <>
-                            <p className="text-sm text-muted-foreground">
-                              {(Number.parseInt(child.mediaAsset.fileSize) / 1024 / 1024).toFixed(2)} MB
-                            </p>
-                            <p className="text-xs text-muted-foreground/70">{child.mediaAsset.mimeType}</p>
-                          </>
-                        )}
+                        <h3 className="font-medium truncate">{child.mediaAsset.fileName}</h3>
+                        <p className="text-sm text-muted-foreground">
+                          {(Number.parseInt(child.mediaAsset.fileSize) / 1024 / 1024).toFixed(2)} MB
+                        </p>
+                        <p className="text-xs text-muted-foreground/70">{child.mediaAsset.mimeType}</p>
                       </CardContent>
                     )}
                   </Card>
@@ -390,8 +278,7 @@ export default function Dashboard() {
       <MediaAssetViewer
         asset={selectedAsset}
         isOpen={isViewerOpen}
-        onClose={handleCloseViewer}
-        onDelete={() => loadMediaAssets()}
+        onClose={() => setIsViewerOpen(false)}
         apiUrl={API_URL}
         isAdmin={user?.role === 'admin'}
       />

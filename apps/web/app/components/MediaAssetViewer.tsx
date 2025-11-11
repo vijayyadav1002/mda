@@ -182,15 +182,15 @@ export function MediaAssetViewer({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className={`${getDialogSize()} max-h-[90vh] overflow-hidden p-0 flex flex-col bg-white`}>
-        <DialogHeader className="px-6 py-4 border-b bg-white">
+      <DialogContent className={`${getDialogSize()} max-h-[90vh] overflow-hidden p-0 flex flex-col bg-background`}>
+        <DialogHeader className="px-6 py-4 border-b bg-background">
           <DialogTitle>{asset.fileName}</DialogTitle>
         </DialogHeader>
         
-        <div className="flex-1 overflow-auto p-6 space-y-4 bg-white">
+        <div className="flex-1 overflow-auto p-6 space-y-4 bg-background">
           {/* Media Preview */}
           {asset.mimeType.startsWith('image/') && (
-            <div className="flex items-center justify-center w-full bg-gray-50 rounded-lg">
+            <div className="flex items-center justify-center w-full bg-muted rounded-lg">
               <img 
                 src={getOriginalImageUrl()}
                 alt={asset.fileName}
@@ -228,7 +228,7 @@ export function MediaAssetViewer({
           )}
           
           {!asset.mimeType.startsWith('image/') && !asset.mimeType.startsWith('video/') && (
-            <div className="flex items-center justify-center h-64 bg-gray-100 rounded-lg">
+            <div className="flex items-center justify-center h-64 bg-muted rounded-lg">
               <div className="text-center">
                 <File className="h-16 w-16 mx-auto text-gray-400" />
                 <p className="mt-2 text-sm text-gray-500">Preview not available</p>
@@ -237,7 +237,7 @@ export function MediaAssetViewer({
           )}
 
           {/* File Details */}
-          <div className="space-y-2 pt-4 border-t bg-white">
+          <div className="space-y-2 pt-4 border-t bg-background">
             <div className="grid grid-cols-2 gap-2 text-sm">
               <div>
                 <span className="font-medium">File Name:</span>
@@ -257,7 +257,7 @@ export function MediaAssetViewer({
               </div>
               <div className="col-span-2">
                 <span className="font-medium">File Path:</span>
-                <p className="text-gray-600 text-xs break-all font-mono bg-gray-50 p-2 rounded mt-1">
+                <p className="text-muted-foreground text-xs break-all font-mono bg-muted p-2 rounded mt-1">
                   {asset.filePath}
                 </p>
               </div>
@@ -265,7 +265,7 @@ export function MediaAssetViewer({
           </div>
 
           {/* Actions */}
-          <div className="flex justify-end gap-2 pt-4 border-t bg-white">
+          <div className="flex justify-end gap-2 pt-4 border-t bg-background">
             <Button variant="outline" onClick={onClose}>
               Close
             </Button>
@@ -277,7 +277,7 @@ export function MediaAssetViewer({
                     Delete
                   </Button>
                 </AlertDialogTrigger>
-                <AlertDialogContent className="bg-white">
+                <AlertDialogContent className="bg-background">
                   <AlertDialogHeader>
                     <AlertDialogTitle className="text-gray-900">Are you sure?</AlertDialogTitle>
                     <AlertDialogDescription className="text-gray-600">
