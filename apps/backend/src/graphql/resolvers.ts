@@ -147,8 +147,10 @@ export const resolvers = {
         }
 
         const entries = await fs.readdir(dirPath, { withFileTypes: true });
+        // Filter out hidden/system files like .DS_Store
+        const filteredEntries = entries.filter(entry => !entry.name.startsWith('.'));
         const children = await Promise.all(
-          entries.map(entry => buildTree(path.join(dirPath, entry.name)))
+          filteredEntries.map(entry => buildTree(path.join(dirPath, entry.name)))
         );
 
         return {
