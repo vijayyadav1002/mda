@@ -9,9 +9,7 @@
     "start": "node dist/index.js",
     "db:migrate": "tsx src/db/migrate.ts",
     "db:seed": "tsx src/db/seed.ts",
-    "clean": "rm -rf dist",
-    "typecheck": "tsc --noEmit",
-    "lint": "eslint . --ext .ts"
+    "clean": "rm -rf dist"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.1",

@@ -129,35 +129,3 @@ export async function removeFile(filePath: string) {
     console.error(`Error removing file ${filePath} from index:`, error);
   }
 }
-
-
-export async function reIndexMediaLibrary() {
-  try {
-    const mediaPath = config.mediaLibraryPath;
-    
-    // Ensure media library path exists
-    try {
-      await fs.access(mediaPath);
-    } catch {
-      console.warn(`Media library path does not exist: ${mediaPath}`);
-      return;
-    }
-
-    // Clear existing index
-    await db.query('DELETE FROM media_assets');
-    console.log('Cleared existing media index');
-
-    // Re-index all files
-    const files = await scanDirectory(mediaPath);
-    console.log(`Found ${files.length} media files to re-index`);
-
-    for (const filePath of files) {
-      await indexFile(filePath);
-    }
-
-    console.log('Media library re-indexing completed');
-  } catch (error) {
-    console.error('Error re-indexing media library:', error);
-    throw error;
-  }
-}

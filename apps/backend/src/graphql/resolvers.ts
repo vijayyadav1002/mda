@@ -27,6 +27,12 @@ export const resolvers = {
       };
     },
 
+    hasAdminUser: async () => {
+      const result = await db.query('SELECT COUNT(*) FROM users WHERE role = $1', ['admin']);
+      const adminCount = parseInt(result.rows[0].count, 10);
+      return adminCount > 0;
+    },
+
     users: async (_: any, __: any, context: GraphQLContext) => {
       if (!context.user || context.user.role !== 'admin') {
         throw new Error('Admin access required');
@@ -132,7 +138,9 @@ export const resolvers = {
               fileName: result.rows[0].file_name,
               fileSize: result.rows[0].file_size.toString(),
               mimeType: result.rows[0].mime_type,
-              thumbnailUrl: result.rows[0].thumbnail_path ? `/thumbnails/${path.basename(result.rows[0].thumbnail_path)}` : null
+              thumbnailUrl: result.rows[0].thumbnail_path ? `/thumbnails/${path.basename(result.rows[0].thumbnail_path)}` : null,
+              transcodedUrl: result.rows[0].transcoded_path ? `/transcoded/${path.basename(result.rows[0].transcoded_path)}` : null,
+              createdAt: result.rows[0].created_at.toISOString()
             } : null
           };
         }
@@ -151,86 +159,6 @@ export const resolvers = {
       };
 
       return buildTree(config.mediaLibraryPath);
-    },
-
-    directoryRoot: async (_: any, __: any, context: GraphQLContext) => {
-      if (!context.user) throw new Error('Unauthorized');
-      const root = config.mediaLibraryPath;
-      let realRoot = root;
-      try {
-        realRoot = await fs.realpath(root);
-      } catch {}
-      return {
-        name: path.basename(realRoot),
-        path: realRoot.replace(/\/+$/, ''),
-        type: 'directory',
-        children: []
-      };
-    },
-
-    directoryChildren: async (_: any, args: { path: string }, context: GraphQLContext) => {
-      if (!context.user) throw new Error('Unauthorized');
-
-      const normalize = (p: string) => p.replace(/\/+$/, '');
-
-      // Real paths for consistency (handles symlinks)
-      let rootReal: string;
-      let reqReal: string;
-      try {
-        rootReal = await fs.realpath(config.mediaLibraryPath);
-      } catch {
-        rootReal = path.resolve(config.mediaLibraryPath);
-      }
-      try {
-        reqReal = await fs.realpath(args.path);
-      } catch {
-        reqReal = path.resolve(args.path);
-      }
-      rootReal = normalize(rootReal);
-      reqReal = normalize(reqReal);
-
-      // Safety: ensure path is within root
-      if (!reqReal.startsWith(rootReal)) {
-        throw new Error('Path outside of media library');
-      }
-
-      const entries = await fs.readdir(reqReal, { withFileTypes: true });
-      const nodes = await Promise.all(entries.map(async (entry) => {
-        const full = path.join(reqReal, entry.name);
-        let fullReal = full;
-        try {
-          fullReal = await fs.realpath(full);
-        } catch {}
-        fullReal = normalize(fullReal);
-
-        if (entry.isDirectory()) {
-          return {
-            name: entry.name,
-            path: fullReal,
-            type: 'directory',
-            children: []
-          };
-        } else {
-          const result = await db.query('SELECT * FROM media_assets WHERE file_path = $1', [fullReal]);
-          const row = result.rows[0];
-          return {
-            name: entry.name,
-            path: fullReal,
-            type: 'file',
-            children: [],
-            mediaAsset: row ? {
-              id: row.id,
-              filePath: row.file_path,
-              fileName: row.file_name,
-              fileSize: row.file_size.toString(),
-              mimeType: row.mime_type,
-              thumbnailUrl: row.thumbnail_path ? `/thumbnails/${path.basename(row.thumbnail_path)}` : null
-            } : null
-          };
-        }
-      }));
-
-      return nodes;
     },
 
     auditLogs: async (_: any, args: { limit?: number; offset?: number }, context: GraphQLContext) => {
@@ -346,8 +274,8 @@ export const resolvers = {
         throw new Error('Admin access required');
       }
 
-      if (!['admin', 'readonly'].includes(args.role)) {
-        throw new Error('Invalid role. Must be admin or readonly');
+      if (!['admin', 'editor', 'readonly'].includes(args.role)) {
+        throw new Error('Invalid role. Must be admin, editor, or readonly');
       }
 
       const passwordHash = await hashPassword(args.password);
@@ -372,25 +300,114 @@ export const resolvers = {
       };
     },
 
+    updateUserRole: async (_: any, args: { id: string; role: string }, context: GraphQLContext) => {
+      if (!context.user || context.user.role !== 'admin') {
+        throw new Error('Admin access required');
+      }
+
+      if (!['admin', 'editor', 'readonly'].includes(args.role)) {
+        throw new Error('Invalid role. Must be admin, editor, or readonly');
+      }
+
+      if (context.user.id === Number.parseInt(args.id, 10)) {
+        throw new Error('Cannot change your own role');
+      }
+
+      const result = await db.query(
+        'UPDATE users SET role = $1 WHERE id = $2 RETURNING *',
+        [args.role, args.id]
+      );
+
+      if (result.rows.length === 0) {
+        throw new Error('User not found');
+      }
+
+      const user = result.rows[0];
+
+      await logAudit(context.user.id, 'UPDATE_USER_ROLE', 'user', user.id, {
+        newRole: args.role
+      });
+
+      return {
+        id: user.id,
+        username: user.username,
+        role: user.role,
+        createdAt: user.created_at.toISOString()
+      };
+    },
+
+    resetPassword: async (_: any, args: { userId: string; newPassword: string }, context: GraphQLContext) => {
+      if (!context.user || context.user.role !== 'admin') {
+        throw new Error('Admin access required');
+      }
+
+      const passwordHash = await hashPassword(args.newPassword);
+
+      const result = await db.query(
+        'UPDATE users SET password_hash = $1 WHERE id = $2',
+        [passwordHash, args.userId]
+      );
+
+      if (result.rowCount === 0) {
+        throw new Error('User not found');
+      }
+
+      await logAudit(context.user.id, 'RESET_PASSWORD', 'user', Number.parseInt(args.userId, 10));
+
+      return true;
+    },
+
+    changeMyPassword: async (_: any, args: { currentPassword: string; newPassword: string }, context: GraphQLContext) => {
+      if (!context.user) {
+        throw new Error('Unauthorized');
+      }
+
+      const userResult = await db.query(
+        'SELECT password_hash FROM users WHERE id = $1',
+        [context.user.id]
+      );
+
+      if (userResult.rows.length === 0) {
+        throw new Error('User not found');
+      }
+
+      const isValid = await verifyPassword(args.currentPassword, userResult.rows[0].password_hash);
+      
+      if (!isValid) {
+        throw new Error('Current password is incorrect');
+      }
+
+      const passwordHash = await hashPassword(args.newPassword);
+
+      await db.query(
+        'UPDATE users SET password_hash = $1 WHERE id = $2',
+        [passwordHash, context.user.id]
+      );
+
+      await logAudit(context.user.id, 'CHANGE_PASSWORD', 'user', context.user.id);
+
+      return true;
+    },
+
     deleteUser: async (_: any, args: { id: string }, context: GraphQLContext) => {
       if (!context.user || context.user.role !== 'admin') {
         throw new Error('Admin access required');
       }
 
-      if (context.user.id === parseInt(args.id, 10)) {
+      if (context.user.id === Number.parseInt(args.id, 10)) {
         throw new Error('Cannot delete yourself');
       }
 
       await db.query('DELETE FROM users WHERE id = $1', [args.id]);
 
-      await logAudit(context.user.id, 'DELETE_USER', 'user', parseInt(args.id, 10));
+      await logAudit(context.user.id, 'DELETE_USER', 'user', Number.parseInt(args.id, 10));
 
       return true;
     },
 
     moveMediaAsset: async (_: any, args: { id: string; newPath: string }, context: GraphQLContext) => {
-      if (!context.user || context.user.role !== 'admin') {
-        throw new Error('Admin access required');
+      if (!context.user || !['admin', 'editor'].includes(context.user.role)) {
+        throw new Error('Admin or Editor access required');
       }
 
       const result = await db.query('SELECT * FROM media_assets WHERE id = $1', [args.id]);
@@ -431,8 +448,8 @@ export const resolvers = {
     },
 
     renameMediaAsset: async (_: any, args: { id: string; newName: string }, context: GraphQLContext) => {
-      if (!context.user || context.user.role !== 'admin') {
-        throw new Error('Admin access required');
+      if (!context.user || !['admin', 'editor'].includes(context.user.role)) {
+        throw new Error('Admin or Editor access required');
       }
 
       const result = await db.query('SELECT * FROM media_assets WHERE id = $1', [args.id]);
@@ -474,8 +491,8 @@ export const resolvers = {
     },
 
     deleteMediaAsset: async (_: any, args: { id: string }, context: GraphQLContext) => {
-      if (!context.user || context.user.role !== 'admin') {
-        throw new Error('Admin access required');
+      if (!context.user || !['admin', 'editor'].includes(context.user.role)) {
+        throw new Error('Admin or Editor access required');
       }
 
       const result = await db.query('SELECT * FROM media_assets WHERE id = $1', [args.id]);
@@ -502,8 +519,8 @@ export const resolvers = {
       args: { id: string; quality?: number; overwrite?: boolean },
       context: GraphQLContext
     ) => {
-      if (!context.user || context.user.role !== 'admin') {
-        throw new Error('Admin access required');
+      if (!context.user || !['admin', 'editor'].includes(context.user.role)) {
+        throw new Error('Admin or Editor access required');
       }
 
       const result = await db.query('SELECT * FROM media_assets WHERE id = $1', [args.id]);

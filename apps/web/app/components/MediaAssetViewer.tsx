@@ -1,26 +1,12 @@
-import { Download, File, Trash2 } from "lucide-react";
+import { Download, File, Maximize2, Minimize2, X } from "lucide-react";
 import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
 } from "~/components/ui/dialog";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "~/components/ui/alert-dialog";
 import { Button } from "~/components/ui/button";
-import { createGraphQLClient } from "~/lib/api";
-import { DELETE_MEDIA_ASSET } from "~/lib/graphql";
 
 interface MediaAsset {
   id: string;
@@ -37,48 +23,24 @@ interface MediaAssetViewerProps {
   readonly asset: MediaAsset | null;
   readonly isOpen: boolean;
   readonly onClose: () => void;
-  readonly onDelete?: () => void;
   readonly apiUrl: string;
-  readonly isAdmin: boolean;
-  readonly mediaRootPath?: string | null;
 }
 
 export function MediaAssetViewer({
   asset,
   isOpen,
   onClose,
-  onDelete,
   apiUrl,
-  isAdmin,
-  mediaRootPath,
 }: Readonly<MediaAssetViewerProps>) {
   const [imageDimensions, setImageDimensions] = useState({ width: 0, height: 0 });
   const [currentVideoId, setCurrentVideoId] = useState<string | null>(null);
-  const [isAlertOpen, setIsAlertOpen] = useState(false);
-
-  const handleDelete = async () => {
-    try {
-      const client = createGraphQLClient(localStorage.getItem('auth_token') || '');
-      const response = await client.request(DELETE_MEDIA_ASSET, {
-        id: asset!.id,
-      });
-      
-      if (response.deleteMediaAsset.success) {
-        setIsAlertOpen(false); // Close the alert dialog
-        onClose(); // Close the main dialog
-        onDelete?.(); // Refresh the media list
-      } else {
-        console.error('Failed to delete:', response.deleteMediaAsset.message);
-      }
-    } catch (error) {
-      console.error('Error deleting media asset:', error);
-    }
-  };
+  const [isFullscreen, setIsFullscreen] = useState(false);
   
   // Reset dimensions when dialog closes or asset changes
   useEffect(() => {
     if (!isOpen) {
       setImageDimensions({ width: 0, height: 0 });
+      setIsFullscreen(false);
     }
   }, [isOpen, asset?.id]);
 
@@ -115,15 +77,10 @@ export function MediaAssetViewer({
 
   if (!asset) return null;
 
-  // Extract relative path from full path.
-  // Prefer stripping configured mediaRootPath; fallback to split on '/media-files/'.
+  // Extract relative path from full path (everything after media-files/)
   const getRelativePath = (fullPath: string) => {
-    if (mediaRootPath && fullPath.startsWith(mediaRootPath)) {
-      const rel = fullPath.slice(mediaRootPath.length);
-      return rel.startsWith('/') ? rel.slice(1) : rel;
-    }
     const parts = fullPath.split('/media-files/');
-    return parts.length > 1 ? parts[1] : fullPath.replace(/^\//, '');
+    return parts.length > 1 ? parts[1] : fullPath;
   };
 
   const getOriginalImageUrl = () => {
@@ -180,21 +137,98 @@ export function MediaAssetViewer({
     return new Date(dateString).toLocaleString();
   };
 
+  const toggleFullscreen = () => {
+    setIsFullscreen(!isFullscreen);
+  };
+
+  const handleClose = () => {
+    setIsFullscreen(false);
+    onClose();
+  };
+
+  // Fullscreen overlay component
+  if (isFullscreen && asset) {
+    return (
+      <div className="fixed inset-0 z-50 bg-black flex items-center justify-center">
+        <div className="relative w-full h-full max-w-[100vw] max-h-[100vh] flex items-center justify-center p-4">
+          {/* Close and minimize buttons */}
+          <div className="absolute top-4 right-4 z-10 flex gap-2">
+            <button
+              onClick={toggleFullscreen}
+              className="p-3 bg-black/50 hover:bg-black/70 text-white rounded-lg backdrop-blur-sm transition-all"
+              title="Exit Fullscreen"
+            >
+              <Minimize2 className="w-5 h-5" />
+            </button>
+            <button
+              onClick={handleClose}
+              className="p-3 bg-black/50 hover:bg-black/70 text-white rounded-lg backdrop-blur-sm transition-all"
+              title="Close"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* Fullscreen media content */}
+          {asset.mimeType.startsWith('image/') && (
+            <button
+              onClick={toggleFullscreen}
+              className="max-w-full max-h-full cursor-pointer focus:outline-none flex items-center justify-center"
+              type="button"
+              title="Click to exit fullscreen"
+            >
+              <img
+                src={getOriginalImageUrl()}
+                alt={asset.fileName}
+                className="max-w-full max-h-[calc(100vh-120px)] object-contain"
+              />
+            </button>
+          )}
+
+          {asset.mimeType.startsWith('video/') && (
+            <video
+              controls
+              autoPlay
+              className="max-w-full max-h-[calc(100vh-120px)] object-contain"
+              preload="metadata"
+            >
+              <source src={`${apiUrl}/video/${asset.id}`} type="video/mp4" />
+              <track kind="captions" />
+              Your browser does not support the video tag.
+            </video>
+          )}
+
+          {/* File info overlay */}
+          <div className="absolute bottom-4 left-4 right-4 max-w-4xl mx-auto bg-black/50 backdrop-blur-md text-white p-4 rounded-lg">
+            <h3 className="font-semibold text-lg mb-2 truncate">{asset.fileName}</h3>
+            <div className="flex gap-6 text-sm flex-wrap">
+              <span>{formatFileSize(asset.fileSize)}</span>
+              <span>{asset.mimeType}</span>
+              {imageDimensions.width > 0 && (
+                <span>{imageDimensions.width} × {imageDimensions.height}</span>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className={`${getDialogSize()} max-h-[90vh] overflow-hidden p-0 flex flex-col bg-background`}>
-        <DialogHeader className="px-6 py-4 border-b bg-background">
-          <DialogTitle>{asset.fileName}</DialogTitle>
+      <DialogContent className={`${getDialogSize()} max-h-[90vh] overflow-hidden p-0 flex flex-col bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700`}>
+        <DialogHeader className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+          <DialogTitle className="text-gray-900 dark:text-white">{asset.fileName}</DialogTitle>
         </DialogHeader>
         
-        <div className="flex-1 overflow-auto p-6 space-y-4 bg-background">
+        <div className="flex-1 overflow-auto p-6 space-y-4 bg-white dark:bg-gray-800">
           {/* Media Preview */}
           {asset.mimeType.startsWith('image/') && (
-            <div className="flex items-center justify-center w-full bg-muted rounded-lg">
+            <div className="relative flex items-center justify-center w-full overflow-auto max-h-[60vh] bg-gray-50 dark:bg-gray-900 rounded-lg p-4 group">
               <img 
                 src={getOriginalImageUrl()}
                 alt={asset.fileName}
-                className="w-auto h-auto max-w-full"
+                className="w-auto h-auto max-w-none rounded-lg shadow-lg"
                 onLoad={handleImageLoad}
                 onError={(e) => {
                   console.error('Image load error:', e);
@@ -202,11 +236,19 @@ export function MediaAssetViewer({
                   e.currentTarget.src = `${apiUrl}${asset.thumbnailUrl}`;
                 }}
               />
+              <button
+                onClick={toggleFullscreen}
+                className="absolute top-4 right-4 p-2.5 bg-black/50 hover:bg-black/70 text-white rounded-lg backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-all"
+                title="View Fullscreen"
+                type="button"
+              >
+                <Maximize2 className="w-5 h-5" />
+              </button>
             </div>
           )}
           
           {asset.mimeType.startsWith('video/') && (
-            <div className="flex items-center justify-center w-full bg-black rounded-lg">
+            <div className="relative flex items-center justify-center w-full bg-black dark:bg-gray-950 rounded-lg overflow-hidden shadow-lg group">
               <video 
                 controls
                 className="max-w-full max-h-[60vh] object-contain"
@@ -224,40 +266,48 @@ export function MediaAssetViewer({
                 <track kind="captions" />
                 Your browser does not support the video tag.
               </video>
+              <button
+                onClick={toggleFullscreen}
+                className="absolute top-4 right-4 p-2.5 bg-black/50 hover:bg-black/70 text-white rounded-lg backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-all"
+                title="View Fullscreen"
+                type="button"
+              >
+                <Maximize2 className="w-5 h-5" />
+              </button>
             </div>
           )}
           
           {!asset.mimeType.startsWith('image/') && !asset.mimeType.startsWith('video/') && (
-            <div className="flex items-center justify-center h-64 bg-muted rounded-lg">
+            <div className="flex items-center justify-center h-64 bg-gray-100 dark:bg-gray-900 rounded-lg">
               <div className="text-center">
-                <File className="h-16 w-16 mx-auto text-gray-400" />
-                <p className="mt-2 text-sm text-gray-500">Preview not available</p>
+                <File className="h-16 w-16 mx-auto text-gray-400 dark:text-gray-500" />
+                <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">Preview not available</p>
               </div>
             </div>
           )}
 
           {/* File Details */}
-          <div className="space-y-2 pt-4 border-t bg-background">
-            <div className="grid grid-cols-2 gap-2 text-sm">
+          <div className="space-y-2 pt-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+            <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
-                <span className="font-medium">File Name:</span>
-                <p className="text-gray-600 break-all">{asset.fileName}</p>
+                <span className="font-semibold text-gray-900 dark:text-gray-100">File Name:</span>
+                <p className="text-gray-600 dark:text-gray-300 break-all mt-1">{asset.fileName}</p>
               </div>
               <div>
-                <span className="font-medium">File Size:</span>
-                <p className="text-gray-600">{formatFileSize(asset.fileSize)}</p>
+                <span className="font-semibold text-gray-900 dark:text-gray-100">File Size:</span>
+                <p className="text-gray-600 dark:text-gray-300 mt-1">{formatFileSize(asset.fileSize)}</p>
               </div>
               <div>
-                <span className="font-medium">Type:</span>
-                <p className="text-gray-600">{asset.mimeType}</p>
+                <span className="font-semibold text-gray-900 dark:text-gray-100">Type:</span>
+                <p className="text-gray-600 dark:text-gray-300 mt-1">{asset.mimeType}</p>
               </div>
               <div>
-                <span className="font-medium">Created:</span>
-                <p className="text-gray-600">{formatDate(asset.createdAt)}</p>
+                <span className="font-semibold text-gray-900 dark:text-gray-100">Created:</span>
+                <p className="text-gray-600 dark:text-gray-300 mt-1">{formatDate(asset.createdAt)}</p>
               </div>
               <div className="col-span-2">
-                <span className="font-medium">File Path:</span>
-                <p className="text-muted-foreground text-xs break-all font-mono bg-muted p-2 rounded mt-1">
+                <span className="font-semibold text-gray-900 dark:text-gray-100">File Path:</span>
+                <p className="text-gray-600 dark:text-gray-300 text-xs break-all font-mono bg-gray-50 dark:bg-gray-900 p-3 rounded-lg mt-1 border border-gray-200 dark:border-gray-700">
                   {asset.filePath}
                 </p>
               </div>
@@ -265,39 +315,18 @@ export function MediaAssetViewer({
           </div>
 
           {/* Actions */}
-          <div className="flex justify-end gap-2 pt-4 border-t bg-background">
-            <Button variant="outline" onClick={onClose}>
+          <div className="flex justify-end gap-2 pt-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+            <Button 
+              variant="outline" 
+              onClick={onClose}
+              className="border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
+            >
               Close
             </Button>
-            {isAdmin && (
-              <AlertDialog open={isAlertOpen} onOpenChange={setIsAlertOpen}>
-                <AlertDialogTrigger asChild>
-                  <Button variant="destructive">
-                    <Trash2 className="w-4 h-4 mr-2" />
-                    Delete
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent className="bg-background">
-                  <AlertDialogHeader>
-                    <AlertDialogTitle className="text-gray-900">Are you sure?</AlertDialogTitle>
-                    <AlertDialogDescription className="text-gray-600">
-                      This action cannot be undone. This will permanently delete{' '}
-                      <span className="font-medium text-gray-900">{asset.fileName}</span> and remove the data from the server.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel onClick={() => setIsAlertOpen(false)}>Cancel</AlertDialogCancel>
-                    <AlertDialogAction
-                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                      onClick={handleDelete}
-                    >
-                      Delete
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-            )}
-            <Button variant="default">
+            <Button 
+              variant="default"
+              className="bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600"
+            >
               <Download className="w-4 h-4 mr-2" />
               Download
             </Button>
