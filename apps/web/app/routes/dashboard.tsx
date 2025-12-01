@@ -6,7 +6,7 @@ import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "~/components/ui/dialog";
 import { MediaAssetViewer } from "~/components/MediaAssetViewer";
-import { Folder, FileImage, ArrowLeft, ChevronDown, ChevronRight, Trash2, CheckSquare, Square, Moon, Sun, Users, Key } from "lucide-react";
+import { Folder, FileImage, ArrowLeft, ChevronDown, ChevronRight, Trash2, CheckSquare, Square, Moon, Sun, Users, Key, RotateCcw } from "lucide-react";
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
@@ -34,6 +34,12 @@ const DELETE_MEDIA_ASSET_MUTATION = `
 const CHANGE_MY_PASSWORD_MUTATION = `
   mutation ChangeMyPassword($currentPassword: String!, $newPassword: String!) {
     changeMyPassword(currentPassword: $currentPassword, newPassword: $newPassword)
+  }
+`;
+
+const REFRESH_MEDIA_LIBRARY_MUTATION = `
+  mutation RefreshMediaLibrary {
+    refreshMediaLibrary
   }
 `;
 
@@ -122,6 +128,7 @@ export default function Dashboard() {
     }
     return false;
   });
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -232,6 +239,28 @@ export default function Dashboard() {
       alert("Password changed successfully");
     } catch (err: any) {
       setPasswordError(err.message || "Failed to change password");
+    }
+  };
+
+  const handleRefreshMediaLibrary = async () => {
+    try {
+      setIsRefreshing(true);
+      const token = getAuthToken();
+      if (!token) return;
+
+      const client = createGraphQLClient(token);
+      const response: any = await client.request(REFRESH_MEDIA_LIBRARY_MUTATION);
+      
+      console.log("Refresh response:", response);
+      
+      // Reload the media library
+      await loadData();
+      alert("Media library refreshed successfully!");
+    } catch (err: any) {
+      console.error("Failed to refresh media library:", err);
+      alert(`Failed to refresh media library: ${err.message || 'Unknown error'}`);
+    } finally {
+      setIsRefreshing(false);
     }
   };
 
@@ -467,6 +496,17 @@ export default function Dashboard() {
               ) : (
                 <Moon className="w-5 h-5 text-gray-600" />
               )}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleRefreshMediaLibrary}
+              disabled={isRefreshing}
+              className={`border-gray-300 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700 ${isRefreshing ? 'opacity-60 cursor-not-allowed' : ''}`}
+              title="Refresh media library to detect new files"
+            >
+              <RotateCcw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+              {isRefreshing ? 'Refreshing...' : 'Refresh'}
             </Button>
             {user && (
               <div className="flex items-center gap-3">

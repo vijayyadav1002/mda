@@ -71,5 +71,6 @@ export const schema = `
     renameMediaAsset(id: ID!, newName: String!): MediaAsset!
     deleteMediaAsset(id: ID!): Boolean!
     compressMediaAsset(id: ID!, quality: Int, overwrite: Boolean): MediaAsset!
+    refreshMediaLibrary: String!
   }
 `;

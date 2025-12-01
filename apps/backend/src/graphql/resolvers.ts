@@ -2,6 +2,7 @@ import { db } from '../db/index.js';
 import { hashPassword, verifyPassword } from '../services/auth.js';
 import { logAudit } from '../services/audit.js';
 import { compressImage, compressVideo } from '../services/thumbnail.js';
+import { indexMediaLibrary } from '../services/media-indexer.js';
 import type { GraphQLContext } from './context.js';
 import fs from 'fs/promises';
 import path from 'path';
@@ -588,6 +589,25 @@ export const resolvers = {
         createdAt: row.created_at.toISOString(),
         updatedAt: row.updated_at.toISOString()
       };
+    },
+
+    refreshMediaLibrary: async (_: any, __: any, context: GraphQLContext) => {
+      if (!context.user || !['admin', 'editor'].includes(context.user.role)) {
+        throw new Error('Admin or Editor access required');
+      }
+
+      try {
+        console.log('[GRAPHQL] Refreshing media library...');
+        await indexMediaLibrary();
+        console.log('[GRAPHQL] Media library refresh completed');
+        
+        await logAudit(context.user.id, 'REFRESH_MEDIA_LIBRARY', 'media_library');
+        
+        return 'Media library refreshed successfully';
+      } catch (error) {
+        console.error('[GRAPHQL] Error refreshing media library:', error);
+        throw new Error(`Failed to refresh media library: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
     }
   }
 };

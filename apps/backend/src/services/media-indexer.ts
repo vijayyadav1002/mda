@@ -66,15 +66,15 @@ async function scanDirectory(dir: string): Promise<string[]> {
 export async function indexFile(filePath: string) {
   try {
     // Check if file exists
+    let stats;
     try {
-      await fs.access(filePath);
+      stats = await fs.stat(filePath);
     } catch {
       console.log(`File no longer exists: ${filePath}`);
       return;
     }
 
     // Check if already indexed and up to date
-    const stats = await fs.stat(filePath);
     const existing = await db.query(
       'SELECT id, updated_at FROM media_assets WHERE file_path = $1',
       [filePath]
@@ -86,26 +86,60 @@ export async function indexFile(filePath: string) {
         console.log(`Already indexed and up to date: ${path.basename(filePath)}`);
         return;
       }
-      // File was modified, delete old entry
+      // File was modified, delete old entry and clean up thumbnail
+      try {
+        const oldResult = await db.query(
+          'SELECT thumbnail_path FROM media_assets WHERE id = $1',
+          [existing.rows[0].id]
+        );
+        if (oldResult.rows.length > 0 && oldResult.rows[0].thumbnail_path) {
+          try {
+            await fs.unlink(oldResult.rows[0].thumbnail_path);
+          } catch (e) {
+            // Thumbnail may not exist, that's ok
+          }
+        }
+      } catch (e) {
+        console.warn(`Could not clean up old thumbnail: ${e}`);
+      }
       await db.query('DELETE FROM media_assets WHERE id = $1', [existing.rows[0].id]);
     }
 
     const fileName = path.basename(filePath);
     const ext = path.extname(fileName).toLowerCase();
     
+    // Validate file format
+    if (!SUPPORTED_FORMATS.includes(ext)) {
+      console.log(`Skipping unsupported format: ${ext}`);
+      return;
+    }
+
     // Determine mime type
     let mimeType = 'application/octet-stream';
     const isVideo = SUPPORTED_VIDEO_FORMATS.includes(ext);
     
     if (SUPPORTED_IMAGE_FORMATS.includes(ext)) {
       mimeType = `image/${ext.slice(1)}`;
-      if (ext === '.jpg') mimeType = 'image/jpeg';
+      if (ext === '.jpg' || ext === '.jpeg') mimeType = 'image/jpeg';
+      if (ext === '.heic') mimeType = 'image/heic';
     } else if (isVideo) {
       mimeType = `video/${ext.slice(1)}`;
+      if (ext === '.mp4') mimeType = 'video/mp4';
     }
 
-    // Generate thumbnail (always generate for both images and videos)
-    const thumbnailPath = await generateThumbnail(filePath);
+    // Generate thumbnail with better error handling
+    let thumbnailPath: string | null = null;
+    try {
+      thumbnailPath = await generateThumbnail(filePath);
+      if (!thumbnailPath) {
+        throw new Error('Thumbnail generation returned null');
+      }
+    } catch (error) {
+      console.error(`Error generating thumbnail for ${fileName}: ${error}`);
+      // Use a placeholder or skip if thumbnail generation fails
+      // For now, we'll continue without a thumbnail
+      thumbnailPath = null;
+    }
 
     // Insert into database (without transcoded path - will be generated on-demand)
     await db.query(
@@ -115,9 +149,10 @@ export async function indexFile(filePath: string) {
       [filePath, fileName, stats.size, mimeType, thumbnailPath]
     );
 
-    console.log(`✓ Indexed: ${fileName}`);
+    console.log(`✓ Indexed: ${fileName}${thumbnailPath ? ' (thumbnail generated)' : ' (no thumbnail)'}`);
   } catch (error) {
     console.error(`Error indexing file ${filePath}:`, error);
+    throw error; // Re-throw so watcher can log it properly
   }
 }
 
