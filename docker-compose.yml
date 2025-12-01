@@ -8,8 +8,6 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     ports:
-      # Bind container Postgres to host port 5433 by default to avoid collisions
-      # with a local Postgres instance on macOS that often listens on 5432.
       - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -19,25 +17,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-
-  # Optional: pgAdmin for database management
-  pgadmin:
-    image: dpage/pgadmin4:latest
-    container_name: mda-pgadmin
-    restart: unless-stopped
-    environment:
-      PGADMIN_DEFAULT_EMAIL: admin@mda.local
-      PGADMIN_DEFAULT_PASSWORD: admin
-      PGADMIN_CONFIG_SERVER_MODE: 'False'
-    ports:
-      - "5050:80"
-    depends_on:
-      - postgres
-    volumes:
-      - pgadmin_data:/var/lib/pgadmin
-
 volumes:
   postgres_data:
-    driver: local
-  pgadmin_data:
     driver: local

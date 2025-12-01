@@ -5,6 +5,19 @@ import crypto from 'crypto';
 import fs from 'fs/promises';
 import { config } from '../config.js';
 
+// Register HEIF decoder
+try {
+  const heif = await import('libheif-js');
+  sharp.cache(false);
+  if (heif.default && heif.default.register) {
+    heif.default.register();
+  } else if (heif.register) {
+    heif.register();
+  }
+} catch (error) {
+  console.warn('Warning: HEIF decoder not available. HEIC files may not be processed.');
+}
+
 const SUPPORTED_IMAGE_FORMATS = ['.jpg', '.jpeg', '.png', '.heic', '.gif', '.webp', '.bmp'];
 const SUPPORTED_VIDEO_FORMATS = ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.m4v'];
 
@@ -33,7 +46,17 @@ export async function generateThumbnail(filePath: string): Promise<string> {
 
 async function generateImageThumbnail(inputPath: string, outputPath: string) {
   try {
-    await sharp(inputPath)
+    // For HEIC files, add extra error handling as they can be corrupted
+    const ext = path.extname(inputPath).toLowerCase();
+    
+    let pipeline = sharp(inputPath);
+    
+    // Add timeout and best effort for HEIC
+    if (ext === '.heic') {
+      pipeline = pipeline.failOnError(false);
+    }
+    
+    await pipeline
       .resize(300, 300, {
         fit: 'cover',
         position: 'center'

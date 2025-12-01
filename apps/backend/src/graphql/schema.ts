@@ -48,30 +48,29 @@ export const schema = `
     mediaAsset: MediaAsset
   }
 
-  type DeleteMediaAssetResponse {
-    success: Boolean!
-    message: String
-  }
-
   type Query {
     me: User
     users: [User!]!
     mediaAssets(limit: Int, offset: Int, mimeType: String): [MediaAsset!]!
     mediaAsset(id: ID!): MediaAsset
     directoryTree: DirectoryNode!
-    directoryRoot: DirectoryNode!
-    directoryChildren(path: String!): [DirectoryNode!]!
     auditLogs(limit: Int, offset: Int): [AuditLog!]!
+    hasAdminUser: Boolean!
   }
 
   type Mutation {
     login(username: String!, password: String!): AuthPayload!
     createFirstAdmin(username: String!, password: String!): AuthPayload!
     createUser(username: String!, password: String!, role: String!): User!
+    updateUserRole(id: ID!, role: String!): User!
     deleteUser(id: ID!): Boolean!
+    resetPassword(userId: ID!, newPassword: String!): Boolean!
+    changeMyPassword(currentPassword: String!, newPassword: String!): Boolean!
+    
     moveMediaAsset(id: ID!, newPath: String!): MediaAsset!
     renameMediaAsset(id: ID!, newName: String!): MediaAsset!
-    deleteMediaAsset(id: ID!): DeleteMediaAssetResponse!
+    deleteMediaAsset(id: ID!): Boolean!
     compressMediaAsset(id: ID!, quality: Int, overwrite: Boolean): MediaAsset!
+    refreshMediaLibrary: String!
   }
 `;
