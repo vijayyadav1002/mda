@@ -37,7 +37,7 @@ export async function indexMediaLibrary() {
   }
 }
 
-async function scanDirectory(dir: string, maxDepth: number = 50, currentDepth: number = 0, visited: Set<string> = new Set()): Promise<string[]> {
+async function scanDirectory(dir: string, maxDepth: number = 20, currentDepth: number = 0, visited: Set<string> = new Set()): Promise<string[]> {
   const files: string[] = [];
   
   // Prevent stack overflow from circular references
@@ -47,15 +47,13 @@ async function scanDirectory(dir: string, maxDepth: number = 50, currentDepth: n
   }
   
   try {
-    // Get the real path to detect circular references
-    const realPath = await fs.realpath(dir);
-    
-    if (visited.has(realPath)) {
+    // Use a simple string-based visited check first to catch circular refs early
+    if (visited.has(dir)) {
       console.warn(`Circular reference detected at ${dir}`);
       return files;
     }
     
-    visited.add(realPath);
+    visited.add(dir);
     
     const entries = await fs.readdir(dir, { withFileTypes: true });
     
@@ -66,15 +64,18 @@ async function scanDirectory(dir: string, maxDepth: number = 50, currentDepth: n
         // Use lstat to detect symlinks without following them
         const stats = await fs.lstat(fullPath);
         
-        // Skip symlinks to prevent circular references
+        // Skip symlinks to prevent circular references and symlink loops
         if (stats.isSymbolicLink()) {
           console.debug(`Skipping symlink: ${fullPath}`);
           continue;
         }
         
         if (stats.isDirectory()) {
-          const subFiles = await scanDirectory(fullPath, maxDepth, currentDepth + 1, visited);
-          files.push(...subFiles);
+          // Check visited before recursing
+          if (!visited.has(fullPath)) {
+            const subFiles = await scanDirectory(fullPath, maxDepth, currentDepth + 1, visited);
+            files.push(...subFiles);
+          }
         } else if (stats.isFile()) {
           const ext = path.extname(entry.name).toLowerCase();
           if (SUPPORTED_FORMATS.includes(ext)) {
