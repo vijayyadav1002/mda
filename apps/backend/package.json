@@ -17,15 +17,17 @@
     "@fastify/multipart": "^9.0.1",
     "@fastify/static": "^8.0.2",
     "bcrypt": "^5.1.1",
+    "bullmq": "^5.67.2",
     "chokidar": "^4.0.3",
+    "dotenv": "^16.4.5",
     "fastify": "^5.1.0",
-    "graphql": "^16.9.0",
-    "mercurius": "^15.0.0",
-    "pg": "^8.13.1",
-    "sharp": "^0.33.5",
-    "libheif-js": "^1.16.2",
     "fluent-ffmpeg": "^2.1.3",
-    "dotenv": "^16.4.5"
+    "graphql": "^16.9.0",
+    "libheif-js": "^1.16.2",
+    "mercurius": "^15.0.0",
+    "p-queue": "^9.1.0",
+    "pg": "^8.13.1",
+    "sharp": "^0.33.5"
   },
   "devDependencies": {
     "@mda/tsconfig": "*",

@@ -6,5 +6,7 @@ export const config = {
   databaseUrl: process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/mda',
   jwtSecret: process.env.JWT_SECRET || 'your-secret-key-change-this',
   mediaLibraryPath: process.env.MEDIA_LIBRARY_PATH || './media',
-  thumbnailCachePath: process.env.THUMBNAIL_CACHE_PATH || './cache/thumbnails'
+  thumbnailCachePath: process.env.THUMBNAIL_CACHE_PATH || './cache/thumbnails',
+  redisHost: process.env.REDIS_HOST || 'localhost',
+  redisPort: parseInt(process.env.REDIS_PORT || '6379', 10)
 };

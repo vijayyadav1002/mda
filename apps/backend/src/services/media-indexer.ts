@@ -2,7 +2,7 @@ import fs from 'fs/promises';
 import path from 'node:path';
 import { db } from '../db/index.js';
 import { config } from '../config.js';
-import { generateThumbnail } from './thumbnail.js';
+import { addToThumbnailQueue } from './queue.js';
 
 const SUPPORTED_IMAGE_FORMATS = ['.jpg', '.jpeg', '.png', '.heic', '.gif', '.webp', '.bmp'];
 const SUPPORTED_VIDEO_FORMATS = ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.m4v'];
@@ -11,7 +11,7 @@ const SUPPORTED_FORMATS = [...SUPPORTED_IMAGE_FORMATS, ...SUPPORTED_VIDEO_FORMAT
 export async function indexMediaLibrary() {
   try {
     const mediaPath = config.mediaLibraryPath;
-    
+
     // Ensure media library path exists
     try {
       await fs.access(mediaPath);
@@ -39,37 +39,37 @@ export async function indexMediaLibrary() {
 
 async function scanDirectory(dir: string, maxDepth: number = 20, currentDepth: number = 0, visited: Set<string> = new Set()): Promise<string[]> {
   const files: string[] = [];
-  
+
   // Prevent stack overflow from circular references
   if (currentDepth > maxDepth) {
     console.warn(`Max directory depth exceeded at ${dir}`);
     return files;
   }
-  
+
   try {
     // Use a simple string-based visited check first to catch circular refs early
     if (visited.has(dir)) {
       console.warn(`Circular reference detected at ${dir}`);
       return files;
     }
-    
+
     visited.add(dir);
-    
+
     const entries = await fs.readdir(dir, { withFileTypes: true });
-    
+
     for (const entry of entries) {
       const fullPath = path.join(dir, entry.name);
-      
+
       try {
         // Use lstat to detect symlinks without following them
         const stats = await fs.lstat(fullPath);
-        
+
         // Skip symlinks to prevent circular references and symlink loops
         if (stats.isSymbolicLink()) {
           console.debug(`Skipping symlink: ${fullPath}`);
           continue;
         }
-        
+
         if (stats.isDirectory()) {
           // Check visited before recursing
           if (!visited.has(fullPath)) {
@@ -91,7 +91,7 @@ async function scanDirectory(dir: string, maxDepth: number = 20, currentDepth: n
   } catch (error) {
     console.error(`Error scanning directory ${dir}:`, error);
   }
-  
+
   return files;
 }
 
@@ -111,7 +111,7 @@ export async function indexFile(filePath: string) {
       'SELECT id, updated_at FROM media_assets WHERE file_path = $1',
       [filePath]
     );
-    
+
     if (existing.rows.length > 0) {
       const existingUpdated = new Date(existing.rows[0].updated_at);
       if (existingUpdated >= stats.mtime) {
@@ -139,7 +139,7 @@ export async function indexFile(filePath: string) {
 
     const fileName = path.basename(filePath);
     const ext = path.extname(fileName).toLowerCase();
-    
+
     // Validate file format
     if (!SUPPORTED_FORMATS.includes(ext)) {
       console.log(`Skipping unsupported format: ${ext}`);
@@ -149,7 +149,7 @@ export async function indexFile(filePath: string) {
     // Determine mime type
     let mimeType = 'application/octet-stream';
     const isVideo = SUPPORTED_VIDEO_FORMATS.includes(ext);
-    
+
     if (SUPPORTED_IMAGE_FORMATS.includes(ext)) {
       mimeType = `image/${ext.slice(1)}`;
       if (ext === '.jpg' || ext === '.jpeg') mimeType = 'image/jpeg';
@@ -159,29 +159,21 @@ export async function indexFile(filePath: string) {
       if (ext === '.mp4') mimeType = 'video/mp4';
     }
 
-    // Generate thumbnail with better error handling
-    let thumbnailPath: string | null = null;
-    try {
-      thumbnailPath = await generateThumbnail(filePath);
-      if (!thumbnailPath) {
-        throw new Error('Thumbnail generation returned null');
-      }
-    } catch (error) {
-      console.error(`Error generating thumbnail for ${fileName}: ${error}`);
-      // Use a placeholder or skip if thumbnail generation fails
-      // For now, we'll continue without a thumbnail
-      thumbnailPath = null;
-    }
-
     // Insert into database (without transcoded path - will be generated on-demand)
-    await db.query(
+    const result = await db.query(
       `INSERT INTO media_assets 
        (file_path, file_name, file_size, mime_type, thumbnail_path) 
-       VALUES ($1, $2, $3, $4, $5)`,
-      [filePath, fileName, stats.size, mimeType, thumbnailPath]
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id`,
+      [filePath, fileName, stats.size, mimeType, null]
     );
 
-    console.log(`✓ Indexed: ${fileName}${thumbnailPath ? ' (thumbnail generated)' : ' (no thumbnail)'}`);
+    const assetId = result.rows[0].id;
+
+    // Queue thumbnail generation
+    await addToThumbnailQueue({ filePath, assetId });
+
+    console.log(`✓ Indexed: ${fileName} (queued for processing)`);
   } catch (error) {
     console.error(`Error indexing file ${filePath}:`, error);
     throw error; // Re-throw so watcher can log it properly

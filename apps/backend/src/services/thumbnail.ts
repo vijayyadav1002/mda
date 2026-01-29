@@ -4,16 +4,14 @@ import path from 'path';
 import crypto from 'crypto';
 import fs from 'fs/promises';
 import { config } from '../config.js';
+import { db } from '../db/index.js';
 
 // Register HEIF decoder
 try {
+  // @ts-ignore
   const heif = await import('libheif-js');
-  sharp.cache(false);
-  if (heif.default && heif.default.register) {
-    heif.default.register();
-  } else if (heif.register) {
-    heif.register();
-  }
+
+
 } catch (error) {
   console.warn('Warning: HEIF decoder not available. HEIC files may not be processed.');
 }
@@ -48,14 +46,14 @@ async function generateImageThumbnail(inputPath: string, outputPath: string) {
   try {
     // For HEIC files, add extra error handling as they can be corrupted
     const ext = path.extname(inputPath).toLowerCase();
-    
+
     let pipeline = sharp(inputPath);
-    
+
     // Add timeout and best effort for HEIC
     if (ext === '.heic') {
-      pipeline = pipeline.failOnError(false);
+      pipeline = (pipeline as any).failOnError(false);
     }
-    
+
     await pipeline
       .resize(300, 300, {
         fit: 'cover',
@@ -98,8 +96,23 @@ export async function compressVideo(inputPath: string, outputPath: string): Prom
       .output(outputPath)
       .videoCodec('libx264')
       .audioCodec('aac')
+      .output(outputPath)
+      .videoCodec('libx264')
+      .audioCodec('aac')
       .on('end', () => resolve())
       .on('error', (err) => reject(err))
       .run();
   });
+}
+
+export async function generateAndSaveThumbnail(filePath: string, assetId: string) {
+  try {
+    const thumbnailPath = await generateThumbnail(filePath);
+    if (thumbnailPath) {
+      await db.query('UPDATE media_assets SET thumbnail_path = $1 WHERE id = $2', [thumbnailPath, assetId]);
+      console.log(`✓ Updated thumbnail for asset ${assetId}`);
+    }
+  } catch (error) {
+    console.error(`Failed to generate/save thumbnail for ${filePath}:`, error);
+  }
 }
