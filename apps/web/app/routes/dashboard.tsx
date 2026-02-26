@@ -92,7 +92,7 @@ interface MediaAsset {
   filePath: string;
   mimeType: string;
   fileSize: string;
-  thumbnailUrl: string;
+  thumbnailUrl: string | null;
   createdAt: string;
 }
 

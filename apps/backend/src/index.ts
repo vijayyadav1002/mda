@@ -16,6 +16,9 @@ import { startWorkers } from './services/queue.js';
 import { getWebCompatibleVideo, markTranscodeAccessed, startTranscodeCleanup, deleteTranscodedVideo, ensureHLS } from './services/video-transcode.js';
 import path from 'node:path';
 import fs from 'node:fs';
+import crypto from 'node:crypto';
+
+let workerHandles: ReturnType<typeof startWorkers> | null = null;
 
 const fastify = Fastify({
   logger: true
@@ -38,10 +41,14 @@ await fastify.register(multipart, {
 });
 
 // Serve thumbnails
+await fs.promises.mkdir(path.resolve(config.thumbnailCachePath), { recursive: true });
 await fastify.register(fastifyStatic, {
   root: path.resolve(config.thumbnailCachePath),
   prefix: '/thumbnails/'
 });
+
+const previewCachePath = path.resolve(path.dirname(config.thumbnailCachePath), 'previews');
+await fs.promises.mkdir(previewCachePath, { recursive: true });
 
 // Serve media files
 await fastify.register(fastifyStatic, {
@@ -61,6 +68,58 @@ await fastify.register(fastifyStatic, {
   root: hlsCachePath,
   prefix: '/hls/',
   decorateReply: false
+});
+
+// Web-compatible image endpoint (HEIC -> JPEG).
+fastify.get('/image/:id', async (request, reply) => {
+  const { id } = request.params as { id: string };
+
+  const result = await db.query('SELECT file_path, mime_type FROM media_assets WHERE id = $1', [id]);
+  if (result.rows.length === 0) {
+    return reply.code(404).send({ error: 'Image not found' });
+  }
+
+  const filePathRaw = result.rows[0].file_path as string;
+  const mimeType = result.rows[0].mime_type as string;
+
+  if (!mimeType.startsWith('image/')) {
+    return reply.code(400).send({ error: 'Not an image file' });
+  }
+
+  const absPath = path.resolve(filePathRaw);
+  const ext = path.extname(filePathRaw).toLowerCase();
+
+  // Most browsers don't support image/heic. Convert on-demand and cache.
+  if (mimeType === 'image/heic' || ext === '.heic') {
+    let stat: fs.Stats;
+    try {
+      stat = await fs.promises.stat(absPath);
+    } catch {
+      return reply.code(404).send({ error: 'Image not found on disk' });
+    }
+
+    const cacheKey = crypto
+      .createHash('md5')
+      .update(`${absPath}:${stat.mtimeMs}`)
+      .digest('hex');
+    const cachedPath = path.join(previewCachePath, `${cacheKey}.jpg`);
+
+    try {
+      await fs.promises.access(cachedPath);
+    } catch {
+      const { renderHeicToJpeg } = await import('./services/thumbnail.js');
+      await renderHeicToJpeg(absPath, cachedPath, { kind: 'inside', maxWidth: 2000, maxHeight: 2000, quality: 85 });
+    }
+
+    reply.header('Content-Type', 'image/jpeg');
+    reply.header('Cache-Control', 'public, max-age=86400');
+    return reply.send(fs.createReadStream(cachedPath));
+  }
+
+  // For non-HEIC images, stream the original from disk with its mime type.
+  reply.header('Content-Type', mimeType);
+  reply.header('Cache-Control', 'public, max-age=86400');
+  return reply.send(fs.createReadStream(absPath));
 });
 
 // On-demand video transcoding endpoint
@@ -188,6 +247,22 @@ fastify.get('/health', async () => {
   return { status: 'ok', timestamp: new Date().toISOString() };
 });
 
+fastify.get('/health/queues', async (_request, reply) => {
+  try {
+    const { encodingQueue, thumbnailQueue } = await import('./services/queue.js');
+    const [encoding, thumbnail] = await Promise.all([
+      encodingQueue.getJobCounts(),
+      thumbnailQueue.getJobCounts()
+    ]);
+    return { status: 'ok', queues: { encoding, thumbnail } };
+  } catch (error: any) {
+    return reply.code(503).send({
+      status: 'degraded',
+      error: error?.message ?? String(error)
+    });
+  }
+});
+
 // Startup
 const start = async () => {
   try {
@@ -211,7 +286,7 @@ const start = async () => {
     startTranscodeCleanup();
 
     // Start background queue workers
-    startWorkers();
+    workerHandles = startWorkers();
 
     await fastify.listen({
       port: config.port,

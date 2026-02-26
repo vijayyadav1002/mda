@@ -6,20 +6,68 @@ import fs from 'fs/promises';
 import { config } from '../config.js';
 import { db } from '../db/index.js';
 
-// Register HEIF decoder
-try {
-  // @ts-ignore
-  const heif = await import('libheif-js');
-
-
-} catch (error) {
-  console.warn('Warning: HEIF decoder not available. HEIC files may not be processed.');
-}
-
 const SUPPORTED_IMAGE_FORMATS = ['.jpg', '.jpeg', '.png', '.heic', '.gif', '.webp', '.bmp'];
 const SUPPORTED_VIDEO_FORMATS = ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.m4v'];
 
-export async function generateThumbnail(filePath: string): Promise<string> {
+type HeicJpegOptions =
+  | { kind: 'cover'; width: number; height: number; quality?: number }
+  | { kind: 'inside'; maxWidth: number; maxHeight: number; quality?: number };
+
+async function decodeHeicToRgba(inputPath: string): Promise<{ data: Buffer; width: number; height: number }> {
+  // @ts-ignore - libheif-js has no types.
+  const libheif = (await import('libheif-js')).default;
+  const file = await fs.readFile(inputPath);
+
+  // @ts-ignore
+  const decoder = new libheif.HeifDecoder();
+  // @ts-ignore
+  const decoded = decoder.decode(file);
+
+  if (!decoded || decoded.length === 0) {
+    throw new Error('HEIC decode returned no images');
+  }
+
+  const image = decoded[0];
+  const width = image.get_width();
+  const height = image.get_height();
+
+  const displayData = await new Promise<{ data: Uint8ClampedArray; width: number; height: number }>((resolve, reject) => {
+    const rgba = new Uint8ClampedArray(width * height * 4);
+    image.display({ data: rgba, width, height }, (result: any) => {
+      if (!result) return reject(new Error('HEIC display returned null'));
+      resolve(result);
+    });
+  });
+
+  return { data: Buffer.from(displayData.data), width: displayData.width, height: displayData.height };
+}
+
+export async function renderHeicToJpeg(inputPath: string, outputPath: string, options: HeicJpegOptions): Promise<void> {
+  const decoded = await decodeHeicToRgba(inputPath);
+
+  const pipeline = sharp(decoded.data, {
+    raw: {
+      width: decoded.width,
+      height: decoded.height,
+      channels: 4
+    }
+  });
+
+  if (options.kind === 'cover') {
+    await pipeline
+      .resize(options.width, options.height, { fit: 'cover', position: 'center' })
+      .jpeg({ quality: options.quality ?? 80 })
+      .toFile(outputPath);
+    return;
+  }
+
+  await pipeline
+    .resize(options.maxWidth, options.maxHeight, { fit: 'inside', withoutEnlargement: true })
+    .jpeg({ quality: options.quality ?? 85 })
+    .toFile(outputPath);
+}
+
+export async function generateThumbnail(filePath: string): Promise<string | null> {
   const ext = path.extname(filePath).toLowerCase();
   const hash = crypto.createHash('md5').update(filePath).digest('hex');
   const thumbnailFileName = `${hash}.jpg`;
@@ -27,8 +75,9 @@ export async function generateThumbnail(filePath: string): Promise<string> {
 
   // Check if thumbnail already exists
   try {
-    await fs.access(thumbnailPath);
-    return thumbnailPath;
+    const st = await fs.stat(thumbnailPath);
+    if (st.size > 0) return thumbnailPath;
+    await fs.unlink(thumbnailPath).catch(() => undefined);
   } catch {
     // Thumbnail doesn't exist, generate it
   }
@@ -37,33 +86,49 @@ export async function generateThumbnail(filePath: string): Promise<string> {
     await generateImageThumbnail(filePath, thumbnailPath);
   } else if (SUPPORTED_VIDEO_FORMATS.includes(ext)) {
     await generateVideoThumbnail(filePath, thumbnailPath);
+  } else {
+    return null;
   }
 
-  return thumbnailPath;
+  try {
+    const st = await fs.stat(thumbnailPath);
+    if (st.size > 0) return thumbnailPath;
+    // Clean up empty/corrupt outputs so future attempts can retry.
+    await fs.unlink(thumbnailPath).catch(() => undefined);
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 async function generateImageThumbnail(inputPath: string, outputPath: string) {
+  const ext = path.extname(inputPath).toLowerCase();
+
+  // Fast path: let sharp handle the decode if it supports it.
   try {
-    // For HEIC files, add extra error handling as they can be corrupted
-    const ext = path.extname(inputPath).toLowerCase();
-
-    let pipeline = sharp(inputPath);
-
-    // Add timeout and best effort for HEIC
-    if (ext === '.heic') {
-      pipeline = (pipeline as any).failOnError(false);
-    }
-
-    await pipeline
+    await sharp(inputPath)
+      .rotate() // honor EXIF orientation where present
       .resize(300, 300, {
         fit: 'cover',
         position: 'center'
       })
       .jpeg({ quality: 80 })
       .toFile(outputPath);
-  } catch (error) {
-    console.error(`Error generating image thumbnail for ${inputPath}:`, error);
-    throw error;
+    return;
+  } catch (error: any) {
+    if (ext !== '.heic') {
+      console.error(`Error generating image thumbnail for ${inputPath}:`, error);
+      throw error;
+    }
+
+    // Fallback: decode HEIC via libheif-js and re-encode with sharp.
+    try {
+      await renderHeicToJpeg(inputPath, outputPath, { kind: 'cover', width: 300, height: 300, quality: 80 });
+      return;
+    } catch (fallbackError: any) {
+      console.warn(`Skipping HEIC thumbnail generation for ${inputPath}: ${fallbackError?.message ?? String(fallbackError)}`);
+      return; // Avoid worker retries; the asset can still be indexed.
+    }
   }
 }
 
@@ -109,7 +174,7 @@ export async function generateAndSaveThumbnail(filePath: string, assetId: string
   try {
     const thumbnailPath = await generateThumbnail(filePath);
     if (thumbnailPath) {
-      await db.query('UPDATE media_assets SET thumbnail_path = $1 WHERE id = $2', [thumbnailPath, assetId]);
+      await db.query('UPDATE media_assets SET thumbnail_path = $1, updated_at = NOW() WHERE id = $2', [thumbnailPath, assetId]);
       console.log(`✓ Updated thumbnail for asset ${assetId}`);
     }
   } catch (error) {

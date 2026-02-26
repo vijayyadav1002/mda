@@ -14,7 +14,7 @@ interface MediaAsset {
   filePath: string;
   mimeType: string;
   fileSize: string;
-  thumbnailUrl: string;
+  thumbnailUrl: string | null;
   transcodedUrl?: string;
   createdAt: string;
 }
@@ -84,6 +84,10 @@ export function MediaAssetViewer({
   };
 
   const getOriginalImageUrl = () => {
+    const isHeic = asset.mimeType === 'image/heic' || asset.fileName.toLowerCase().endsWith('.heic');
+    if (isHeic) {
+      return `${apiUrl}/image/${asset.id}`;
+    }
     return `${apiUrl}/media/${getRelativePath(asset.filePath)}`;
   };
 
@@ -233,7 +237,9 @@ export function MediaAssetViewer({
                 onError={(e) => {
                   console.error('Image load error:', e);
                   // Fallback to thumbnail if original fails
-                  e.currentTarget.src = `${apiUrl}${asset.thumbnailUrl}`;
+                  if (asset.thumbnailUrl) {
+                    e.currentTarget.src = `${apiUrl}${asset.thumbnailUrl}`;
+                  }
                 }}
               />
               <button

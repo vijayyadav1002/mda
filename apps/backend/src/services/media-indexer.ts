@@ -108,14 +108,35 @@ export async function indexFile(filePath: string) {
 
     // Check if already indexed and up to date
     const existing = await db.query(
-      'SELECT id, updated_at FROM media_assets WHERE file_path = $1',
+      'SELECT id, updated_at, thumbnail_path FROM media_assets WHERE file_path = $1',
       [filePath]
     );
 
     if (existing.rows.length > 0) {
       const existingUpdated = new Date(existing.rows[0].updated_at);
       if (existingUpdated >= stats.mtime) {
-        console.log(`Already indexed and up to date: ${path.basename(filePath)}`);
+        // Backfill missing thumbnails without forcing a re-index.
+        const thumbPath = existing.rows[0].thumbnail_path as string | null;
+        let hasUsableThumbnail = false;
+        if (thumbPath) {
+          try {
+            const thumbStat = await fs.stat(thumbPath);
+            hasUsableThumbnail = thumbStat.size > 0;
+          } catch {
+            hasUsableThumbnail = false;
+          }
+        }
+
+        if (!hasUsableThumbnail) {
+          try {
+            await addToThumbnailQueue({ filePath, assetId: String(existing.rows[0].id) });
+            console.log(`✓ Re-queued thumbnail generation: ${path.basename(filePath)}`);
+          } catch (e: any) {
+            console.warn(`⚠️  Failed to re-queue thumbnail job for ${path.basename(filePath)}: ${e?.message ?? String(e)}`);
+          }
+        } else {
+          console.log(`Already indexed and up to date: ${path.basename(filePath)}`);
+        }
         return;
       }
       // File was modified, delete old entry and clean up thumbnail
@@ -171,7 +192,11 @@ export async function indexFile(filePath: string) {
     const assetId = result.rows[0].id;
 
     // Queue thumbnail generation
-    await addToThumbnailQueue({ filePath, assetId });
+    try {
+      await addToThumbnailQueue({ filePath, assetId });
+    } catch (e: any) {
+      console.warn(`⚠️  Failed to queue thumbnail job for ${fileName}: ${e?.message ?? String(e)}`);
+    }
 
     console.log(`✓ Indexed: ${fileName} (queued for processing)`);
   } catch (error) {

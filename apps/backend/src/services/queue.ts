@@ -38,7 +38,7 @@ export interface EncodingJobData {
 
 export interface ThumbnailJobData {
     filePath: string;
-    assetId?: string; // Optional, might need to update DB
+    assetId?: string; // If present, update DB thumbnail_path
 }
 
 export function startWorkers() {
@@ -62,9 +62,12 @@ export function startWorkers() {
     });
 
     const thumbnailWorker = new Worker<ThumbnailJobData>('thumbnail', async (job) => {
-        const { generateThumbnail } = await import('./thumbnail.js');
-        await generateThumbnail(job.data.filePath);
-        // Note: If we need to update DB, we should add logic here
+        const { generateAndSaveThumbnail, generateThumbnail } = await import('./thumbnail.js');
+        if (job.data.assetId) {
+            await generateAndSaveThumbnail(job.data.filePath, job.data.assetId);
+        } else {
+            await generateThumbnail(job.data.filePath);
+        }
     }, {
         connection,
         concurrency: 4 // Process max 4 thumbnails at a time
