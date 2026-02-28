@@ -14,11 +14,13 @@ import { indexMediaLibrary } from './services/media-indexer.js';
 import { startMediaWatcher } from './services/media-watcher.js';
 import { startWorkers } from './services/queue.js';
 import { getWebCompatibleVideo, markTranscodeAccessed, startTranscodeCleanup, deleteTranscodedVideo, ensureHLS } from './services/video-transcode.js';
+import { startCacheMaintenance } from './services/cache-maintenance.js';
 import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 
 let workerHandles: ReturnType<typeof startWorkers> | null = null;
+let cacheMaintenanceTimer: ReturnType<typeof setInterval> | null = null;
 
 const fastify = Fastify({
   logger: true
@@ -108,7 +110,12 @@ fastify.get('/image/:id', async (request, reply) => {
       await fs.promises.access(cachedPath);
     } catch {
       const { renderHeicToJpeg } = await import('./services/thumbnail.js');
-      await renderHeicToJpeg(absPath, cachedPath, { kind: 'inside', maxWidth: 2000, maxHeight: 2000, quality: 85 });
+      await renderHeicToJpeg(absPath, cachedPath, {
+        kind: 'inside',
+        maxWidth: config.previewMaxDimension,
+        maxHeight: config.previewMaxDimension,
+        quality: config.previewQuality
+      });
     }
 
     reply.header('Content-Type', 'image/jpeg');
@@ -284,6 +291,9 @@ const start = async () => {
 
     // Start transcode cleanup service
     startTranscodeCleanup();
+
+    // Start cache maintenance service
+    cacheMaintenanceTimer = startCacheMaintenance();
 
     // Start background queue workers
     workerHandles = startWorkers();

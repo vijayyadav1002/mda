@@ -297,6 +297,11 @@ npm start
 - `JWT_SECRET` - JWT signing secret
 - `MEDIA_LIBRARY_PATH` - Path to media files
 - `THUMBNAIL_CACHE_PATH` - Thumbnail cache directory
+- `LOW_STORAGE_MODE` - Enables storage-saving defaults
+- `THUMBNAIL_SIZE` / `THUMBNAIL_QUALITY` - Thumbnail size and JPEG quality
+- `PREVIEW_MAX_DIMENSION` / `PREVIEW_QUALITY` - HEIC preview size and quality
+- `CACHE_CLEANUP_INTERVAL_MINUTES` - Cache cleanup interval
+- `*_CACHE_MAX_AGE_*` / `*_CACHE_MAX_MB` - TTL and size caps for thumbnail/preview/HLS/transcoded caches
 
 ### Frontend
 

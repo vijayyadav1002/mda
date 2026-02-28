@@ -26,6 +26,7 @@ PORT=4000
 HOST=0.0.0.0
 MEDIA_LIBRARY_PATH=/path/to/your/media/library
 THUMBNAIL_CACHE_PATH=./cache/thumbnails
+LOW_STORAGE_MODE=true
 ```
 
 3. Run database migrations:
@@ -120,6 +121,20 @@ npm start
 | `HOST` | Server host | `0.0.0.0` |
 | `MEDIA_LIBRARY_PATH` | Path to media files | `./media` |
 | `THUMBNAIL_CACHE_PATH` | Thumbnail cache directory | `./cache/thumbnails` |
+| `LOW_STORAGE_MODE` | Uses storage-saving defaults for cache/quality | `true` |
+| `THUMBNAIL_SIZE` | Thumbnail width/height in pixels | `240` (low mode) |
+| `THUMBNAIL_QUALITY` | JPEG quality for thumbnails | `65` (low mode) |
+| `PREVIEW_MAX_DIMENSION` | Max width/height for HEIC previews | `1280` (low mode) |
+| `PREVIEW_QUALITY` | JPEG quality for HEIC previews | `70` (low mode) |
+| `CACHE_CLEANUP_INTERVAL_MINUTES` | Background cleanup interval | `30` (low mode) |
+| `THUMBNAIL_CACHE_MAX_AGE_DAYS` | Thumbnail retention window | `30` (low mode) |
+| `PREVIEW_CACHE_MAX_AGE_DAYS` | Preview retention window | `7` (low mode) |
+| `HLS_CACHE_MAX_AGE_HOURS` | HLS retention window | `24` (low mode) |
+| `TRANSCODED_CACHE_MAX_AGE_HOURS` | Transcoded retention window | `2` (low mode) |
+| `THUMBNAIL_CACHE_MAX_MB` | Max thumbnail cache size | `250` (low mode) |
+| `PREVIEW_CACHE_MAX_MB` | Max preview cache size | `150` (low mode) |
+| `HLS_CACHE_MAX_MB` | Max HLS cache size | `500` (low mode) |
+| `TRANSCODED_CACHE_MAX_MB` | Max transcoded cache size | `250` (low mode) |
 
 ## Scripts
 

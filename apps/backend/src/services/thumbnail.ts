@@ -56,14 +56,14 @@ export async function renderHeicToJpeg(inputPath: string, outputPath: string, op
   if (options.kind === 'cover') {
     await pipeline
       .resize(options.width, options.height, { fit: 'cover', position: 'center' })
-      .jpeg({ quality: options.quality ?? 80 })
+      .jpeg({ quality: options.quality ?? config.thumbnailQuality })
       .toFile(outputPath);
     return;
   }
 
   await pipeline
     .resize(options.maxWidth, options.maxHeight, { fit: 'inside', withoutEnlargement: true })
-    .jpeg({ quality: options.quality ?? 85 })
+    .jpeg({ quality: options.quality ?? config.previewQuality })
     .toFile(outputPath);
 }
 
@@ -108,11 +108,11 @@ async function generateImageThumbnail(inputPath: string, outputPath: string) {
   try {
     await sharp(inputPath)
       .rotate() // honor EXIF orientation where present
-      .resize(300, 300, {
+      .resize(config.thumbnailSize, config.thumbnailSize, {
         fit: 'cover',
         position: 'center'
       })
-      .jpeg({ quality: 80 })
+      .jpeg({ quality: config.thumbnailQuality })
       .toFile(outputPath);
     return;
   } catch (error: any) {
@@ -123,7 +123,12 @@ async function generateImageThumbnail(inputPath: string, outputPath: string) {
 
     // Fallback: decode HEIC via libheif-js and re-encode with sharp.
     try {
-      await renderHeicToJpeg(inputPath, outputPath, { kind: 'cover', width: 300, height: 300, quality: 80 });
+      await renderHeicToJpeg(inputPath, outputPath, {
+        kind: 'cover',
+        width: config.thumbnailSize,
+        height: config.thumbnailSize,
+        quality: config.thumbnailQuality
+      });
       return;
     } catch (fallbackError: any) {
       console.warn(`Skipping HEIC thumbnail generation for ${inputPath}: ${fallbackError?.message ?? String(fallbackError)}`);
@@ -139,7 +144,7 @@ async function generateVideoThumbnail(inputPath: string, outputPath: string): Pr
         count: 1,
         filename: path.basename(outputPath),
         folder: path.dirname(outputPath),
-        size: '300x300'
+        size: `${config.thumbnailSize}x${config.thumbnailSize}`
       })
       .on('end', () => resolve())
       .on('error', (err) => {
