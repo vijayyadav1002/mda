@@ -1,0 +1,16 @@
+.git
+.gitignore
+.vscode
+.turbo
+node_modules
+**/node_modules
+dist
+build
+coverage
+*.log
+.DS_Store
+apps/backend/cache
+media-files
+**/.env
+**/.env.local
+**/.env.*.local

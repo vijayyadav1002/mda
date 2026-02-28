@@ -32,32 +32,37 @@ mda/
 ## Prerequisites
 
 - Node.js >= 18.0.0
-- PostgreSQL >= 13 (or use Docker Compose - see below)
+- PostgreSQL >= 13 (if running locally without Docker)
 - npm >= 10.9.0
-- FFmpeg (for video processing)
-- Docker & Docker Compose (optional, for easy PostgreSQL setup)
+- FFmpeg (for video processing if running locally without Docker)
+- Docker & Docker Compose (for full containerized setup)
 
 ## Quick Start
 
-### 1. Install Dependencies
+### Option A: Run Entire App in Docker (recommended)
+
+```bash
+docker compose up --build
+```
+
+This starts frontend, backend, PostgreSQL, and Redis in containers.
+See [DOCKER.md](./DOCKER.md) for service details, ports, and commands.
+
+### Option B: Run App Locally (without Docker)
+
+1. Install dependencies:
 
 ```bash
 npm install
 ```
 
-### 2. Start PostgreSQL (Docker)
-
-The easiest way to get started is with Docker:
+2. Start infrastructure (PostgreSQL + Redis) via Docker:
 
 ```bash
-docker-compose up -d postgres
+docker compose up -d postgres redis
 ```
 
-This creates a PostgreSQL database with default credentials. See [DOCKER.md](./DOCKER.md) for details.
-
-**Alternative**: Install PostgreSQL locally if you prefer.
-
-### 4. Setup Backend
+3. Setup backend:
 
 ```bash
 cd apps/backend
@@ -65,12 +70,12 @@ cp .env.example .env
 ```
 
 Edit `.env` and configure:
-- `DATABASE_URL` - Use `postgresql://postgres:postgres@localhost:5432/mda` if using Docker
+- `DATABASE_URL` - Use `postgresql://postgres:postgres@localhost:5433/mda` if using Docker Compose from this repo
 - `JWT_SECRET` - Secret key for JWT tokens (change in production!)
 - `MEDIA_LIBRARY_PATH` - Path to your media library
 - `THUMBNAIL_CACHE_PATH` - Path for thumbnail cache
 
-### 6. Setup Database
+4. Setup database:
 
 ```bash
 # Run migrations (from apps/backend)
@@ -80,7 +85,7 @@ npm run db:migrate
 npm run db:seed
 ```
 
-### 8. Setup Frontend
+5. Setup frontend:
 
 ```bash
 cd apps/web
@@ -90,7 +95,7 @@ cp .env.example .env
 Edit `.env`:
 - `VITE_API_URL` - Backend API URL (default: http://localhost:4000)
 
-### 9. Start Development
+6. Start development:
 
 From the root directory:
 
