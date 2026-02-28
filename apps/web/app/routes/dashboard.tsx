@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "@remix-run/react";
-import { createGraphQLClient, getAuthToken, clearAuthToken } from "~/lib/api";
+import { createGraphQLClient, getApiUrl, getAuthToken, clearAuthToken } from "~/lib/api";
 import { Card, CardContent } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "~/components/u
 import { MediaAssetViewer } from "~/components/MediaAssetViewer";
 import { Folder, FileImage, ArrowLeft, ChevronDown, ChevronRight, Trash2, CheckSquare, Square, Moon, Sun, Users, Key, RotateCcw } from "lucide-react";
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+const API_URL = getApiUrl();
 
 const MEDIA_ASSETS_QUERY = `
   query GetMediaAssets($limit: Int, $offset: Int) {
