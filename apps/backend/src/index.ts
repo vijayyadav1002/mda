@@ -162,9 +162,54 @@ fastify.get('/video/:id', async (request, reply) => {
     const range = request.headers.range;
 
     if (range) {
-      const parts = range.replace(/bytes=/, '').split('-');
-      const start = Number.parseInt(parts[0], 10);
-      const end = parts[1] ? Number.parseInt(parts[1], 10) : fileSize - 1;
+      const raw = range.replace(/bytes=/, '').split(',')[0].trim();
+      const parts = raw.split('-');
+      const startPart = parts[0]?.trim() ?? '';
+      const endPart = parts[1]?.trim() ?? '';
+
+      let start = 0;
+      let end = fileSize - 1;
+
+      if (!startPart && !endPart) {
+        reply.code(416);
+        reply.header('Content-Range', `bytes */${fileSize}`);
+        return reply.send({ error: 'Invalid range header' });
+      }
+
+      if (!startPart) {
+        // Suffix-byte range, e.g. bytes=-500
+        const suffixLength = Number.parseInt(endPart, 10);
+        if (!Number.isFinite(suffixLength) || suffixLength <= 0) {
+          reply.code(416);
+          reply.header('Content-Range', `bytes */${fileSize}`);
+          return reply.send({ error: 'Invalid range header' });
+        }
+        start = Math.max(fileSize - suffixLength, 0);
+      } else {
+        start = Number.parseInt(startPart, 10);
+        if (!Number.isFinite(start) || start < 0) {
+          reply.code(416);
+          reply.header('Content-Range', `bytes */${fileSize}`);
+          return reply.send({ error: 'Invalid range header' });
+        }
+      }
+
+      if (endPart) {
+        end = Number.parseInt(endPart, 10);
+        if (!Number.isFinite(end) || end < 0) {
+          reply.code(416);
+          reply.header('Content-Range', `bytes */${fileSize}`);
+          return reply.send({ error: 'Invalid range header' });
+        }
+      }
+
+      if (start >= fileSize || start > end) {
+        reply.code(416);
+        reply.header('Content-Range', `bytes */${fileSize}`);
+        return reply.send({ error: 'Range not satisfiable' });
+      }
+
+      end = Math.min(end, fileSize - 1);
       const chunksize = (end - start) + 1;
       const stream = fs.createReadStream(videoPath, { start, end });
 
