@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "@remix-run/react";
 import { createGraphQLClient, getApiUrl, getAuthToken, clearAuthToken } from "~/lib/api";
 import { Card, CardContent } from "~/components/ui/card";
@@ -129,6 +129,7 @@ export default function Dashboard() {
     return false;
   });
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const refreshInFlightRef = useRef(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -243,7 +244,10 @@ export default function Dashboard() {
   };
 
   const handleRefreshMediaLibrary = async () => {
+    if (refreshInFlightRef.current || isRefreshing) return;
+
     try {
+      refreshInFlightRef.current = true;
       setIsRefreshing(true);
       const token = getAuthToken();
       if (!token) return;
@@ -255,11 +259,12 @@ export default function Dashboard() {
       
       // Reload the media library
       await loadData();
-      alert("Media library refreshed successfully!");
+      alert(response?.refreshMediaLibrary || "Media library refreshed successfully!");
     } catch (err: any) {
       console.error("Failed to refresh media library:", err);
       alert(`Failed to refresh media library: ${err.message || 'Unknown error'}`);
     } finally {
+      refreshInFlightRef.current = false;
       setIsRefreshing(false);
     }
   };

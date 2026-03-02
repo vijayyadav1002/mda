@@ -301,12 +301,13 @@ fastify.get('/health', async () => {
 
 fastify.get('/health/queues', async (_request, reply) => {
   try {
-    const { encodingQueue, thumbnailQueue } = await import('./services/queue.js');
-    const [encoding, thumbnail] = await Promise.all([
+    const { encodingQueue, thumbnailQueue, mediaRefreshQueue } = await import('./services/queue.js');
+    const [encoding, thumbnail, mediaRefresh] = await Promise.all([
       encodingQueue.getJobCounts(),
-      thumbnailQueue.getJobCounts()
+      thumbnailQueue.getJobCounts(),
+      mediaRefreshQueue.getJobCounts()
     ]);
-    return { status: 'ok', queues: { encoding, thumbnail } };
+    return { status: 'ok', queues: { encoding, thumbnail, mediaRefresh } };
   } catch (error: any) {
     return reply.code(503).send({
       status: 'degraded',

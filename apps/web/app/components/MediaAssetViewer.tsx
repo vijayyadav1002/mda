@@ -77,18 +77,9 @@ export function MediaAssetViewer({
 
   if (!asset) return null;
 
-  // Extract relative path from full path (everything after media-files/)
-  const getRelativePath = (fullPath: string) => {
-    const parts = fullPath.split('/media-files/');
-    return parts.length > 1 ? parts[1] : fullPath;
-  };
-
   const getOriginalImageUrl = () => {
-    const isHeic = asset.mimeType === 'image/heic' || asset.fileName.toLowerCase().endsWith('.heic');
-    if (isHeic) {
-      return `${apiUrl}/image/${asset.id}`;
-    }
-    return `${apiUrl}/media/${getRelativePath(asset.filePath)}`;
+    // Backend /image/:id handles both HEIC conversion and non-HEIC originals.
+    return `${apiUrl}/image/${asset.id}`;
   };
 
   const handleImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {

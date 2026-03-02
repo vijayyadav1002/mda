@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite dev --host 0.0.0.0",
-    "build": "vite build",
-    "start": "vite preview",
+    "build": "remix vite:build",
+    "start": "remix-serve build/server/index.js",
     "clean": "rm -rf build .cache"
   },
   "dependencies": {

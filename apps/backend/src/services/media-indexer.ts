@@ -3,10 +3,13 @@ import path from 'node:path';
 import { db } from '../db/index.js';
 import { config } from '../config.js';
 import { addToThumbnailQueue } from './queue.js';
+import { cleanupDeletedAssetCaches } from './media-cleanup.js';
 
 const SUPPORTED_IMAGE_FORMATS = ['.jpg', '.jpeg', '.png', '.heic', '.gif', '.webp', '.bmp'];
 const SUPPORTED_VIDEO_FORMATS = ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.m4v'];
 const SUPPORTED_FORMATS = [...SUPPORTED_IMAGE_FORMATS, ...SUPPORTED_VIDEO_FORMATS];
+
+type IndexFileResult = 'indexed' | 'up_to_date' | 'thumbnail_requeued' | 'unsupported';
 
 export async function indexMediaLibrary() {
   try {
@@ -26,11 +29,25 @@ export async function indexMediaLibrary() {
     const files = await scanDirectory(mediaPath);
     console.log(`Found ${files.length} media files to index`);
 
+    let indexedCount = 0;
+    let upToDateCount = 0;
+    let requeuedCount = 0;
+    let unsupportedCount = 0;
+    let failedCount = 0;
+
     for (const filePath of files) {
-      await indexFile(filePath);
+      try {
+        const result = await indexFile(filePath);
+        if (result === 'indexed') indexedCount += 1;
+        if (result === 'up_to_date') upToDateCount += 1;
+        if (result === 'thumbnail_requeued') requeuedCount += 1;
+        if (result === 'unsupported') unsupportedCount += 1;
+      } catch {
+        failedCount += 1;
+      }
     }
 
-    console.log('Initial media indexing completed');
+    console.log(`Initial media indexing completed (indexed=${indexedCount}, unchanged=${upToDateCount}, requeued=${requeuedCount}, unsupported=${unsupportedCount}, failed=${failedCount})`);
   } catch (error) {
     console.error('Error indexing media library:', error);
     throw error;
@@ -95,7 +112,7 @@ async function scanDirectory(dir: string, maxDepth: number = 20, currentDepth: n
   return files;
 }
 
-export async function indexFile(filePath: string) {
+export async function indexFile(filePath: string): Promise<IndexFileResult> {
   try {
     // Check if file exists
     let stats;
@@ -103,7 +120,7 @@ export async function indexFile(filePath: string) {
       stats = await fs.stat(filePath);
     } catch {
       console.log(`File no longer exists: ${filePath}`);
-      return;
+      return 'up_to_date';
     }
 
     // Check if already indexed and up to date
@@ -130,14 +147,14 @@ export async function indexFile(filePath: string) {
         if (!hasUsableThumbnail) {
           try {
             await addToThumbnailQueue({ filePath, assetId: String(existing.rows[0].id) });
-            console.log(`✓ Re-queued thumbnail generation: ${path.basename(filePath)}`);
+            return 'thumbnail_requeued';
           } catch (e: any) {
             console.warn(`⚠️  Failed to re-queue thumbnail job for ${path.basename(filePath)}: ${e?.message ?? String(e)}`);
+            return 'up_to_date';
           }
         } else {
-          console.log(`Already indexed and up to date: ${path.basename(filePath)}`);
+          return 'up_to_date';
         }
-        return;
       }
       // File was modified, delete old entry and clean up thumbnail
       try {
@@ -164,7 +181,7 @@ export async function indexFile(filePath: string) {
     // Validate file format
     if (!SUPPORTED_FORMATS.includes(ext)) {
       console.log(`Skipping unsupported format: ${ext}`);
-      return;
+      return 'unsupported';
     }
 
     // Determine mime type
@@ -199,6 +216,7 @@ export async function indexFile(filePath: string) {
     }
 
     console.log(`✓ Indexed: ${fileName} (queued for processing)`);
+    return 'indexed';
   } catch (error) {
     console.error(`Error indexing file ${filePath}:`, error);
     throw error; // Re-throw so watcher can log it properly
@@ -207,7 +225,18 @@ export async function indexFile(filePath: string) {
 
 export async function removeFile(filePath: string) {
   try {
-    await db.query('DELETE FROM media_assets WHERE file_path = $1', [filePath]);
+    const deleted = await db.query(
+      `DELETE FROM media_assets
+       WHERE file_path = $1
+       RETURNING id, file_path, thumbnail_path, transcoded_path`,
+      [filePath]
+    );
+
+    if (deleted.rows.length > 0) {
+      // Source file is already gone (watcher unlink), so skip transcode hash cleanup.
+      await cleanupDeletedAssetCaches(deleted.rows[0], { removeTranscoded: false });
+    }
+
     console.log(`✓ Removed from index: ${path.basename(filePath)}`);
   } catch (error) {
     console.error(`Error removing file ${filePath} from index:`, error);

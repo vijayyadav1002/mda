@@ -16,8 +16,11 @@ RUN npm ci
 
 COPY . .
 
+RUN npm run build
+
 ENV HOST=0.0.0.0
+ENV NODE_ENV=production
 
 EXPOSE 3000 4000
 
-CMD ["sh", "-c", "npm -w apps/backend run db:migrate && npm run dev -- --env-mode=loose"]
+CMD ["bash", "-lc", "npm -w apps/backend run db:migrate && npm -w apps/backend run start & PORT=3000 HOST=0.0.0.0 npm -w apps/web run start & wait -n"]

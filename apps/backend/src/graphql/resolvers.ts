@@ -2,7 +2,8 @@ import { db } from '../db/index.js';
 import { hashPassword, verifyPassword } from '../services/auth.js';
 import { logAudit } from '../services/audit.js';
 import { compressImage, compressVideo } from '../services/thumbnail.js';
-import { indexMediaLibrary } from '../services/media-indexer.js';
+import { enqueueMediaRefresh } from '../services/queue.js';
+import { cleanupDeletedAssetCaches } from '../services/media-cleanup.js';
 import type { GraphQLContext } from './context.js';
 import fs from 'fs/promises';
 import path from 'path';
@@ -504,8 +505,17 @@ export const resolvers = {
 
       const asset = result.rows[0];
 
+      // Remove generated caches first while source file metadata is still available.
+      await cleanupDeletedAssetCaches(asset, { removeTranscoded: true });
+
       // Delete the file
-      await fs.unlink(asset.file_path);
+      try {
+        await fs.unlink(asset.file_path);
+      } catch (error: any) {
+        if (error?.code !== 'ENOENT') {
+          throw error;
+        }
+      }
 
       // Delete from database
       await db.query('DELETE FROM media_assets WHERE id = $1', [args.id]);
@@ -599,13 +609,9 @@ export const resolvers = {
       }
 
       try {
-        console.log('[GRAPHQL] Refreshing media library...');
-        await indexMediaLibrary();
-        console.log('[GRAPHQL] Media library refresh completed');
-        
-        await logAudit(context.user.id, 'REFRESH_MEDIA_LIBRARY', 'media_library');
-        
-        return 'Media library refreshed successfully';
+        const result = await enqueueMediaRefresh({ requestedByUserId: context.user.id });
+        console.log(`[GRAPHQL] ${result.message}`);
+        return result.message;
       } catch (error) {
         console.error('[GRAPHQL] Error refreshing media library:', error);
         throw new Error(`Failed to refresh media library: ${error instanceof Error ? error.message : 'Unknown error'}`);
