@@ -43,7 +43,7 @@ const REFRESH_MEDIA_LIBRARY_MUTATION = `
   }
 `;
 
-const DIRECTORY_TREE_QUERY = `
+const DIRECTORY_NODE_QUERY = `
   fragment FileInfo on MediaAsset {
     id
     fileName
@@ -64,23 +64,11 @@ const DIRECTORY_TREE_QUERY = `
     }
   }
 
-  query GetDirectoryTree {
-    directoryTree {
+  query GetDirectoryNode($path: String) {
+    directoryNode(path: $path) {
       ...DirNode
       children {
         ...DirNode
-        children {
-          ...DirNode
-          children {
-            ...DirNode
-            children {
-              ...DirNode
-              children {
-                ...DirNode
-              }
-            }
-          }
-        }
       }
     }
   }
@@ -100,14 +88,15 @@ interface DirectoryNode {
   name: string;
   path: string;
   type: 'file' | 'directory';
-  children?: DirectoryNode[];
+  children?: DirectoryNode[] | null;
   mediaAsset?: MediaAsset;
 }
 
 export default function Dashboard() {
-  const [directoryTree, setDirectoryTree] = useState<DirectoryNode | null>(null);
-  const [currentFolder, setCurrentFolder] = useState<DirectoryNode | null>(null);
-  const [folderHistory, setFolderHistory] = useState<DirectoryNode[]>([]);
+  const [directoryCache, setDirectoryCache] = useState<Record<string, DirectoryNode>>({});
+  const [rootPath, setRootPath] = useState<string | null>(null);
+  const [currentPath, setCurrentPath] = useState<string | null>(null);
+  const [folderHistory, setFolderHistory] = useState<string[]>([]);
   const [selectedAsset, setSelectedAsset] = useState<MediaAsset | null>(null);
   const [isViewerOpen, setIsViewerOpen] = useState(false);
   const [view, setView] = useState<"grid" | "tree">("grid");
@@ -175,27 +164,64 @@ export default function Dashboard() {
     }
   };
 
-  const loadData = async () => {
-    try {
-      const token = getAuthToken();
-      if (!token) return;
+  const mergeDirectoryNode = (node: DirectoryNode) => {
+    setDirectoryCache(prev => {
+      const next = { ...prev };
+      const incomingChildren = node.children ?? [];
+      const mergedChildren = incomingChildren.map(child => {
+        const cachedChild = prev[child.path];
+        if (child.type === 'directory' && cachedChild) {
+          return { ...child, children: cachedChild.children ?? child.children ?? null };
+        }
+        return child;
+      });
 
-      const client = createGraphQLClient(token);
-      
-      // Load directory tree
-      const treeData: any = await client.request(DIRECTORY_TREE_QUERY);
-      console.log("Directory tree data:", treeData.directoryTree);
-      setDirectoryTree(treeData.directoryTree);
-      setCurrentFolder(treeData.directoryTree);
-      
-      // Expand the root folder by default
-      if (treeData.directoryTree?.path) {
-        setExpandedFolders(new Set([treeData.directoryTree.path]));
+      next[node.path] = { ...node, children: mergedChildren };
+
+      for (const child of mergedChildren) {
+        if (child.type === 'directory') {
+          const cachedChild = prev[child.path];
+          next[child.path] = cachedChild
+            ? { ...cachedChild, name: child.name, path: child.path, type: 'directory' }
+            : { ...child, children: child.children ?? null };
+        }
       }
 
-      // Also load flat assets for fallback or other views if needed
-      // But for now we focus on tree structure
-      
+      return next;
+    });
+  };
+
+  const fetchDirectoryNode = async (directoryPath?: string | null) => {
+    const token = getAuthToken();
+    if (!token) return null;
+
+    const client = createGraphQLClient(token);
+    const data: any = await client.request(DIRECTORY_NODE_QUERY, {
+      path: directoryPath ?? null
+    });
+
+    return data.directoryNode as DirectoryNode;
+  };
+
+  const loadDirectoryIntoCache = async (directoryPath?: string | null) => {
+    const node = await fetchDirectoryNode(directoryPath);
+    if (!node) return null;
+
+    mergeDirectoryNode(node);
+    return node;
+  };
+
+  const loadData = async () => {
+    try {
+      const rootNode = await loadDirectoryIntoCache(null);
+      if (!rootNode) return;
+
+      setRootPath(rootNode.path);
+      setCurrentPath(rootNode.path);
+      setFolderHistory([]);
+      if (rootNode.path) {
+        setExpandedFolders(new Set([rootNode.path]));
+      }
     } catch (err) {
       console.error("Failed to load data:", err);
     } finally {
@@ -255,10 +281,13 @@ export default function Dashboard() {
       const client = createGraphQLClient(token);
       const response: any = await client.request(REFRESH_MEDIA_LIBRARY_MUTATION);
       
-      console.log("Refresh response:", response);
-      
-      // Reload the media library
-      await loadData();
+      if (rootPath) {
+        await loadDirectoryIntoCache(rootPath);
+      }
+      if (currentPath && currentPath !== rootPath) {
+        await loadDirectoryIntoCache(currentPath);
+      }
+
       alert(response?.refreshMediaLibrary || "Media library refreshed successfully!");
     } catch (err: any) {
       console.error("Failed to refresh media library:", err);
@@ -320,10 +349,15 @@ export default function Dashboard() {
         )
       );
 
-      // Clear selections and reload data
+      // Clear selections and reload visible directories
       setSelectedAssetIds(new Set());
       setSelectionMode(false);
-      await loadData();
+      if (rootPath) {
+        await loadDirectoryIntoCache(rootPath);
+      }
+      if (currentPath && currentPath !== rootPath) {
+        await loadDirectoryIntoCache(currentPath);
+      }
     } catch (err) {
       console.error("Failed to delete assets:", err);
       alert("Failed to delete some assets. Please try again.");
@@ -344,27 +378,45 @@ export default function Dashboard() {
       const client = createGraphQLClient(token);
       await client.request(DELETE_MEDIA_ASSET_MUTATION, { id: assetId });
       
-      // Reload data
-      await loadData();
+      if (rootPath) {
+        await loadDirectoryIntoCache(rootPath);
+      }
+      if (currentPath && currentPath !== rootPath) {
+        await loadDirectoryIntoCache(currentPath);
+      }
     } catch (err) {
       console.error("Failed to delete asset:", err);
       alert("Failed to delete asset. Please try again.");
     }
   };
 
-  const handleFolderClick = (folder: DirectoryNode) => {
-    if (currentFolder) {
-      setFolderHistory([...folderHistory, currentFolder]);
+  const handleFolderClick = async (folder: DirectoryNode) => {
+    if (currentPath) {
+      setFolderHistory(prev => [...prev, currentPath]);
     }
-    setCurrentFolder(folder);
+
+    setCurrentPath(folder.path);
+
+    const cachedNode = directoryCache[folder.path];
+    if (!cachedNode || cachedNode.children === null || cachedNode.children === undefined) {
+      await loadDirectoryIntoCache(folder.path);
+    }
   };
 
-  const handleBackClick = () => {
+  const handleBackClick = async () => {
     if (folderHistory.length === 0) return;
-    const newHistory = [...folderHistory];
-    const previousFolder = newHistory.pop();
-    setFolderHistory(newHistory);
-    setCurrentFolder(previousFolder || null);
+
+    const nextHistory = [...folderHistory];
+    const previousPath = nextHistory.pop() || null;
+    setFolderHistory(nextHistory);
+
+    if (!previousPath) return;
+
+    setCurrentPath(previousPath);
+    const cachedNode = directoryCache[previousPath];
+    if (!cachedNode || cachedNode.children === null || cachedNode.children === undefined) {
+      await loadDirectoryIntoCache(previousPath);
+    }
   };
 
   const handleCloseViewer = () => {
@@ -372,17 +424,31 @@ export default function Dashboard() {
     setSelectedAsset(null);
   };
 
-  const toggleFolder = (path: string) => {
+  const toggleFolder = async (directoryPath: string) => {
+    const isExpanded = expandedFolders.has(directoryPath);
+
     setExpandedFolders(prev => {
       const newSet = new Set(prev);
-      if (newSet.has(path)) {
-        newSet.delete(path);
+      if (newSet.has(directoryPath)) {
+        newSet.delete(directoryPath);
       } else {
-        newSet.add(path);
+        newSet.add(directoryPath);
       }
       return newSet;
     });
+
+    if (!isExpanded) {
+      const cachedNode = directoryCache[directoryPath];
+      if (!cachedNode || cachedNode.children === null || cachedNode.children === undefined) {
+        await loadDirectoryIntoCache(directoryPath);
+      }
+    }
   };
+
+  const currentFolder = currentPath ? directoryCache[currentPath] || null : null;
+  const directoryTree = rootPath ? directoryCache[rootPath] || null : null;
+  const currentFolderChildren = Array.isArray(currentFolder?.children) ? currentFolder.children : [];
+  const isCurrentFolderLoading = !!currentFolder && currentFolder.children === null;
 
   const renderTree = (node: DirectoryNode) => {
     if (node.type === 'file') {
@@ -426,6 +492,8 @@ export default function Dashboard() {
       );
     }
 
+    const cachedNode = directoryCache[node.path] || node;
+    const children = cachedNode.children ?? null;
     const isExpanded = expandedFolders.has(node.path);
 
     return (
@@ -433,7 +501,7 @@ export default function Dashboard() {
         <button
           type="button"
           className="w-full py-2.5 flex items-center gap-3 font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-all duration-150 outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-left px-2"
-          onClick={() => toggleFolder(node.path)}
+          onClick={() => void toggleFolder(node.path)}
         >
           {isExpanded ? (
             <ChevronDown className="w-4 h-4 text-gray-500 dark:text-gray-400 flex-shrink-0" />
@@ -444,24 +512,26 @@ export default function Dashboard() {
             <Folder className="w-4 h-4 text-white" />
           </div>
           <span className="text-sm">{node.name}</span>
-          {node.children && (
+          {Array.isArray(children) && (
             <span className="text-xs text-gray-500 dark:text-gray-400 ml-2 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full">
-              {node.children.length}
+              {children.length}
             </span>
           )}
         </button>
-        {isExpanded && node.children && node.children.length > 0 && (
+        {isExpanded && children === null && (
+          <div className="pl-10 py-2 text-xs text-gray-500 dark:text-gray-400">Loading...</div>
+        )}
+        {isExpanded && Array.isArray(children) && children.length > 0 && (
           <div className="border-l-2 border-gray-200 dark:border-gray-700 ml-4 mt-1">
-            {node.children.map(child => renderTree(child))}
+            {children.map(child => renderTree(child))}
           </div>
+        )}
+        {isExpanded && Array.isArray(children) && children.length === 0 && (
+          <div className="pl-10 py-2 text-xs text-gray-500 dark:text-gray-400">Empty folder</div>
         )}
       </div>
     );
   };
-
-  // Debug logging
-  console.log("Current folder:", currentFolder);
-  console.log("Current folder children:", currentFolder?.children);
 
   if (loading) {
     return (
@@ -559,7 +629,7 @@ export default function Dashboard() {
               <Button 
                 variant="ghost" 
                 size="sm" 
-                onClick={handleBackClick} 
+                onClick={() => void handleBackClick()} 
                 className="flex items-center gap-1 hover:bg-white/50 dark:hover:bg-gray-700/50 backdrop-blur-sm border border-gray-200 dark:border-gray-700"
               >
                 <ArrowLeft className="w-4 h-4" /> Back
@@ -629,13 +699,13 @@ export default function Dashboard() {
 
         {view === 'grid' ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
-            {currentFolder?.children?.map((node) => {
+            {currentFolderChildren.map((node) => {
               if (node.type === 'directory') {
                 return (
                   <Card
                     key={node.path}
                     className="overflow-hidden cursor-pointer hover:shadow-xl hover:scale-105 transition-all duration-200 bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border-blue-100 dark:border-blue-800 group backdrop-blur-sm"
-                    onClick={() => handleFolderClick(node)}
+                    onClick={() => void handleFolderClick(node)}
                   >
                     <CardContent className="p-6 flex flex-col items-center justify-center text-center h-full min-h-[180px]">
                       <div className="w-20 h-20 bg-gradient-to-br from-blue-400 to-indigo-500 dark:from-blue-500 dark:to-indigo-600 rounded-2xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-200 shadow-lg">
@@ -643,7 +713,7 @@ export default function Dashboard() {
                       </div>
                       <h3 className="font-semibold truncate w-full text-gray-800 dark:text-gray-100 group-hover:text-blue-700 dark:group-hover:text-blue-300">{node.name}</h3>
                       <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 bg-white/50 dark:bg-gray-800/50 px-3 py-1 rounded-full">
-                        {node.children?.length || 0} items
+                        Folder
                       </p>
                     </CardContent>
                   </Card>
@@ -712,8 +782,8 @@ export default function Dashboard() {
               return null;
             })}
             
-            {currentFolder?.children && currentFolder.children.length > 0 && 
-             currentFolder.children.every((node) => node.type === 'file' && !node.mediaAsset) && (
+            {currentFolderChildren.length > 0 &&
+             currentFolderChildren.every((node) => node.type === 'file' && !node.mediaAsset) && (
                <div className="col-span-full text-center py-16 text-gray-500 dark:text-gray-400 bg-white/50 dark:bg-gray-800/50 backdrop-blur-sm rounded-2xl border-2 border-dashed border-gray-300 dark:border-gray-600">
                  <FileImage className="w-16 h-16 mx-auto mb-4 opacity-30" />
                  <p className="text-lg font-medium">This folder is empty</p>
@@ -721,7 +791,14 @@ export default function Dashboard() {
                </div>
             )}
             
-            {(!currentFolder?.children || currentFolder.children.length === 0) && (
+            {isCurrentFolderLoading && (
+               <div className="col-span-full text-center py-16 text-gray-500 dark:text-gray-400 bg-white/50 dark:bg-gray-800/50 backdrop-blur-sm rounded-2xl border-2 border-dashed border-gray-300 dark:border-gray-600">
+                 <div className="inline-block animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 dark:border-blue-400 mb-4"></div>
+                 <p className="text-lg font-medium">Loading folder...</p>
+               </div>
+            )}
+
+            {!isCurrentFolderLoading && currentFolderChildren.length === 0 && (
                <div className="col-span-full text-center py-16 text-gray-500 dark:text-gray-400 bg-white/50 dark:bg-gray-800/50 backdrop-blur-sm rounded-2xl border-2 border-dashed border-gray-300 dark:border-gray-600">
                  <Folder className="w-16 h-16 mx-auto mb-4 opacity-30" />
                  <p className="text-lg font-medium">This folder is empty</p>

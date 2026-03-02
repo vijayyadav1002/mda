@@ -9,6 +9,102 @@ import fs from 'fs/promises';
 import path from 'path';
 import { config } from '../config.js';
 
+const mapMediaAssetRow = (row: any) => ({
+  id: row.id,
+  filePath: row.file_path,
+  fileName: row.file_name,
+  fileSize: row.file_size.toString(),
+  mimeType: row.mime_type,
+  width: row.width,
+  height: row.height,
+  duration: row.duration,
+  thumbnailPath: row.thumbnail_path,
+  thumbnailUrl: row.thumbnail_path ? `/thumbnails/${path.basename(row.thumbnail_path)}` : null,
+  transcodedPath: row.transcoded_path,
+  transcodedUrl: row.transcoded_path ? `/transcoded/${path.basename(row.transcoded_path)}` : null,
+  indexedAt: row.indexed_at.toISOString(),
+  createdAt: row.created_at.toISOString(),
+  updatedAt: row.updated_at.toISOString()
+});
+
+const resolveLibraryPath = (requestedPath?: string | null) => {
+  const rootPath = path.resolve(config.mediaLibraryPath);
+  const targetPath = requestedPath ? path.resolve(requestedPath) : rootPath;
+
+  if (targetPath !== rootPath && !targetPath.startsWith(`${rootPath}${path.sep}`)) {
+    throw new Error('Invalid directory path');
+  }
+
+  return targetPath;
+};
+
+const buildDirectoryNode = async (dirPath: string): Promise<any> => {
+  const stats = await fs.stat(dirPath);
+  if (!stats.isDirectory()) {
+    throw new Error('Path is not a directory');
+  }
+
+  const entries = (await fs.readdir(dirPath, { withFileTypes: true }))
+    .filter((entry) => !entry.name.startsWith('.'))
+    .sort((a, b) => {
+      if (a.isDirectory() && !b.isDirectory()) return -1;
+      if (!a.isDirectory() && b.isDirectory()) return 1;
+      return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+    });
+
+  const filePaths = entries
+    .filter((entry) => entry.isFile())
+    .map((entry) => path.join(dirPath, entry.name));
+
+  const assetsByPath = new Map<string, any>();
+  if (filePaths.length > 0) {
+    const result = await db.query(
+      'SELECT * FROM media_assets WHERE file_path = ANY($1::text[])',
+      [filePaths]
+    );
+
+    for (const row of result.rows) {
+      assetsByPath.set(row.file_path, row);
+    }
+  }
+
+  const children = entries
+    .map((entry) => {
+      const childPath = path.join(dirPath, entry.name);
+
+      if (entry.isDirectory()) {
+        return {
+          name: entry.name,
+          path: childPath,
+          type: 'directory',
+          children: null,
+          mediaAsset: null
+        };
+      }
+
+      if (entry.isFile()) {
+        const row = assetsByPath.get(childPath);
+        return {
+          name: entry.name,
+          path: childPath,
+          type: 'file',
+          children: null,
+          mediaAsset: row ? mapMediaAssetRow(row) : null
+        };
+      }
+
+      return null;
+    })
+    .filter(Boolean);
+
+  return {
+    name: path.basename(dirPath) || dirPath,
+    path: dirPath,
+    type: 'directory',
+    children
+  };
+};
+
 export const resolvers = {
   Query: {
     me: async (_: any, __: any, context: GraphQLContext) => {
@@ -71,23 +167,7 @@ export const resolvers = {
 
       const result = await db.query(query, params);
 
-      return result.rows.map(row => ({
-        id: row.id,
-        filePath: row.file_path,
-        fileName: row.file_name,
-        fileSize: row.file_size.toString(),
-        mimeType: row.mime_type,
-        width: row.width,
-        height: row.height,
-        duration: row.duration,
-        thumbnailPath: row.thumbnail_path,
-        thumbnailUrl: row.thumbnail_path ? `/thumbnails/${path.basename(row.thumbnail_path)}` : null,
-        transcodedPath: row.transcoded_path,
-        transcodedUrl: row.transcoded_path ? `/transcoded/${path.basename(row.transcoded_path)}` : null,
-        indexedAt: row.indexed_at.toISOString(),
-        createdAt: row.created_at.toISOString(),
-        updatedAt: row.updated_at.toISOString()
-      }));
+      return result.rows.map(mapMediaAssetRow);
     },
 
     mediaAsset: async (_: any, args: { id: string }, context: GraphQLContext) => {
@@ -97,72 +177,19 @@ export const resolvers = {
       
       if (result.rows.length === 0) throw new Error('Media asset not found');
       
-      const row = result.rows[0];
-      return {
-        id: row.id,
-        filePath: row.file_path,
-        fileName: row.file_name,
-        fileSize: row.file_size.toString(),
-        mimeType: row.mime_type,
-        width: row.width,
-        height: row.height,
-        duration: row.duration,
-        thumbnailPath: row.thumbnail_path,
-        thumbnailUrl: row.thumbnail_path ? `/thumbnails/${path.basename(row.thumbnail_path)}` : null,
-        indexedAt: row.indexed_at.toISOString(),
-        createdAt: row.created_at.toISOString(),
-        updatedAt: row.updated_at.toISOString()
-      };
+      return mapMediaAssetRow(result.rows[0]);
     },
 
     directoryTree: async (_: any, __: any, context: GraphQLContext) => {
       if (!context.user) throw new Error('Unauthorized');
+      const rootPath = resolveLibraryPath(null);
+      return buildDirectoryNode(rootPath);
+    },
 
-      const buildTree = async (dirPath: string): Promise<any> => {
-        const stats = await fs.stat(dirPath);
-        const name = path.basename(dirPath);
-        
-        if (!stats.isDirectory()) {
-          // Check if it's a media asset
-          const result = await db.query(
-            'SELECT * FROM media_assets WHERE file_path = $1',
-            [dirPath]
-          );
-          
-          return {
-            name,
-            path: dirPath,
-            type: 'file',
-            children: [],
-            mediaAsset: result.rows.length > 0 ? {
-              id: result.rows[0].id,
-              filePath: result.rows[0].file_path,
-              fileName: result.rows[0].file_name,
-              fileSize: result.rows[0].file_size.toString(),
-              mimeType: result.rows[0].mime_type,
-              thumbnailUrl: result.rows[0].thumbnail_path ? `/thumbnails/${path.basename(result.rows[0].thumbnail_path)}` : null,
-              transcodedUrl: result.rows[0].transcoded_path ? `/transcoded/${path.basename(result.rows[0].transcoded_path)}` : null,
-              createdAt: result.rows[0].created_at.toISOString()
-            } : null
-          };
-        }
-
-        const entries = await fs.readdir(dirPath, { withFileTypes: true });
-        // Filter out hidden/system files like .DS_Store
-        const filteredEntries = entries.filter(entry => !entry.name.startsWith('.'));
-        const children = await Promise.all(
-          filteredEntries.map(entry => buildTree(path.join(dirPath, entry.name)))
-        );
-
-        return {
-          name,
-          path: dirPath,
-          type: 'directory',
-          children: children.filter(Boolean)
-        };
-      };
-
-      return buildTree(config.mediaLibraryPath);
+    directoryNode: async (_: any, args: { path?: string | null }, context: GraphQLContext) => {
+      if (!context.user) throw new Error('Unauthorized');
+      const targetPath = resolveLibraryPath(args.path ?? null);
+      return buildDirectoryNode(targetPath);
     },
 
     auditLogs: async (_: any, args: { limit?: number; offset?: number }, context: GraphQLContext) => {
