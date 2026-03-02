@@ -21,6 +21,10 @@ services:
       MEDIA_LIBRARY_PATH: /data/media
       THUMBNAIL_CACHE_PATH: /app/apps/backend/cache/thumbnails
       LOW_STORAGE_MODE: "true"
+      CHOKIDAR_USEPOLLING: "true"
+      CHOKIDAR_INTERVAL: 1000
+      CHOKIDAR_BINARY_INTERVAL: 3000
+      CHOKIDAR_AWAIT_WRITE_POLL_INTERVAL: 300
     volumes:
       - ./media-files:/data/media
       - backend_cache:/app/apps/backend/cache

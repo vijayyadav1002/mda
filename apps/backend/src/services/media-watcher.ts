@@ -9,31 +9,48 @@ const SUPPORTED_FORMATS = new Set([...SUPPORTED_IMAGE_FORMATS, ...SUPPORTED_VIDE
 
 let watcherInstance: ReturnType<typeof chokidar.watch> | null = null;
 let isWatcherReady = false;
+let watcherRestarting = false;
 
-export function startMediaWatcher() {
-  if (watcherInstance) {
-    console.log('[WATCHER] Watcher already started');
-    return watcherInstance;
-  }
+const toPositiveInt = (value: string | undefined, fallback: number) => {
+  const parsed = Number.parseInt(value ?? '', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
 
-  console.log(`[WATCHER] Starting media watcher on path: ${config.mediaLibraryPath}`);
+function getWatcherOptions(usePolling: boolean) {
+  const interval = toPositiveInt(
+    process.env.CHOKIDAR_INTERVAL,
+    usePolling ? 1000 : 100
+  );
+  const binaryInterval = toPositiveInt(
+    process.env.CHOKIDAR_BINARY_INTERVAL,
+    usePolling ? 3000 : 300
+  );
+  const awaitWritePollInterval = toPositiveInt(
+    process.env.CHOKIDAR_AWAIT_WRITE_POLL_INTERVAL,
+    usePolling ? 300 : 100
+  );
 
-  watcherInstance = chokidar.watch(config.mediaLibraryPath, {
+  return {
     ignored: /(^|[/\\])\../, // ignore dotfiles
     persistent: true,
     ignoreInitial: true, // Don't process existing files - already done by indexMediaLibrary
     awaitWriteFinish: {
-      stabilityThreshold: 3000, // Increased for better handling of large files
-      pollInterval: 100
+      stabilityThreshold: 3000, // Better handling of large files
+      pollInterval: awaitWritePollInterval
     },
-    // Improve performance and reliability
-    usePolling: process.env.CHOKIDAR_USEPOLLING === 'true',
-    interval: 100,
-    binaryInterval: 300,
+    usePolling,
+    interval,
+    binaryInterval,
     alwaysStat: true // Always stat files for better detection
-  });
+  } as const;
+}
 
-  watcherInstance
+function createWatcher(usePolling: boolean) {
+  console.log(`[WATCHER] Starting media watcher on path: ${config.mediaLibraryPath} (polling=${usePolling})`);
+
+  const watcher = chokidar.watch(config.mediaLibraryPath, getWatcherOptions(usePolling));
+
+  watcher
     .on('add', async (filePath) => {
       // Only process after watcher is ready to avoid duplicate indexing
       if (!isWatcherReady) {
@@ -87,7 +104,26 @@ export function startMediaWatcher() {
         console.error(`[WATCHER] Error removing ${filePath} from index:`, error);
       }
     })
-    .on('error', (error) => {
+    .on('error', (err: unknown) => {
+      const error = err as NodeJS.ErrnoException;
+      // Raspberry Pi / Linux often hits inotify limits on huge media trees.
+      if (error?.code === 'ENOSPC' && !usePolling && !watcherRestarting) {
+        watcherRestarting = true;
+        console.warn('[WATCHER] ENOSPC reached for fs.watch. Restarting watcher with polling mode.');
+        void (async () => {
+          try {
+            isWatcherReady = false;
+            await watcher.close();
+            watcherInstance = createWatcher(true);
+          } catch (restartError) {
+            console.error('[WATCHER] Failed to restart watcher in polling mode:', restartError);
+          } finally {
+            watcherRestarting = false;
+          }
+        })();
+        return;
+      }
+
       console.error('[WATCHER] Watcher error:', error);
     })
     .on('ready', () => {
@@ -95,6 +131,18 @@ export function startMediaWatcher() {
       console.log('✓ Media watcher is ready and monitoring for changes');
       console.log(`[WATCHER] Watching directory: ${config.mediaLibraryPath}`);
     });
+
+  return watcher;
+}
+
+export function startMediaWatcher() {
+  if (watcherInstance) {
+    console.log('[WATCHER] Watcher already started');
+    return watcherInstance;
+  }
+
+  const usePolling = process.env.CHOKIDAR_USEPOLLING === 'true';
+  watcherInstance = createWatcher(usePolling);
 
   return watcherInstance;
 }
