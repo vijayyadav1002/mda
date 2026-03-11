@@ -8,10 +8,19 @@ export function getApiUrl() {
   }
 
   if (typeof window !== 'undefined') {
-    return `${window.location.protocol}//${window.location.hostname}:4000`;
+    if (import.meta.env.DEV) {
+      return `${window.location.protocol}//${window.location.hostname}:4000`;
+    }
+    // In production:
+    // - direct web on :3000 should call backend on :4000
+    // - HTTPS reverse proxy should use same-origin paths
+    if (window.location.port === '3000') {
+      return `${window.location.protocol}//${window.location.hostname}:4000`;
+    }
+    return '';
   }
 
-  return 'http://localhost:4000';
+  return import.meta.env.DEV ? 'http://localhost:4000' : '';
 }
 
 export function createGraphQLClient(token?: string) {

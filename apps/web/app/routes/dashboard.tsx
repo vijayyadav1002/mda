@@ -6,7 +6,7 @@ import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "~/components/ui/dialog";
 import { MediaAssetViewer } from "~/components/MediaAssetViewer";
-import { Folder, FileImage, ArrowLeft, ChevronDown, ChevronRight, Trash2, CheckSquare, Square, Moon, Sun, Users, Key, RotateCcw } from "lucide-react";
+import { Folder, FileImage, ArrowLeft, ChevronDown, ChevronRight, Trash2, CheckSquare, Square, Moon, Sun, Users, Key, RotateCcw, Menu, X } from "lucide-react";
 
 const API_URL = getApiUrl();
 
@@ -118,6 +118,7 @@ export default function Dashboard() {
     return false;
   });
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const refreshInFlightRef = useRef(false);
   const navigate = useNavigate();
 
@@ -458,7 +459,7 @@ export default function Dashboard() {
         <div key={node.path} className="relative group">
           <button 
             type="button"
-            className={`w-full pl-6 py-2.5 flex items-center gap-3 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-all duration-150 outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-left ${
+            className={`w-full pl-4 sm:pl-6 py-2 sm:py-2.5 flex items-center gap-2 sm:gap-3 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-all duration-150 outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-left ${
               isSelected ? 'bg-blue-50 dark:bg-blue-900/30 border-l-4 border-blue-500 dark:border-blue-400 shadow-sm' : ''
             }`}
             onClick={() => node.mediaAsset && handleAssetClick(node.mediaAsset)}
@@ -473,7 +474,7 @@ export default function Dashboard() {
               </div>
             )}
             <FileImage className="w-4 h-4 text-gray-500 dark:text-gray-400 flex-shrink-0" />
-            <span className="text-sm truncate text-gray-700 dark:text-gray-200 flex-1 font-medium">{node.name}</span>
+            <span className="text-xs sm:text-sm truncate text-gray-700 dark:text-gray-200 flex-1 font-medium">{node.name}</span>
             {!selectionMode && node.mediaAsset && (user?.role === 'admin' || user?.role === 'editor') && (
               <button
                 type="button"
@@ -497,10 +498,10 @@ export default function Dashboard() {
     const isExpanded = expandedFolders.has(node.path);
 
     return (
-      <div key={node.path} className="pl-4">
+      <div key={node.path} className="pl-2 sm:pl-4">
         <button
           type="button"
-          className="w-full py-2.5 flex items-center gap-3 font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-all duration-150 outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-left px-2"
+          className="w-full py-2 sm:py-2.5 flex items-center gap-2 sm:gap-3 font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-all duration-150 outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-left px-2"
           onClick={() => void toggleFolder(node.path)}
         >
           {isExpanded ? (
@@ -508,10 +509,10 @@ export default function Dashboard() {
           ) : (
             <ChevronRight className="w-4 h-4 text-gray-500 dark:text-gray-400 flex-shrink-0" />
           )}
-          <div className="w-8 h-8 bg-gradient-to-br from-blue-400 to-indigo-500 dark:from-blue-500 dark:to-indigo-600 rounded-lg flex items-center justify-center flex-shrink-0 shadow-sm">
+          <div className="w-7 h-7 sm:w-8 sm:h-8 bg-gradient-to-br from-blue-400 to-indigo-500 dark:from-blue-500 dark:to-indigo-600 rounded-lg flex items-center justify-center flex-shrink-0 shadow-sm">
             <Folder className="w-4 h-4 text-white" />
           </div>
-          <span className="text-sm">{node.name}</span>
+          <span className="text-xs sm:text-sm">{node.name}</span>
           {Array.isArray(children) && (
             <span className="text-xs text-gray-500 dark:text-gray-400 ml-2 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full">
               {children.length}
@@ -547,84 +548,188 @@ export default function Dashboard() {
   return (
     <div className={`min-h-screen ${darkMode ? 'dark bg-gray-900' : 'bg-gradient-to-br from-gray-50 via-blue-50/30 to-purple-50/30'}`}>
       <header className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm border-b border-gray-200 dark:border-gray-700 shadow-sm sticky top-0 z-40">
-        <div className="container mx-auto px-4 py-4 flex justify-between items-center">
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg">
-                <Folder className="w-6 h-6 text-white" />
+        <div className="container mx-auto px-3 sm:px-4 py-3 sm:py-4">
+          <div className="flex items-center justify-between sm:hidden">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-9 h-9 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg flex-shrink-0">
+                <Folder className="w-5 h-5 text-white" />
               </div>
-              <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 dark:from-blue-400 dark:to-purple-400 bg-clip-text text-transparent">
+              <h1 className="text-lg font-bold bg-gradient-to-r from-blue-600 to-purple-600 dark:from-blue-400 dark:to-purple-400 bg-clip-text text-transparent truncate">
                 Media Asset Manager
               </h1>
             </div>
-          </div>
-          <div className="flex items-center gap-4">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setDarkMode(!darkMode)}
-              className="rounded-full w-10 h-10 p-0 hover:bg-gray-100 dark:hover:bg-gray-700"
-              title={darkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
-            >
-              {darkMode ? (
-                <Sun className="w-5 h-5 text-yellow-500" />
-              ) : (
-                <Moon className="w-5 h-5 text-gray-600" />
-              )}
-            </Button>
             <Button
               variant="outline"
               size="sm"
-              onClick={handleRefreshMediaLibrary}
-              disabled={isRefreshing}
-              className={`border-gray-300 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700 ${isRefreshing ? 'opacity-60 cursor-not-allowed' : ''}`}
-              title="Refresh media library to detect new files"
+              className="w-9 h-9 p-0 border-gray-300 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700 flex-shrink-0"
+              onClick={() => setMobileMenuOpen(prev => !prev)}
+              title={mobileMenuOpen ? "Close Menu" : "Open Menu"}
             >
-              <RotateCcw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-              {isRefreshing ? 'Refreshing...' : 'Refresh'}
+              {mobileMenuOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
             </Button>
-            {user && (
-              <div className="flex items-center gap-3">
-                <div className="text-right hidden sm:block">
-                  <p className="text-sm font-medium text-gray-900 dark:text-white">{user.username}</p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 capitalize">{user.role}</p>
-                </div>
-                <Button 
-                  variant="outline" 
+          </div>
+
+          <div className="hidden sm:flex sm:flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-9 h-9 sm:w-10 sm:h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg flex-shrink-0">
+                <Folder className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
+              </div>
+              <h1 className="text-lg sm:text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 dark:from-blue-400 dark:to-purple-400 bg-clip-text text-transparent truncate">
+                Media Asset Manager
+              </h1>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-end gap-2 flex-wrap">
+                <Button
+                  variant="ghost"
                   size="sm"
-                  onClick={() => setShowChangePasswordDialog(true)}
-                  className="border-gray-300 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
-                  title="Change Password"
+                  onClick={() => setDarkMode(!darkMode)}
+                  className="rounded-full w-9 h-9 sm:w-10 sm:h-10 p-0 hover:bg-gray-100 dark:hover:bg-gray-700"
+                  title={darkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
                 >
-                  <Key className="w-4 h-4" />
+                  {darkMode ? (
+                    <Sun className="w-4 h-4 sm:w-5 sm:h-5 text-yellow-500" />
+                  ) : (
+                    <Moon className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
+                  )}
                 </Button>
-                {user.role === 'admin' && (
-                  <Button 
-                    variant="outline" 
-                    onClick={() => navigate("/users")}
-                    className="border-gray-300 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
-                  >
-                    <Users className="w-4 h-4 mr-2" />
-                    Users
-                  </Button>
-                )}
-                <Button 
-                  variant="outline" 
-                  onClick={handleLogout}
-                  className="border-gray-300 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleRefreshMediaLibrary}
+                  disabled={isRefreshing}
+                  className={`border-gray-300 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700 ${isRefreshing ? 'opacity-60 cursor-not-allowed' : ''}`}
+                  title="Refresh media library to detect new files"
                 >
-                  Logout
+                  <RotateCcw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+                  <span>{isRefreshing ? 'Refreshing...' : 'Refresh'}</span>
                 </Button>
               </div>
-            )}
+
+              {user && (
+                <div className="flex items-center justify-end gap-2 flex-wrap">
+                  <div className="text-right mr-1">
+                    <p className="text-sm font-medium text-gray-900 dark:text-white truncate max-w-[140px] sm:max-w-none">{user.username}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 capitalize">{user.role}</p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowChangePasswordDialog(true)}
+                    className="border-gray-300 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
+                    title="Change Password"
+                  >
+                    <Key className="w-4 h-4" />
+                  </Button>
+                  {user.role === 'admin' && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => navigate("/users")}
+                      className="border-gray-300 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
+                    >
+                      <Users className="w-4 h-4 sm:mr-2" />
+                      <span className="hidden sm:inline">Users</span>
+                    </Button>
+                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleLogout}
+                    className="border-gray-300 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
+                  >
+                    Logout
+                  </Button>
+                </div>
+              )}
+            </div>
           </div>
+
+          {mobileMenuOpen && (
+            <div className="sm:hidden mt-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white/95 dark:bg-gray-800/95 p-3 space-y-2 shadow-lg">
+              {user && (
+                <div className="pb-2 border-b border-gray-200 dark:border-gray-700">
+                  <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{user.username}</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 capitalize">{user.role}</p>
+                </div>
+              )}
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setDarkMode(!darkMode);
+                  setMobileMenuOpen(false);
+                }}
+                className="w-full justify-start border-gray-300 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
+              >
+                {darkMode ? <Sun className="w-4 h-4 mr-2 text-yellow-500" /> : <Moon className="w-4 h-4 mr-2" />}
+                {darkMode ? "Light Mode" : "Dark Mode"}
+              </Button>
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={async () => {
+                  await handleRefreshMediaLibrary();
+                  setMobileMenuOpen(false);
+                }}
+                disabled={isRefreshing}
+                className={`w-full justify-start border-gray-300 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700 ${isRefreshing ? 'opacity-60 cursor-not-allowed' : ''}`}
+              >
+                <RotateCcw className={`w-4 h-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
+                {isRefreshing ? "Refreshing..." : "Refresh Library"}
+              </Button>
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setShowChangePasswordDialog(true);
+                  setMobileMenuOpen(false);
+                }}
+                className="w-full justify-start border-gray-300 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
+              >
+                <Key className="w-4 h-4 mr-2" />
+                Change Password
+              </Button>
+
+              {user?.role === 'admin' && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    navigate("/users");
+                    setMobileMenuOpen(false);
+                  }}
+                  className="w-full justify-start border-gray-300 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
+                >
+                  <Users className="w-4 h-4 mr-2" />
+                  Users
+                </Button>
+              )}
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  handleLogout();
+                }}
+                className="w-full justify-start border-gray-300 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
+              >
+                Logout
+              </Button>
+            </div>
+          )}
         </div>
       </header>
 
-      <main className="container mx-auto px-4 py-8">
-        <div className="mb-8 flex justify-between items-center flex-wrap gap-4">
-          <div className="flex items-center gap-4">
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Media Library</h2>
+      <main className="container mx-auto px-3 sm:px-4 py-4 sm:py-8">
+        <div className="mb-6 sm:mb-8 flex flex-col gap-3 lg:flex-row lg:justify-between lg:items-center">
+          <div className="flex items-center gap-3 flex-wrap">
+            <h2 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">Media Library</h2>
             {folderHistory.length > 0 && (
               <Button 
                 variant="ghost" 
@@ -636,12 +741,12 @@ export default function Dashboard() {
               </Button>
             )}
             {currentFolder && currentFolder.path !== directoryTree?.path && (
-               <span className="text-sm text-gray-600 dark:text-gray-300 bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm px-3 py-1.5 rounded-full border border-gray-200 dark:border-gray-700 font-medium">
+               <span className="text-xs sm:text-sm text-gray-600 dark:text-gray-300 bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm px-3 py-1.5 rounded-full border border-gray-200 dark:border-gray-700 font-medium max-w-full truncate">
                  {currentFolder.name}
                </span>
             )}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap lg:justify-end">
             {(user?.role === 'admin' || user?.role === 'editor') && (
               <>
                 <Button
@@ -698,7 +803,7 @@ export default function Dashboard() {
         </div>
 
         {view === 'grid' ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-6">
             {currentFolderChildren.map((node) => {
               if (node.type === 'directory') {
                 return (
@@ -707,11 +812,11 @@ export default function Dashboard() {
                     className="overflow-hidden cursor-pointer hover:shadow-xl hover:scale-105 transition-all duration-200 bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border-blue-100 dark:border-blue-800 group backdrop-blur-sm"
                     onClick={() => void handleFolderClick(node)}
                   >
-                    <CardContent className="p-6 flex flex-col items-center justify-center text-center h-full min-h-[180px]">
-                      <div className="w-20 h-20 bg-gradient-to-br from-blue-400 to-indigo-500 dark:from-blue-500 dark:to-indigo-600 rounded-2xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-200 shadow-lg">
-                        <Folder className="w-10 h-10 text-white" />
+                    <CardContent className="p-4 sm:p-6 flex flex-col items-center justify-center text-center h-full min-h-[140px] sm:min-h-[180px]">
+                      <div className="w-14 h-14 sm:w-20 sm:h-20 bg-gradient-to-br from-blue-400 to-indigo-500 dark:from-blue-500 dark:to-indigo-600 rounded-2xl flex items-center justify-center mb-3 sm:mb-4 group-hover:scale-110 transition-transform duration-200 shadow-lg">
+                        <Folder className="w-7 h-7 sm:w-10 sm:h-10 text-white" />
                       </div>
-                      <h3 className="font-semibold truncate w-full text-gray-800 dark:text-gray-100 group-hover:text-blue-700 dark:group-hover:text-blue-300">{node.name}</h3>
+                      <h3 className="font-semibold truncate w-full text-sm sm:text-base text-gray-800 dark:text-gray-100 group-hover:text-blue-700 dark:group-hover:text-blue-300">{node.name}</h3>
                       <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 bg-white/50 dark:bg-gray-800/50 px-3 py-1 rounded-full">
                         Folder
                       </p>
@@ -722,9 +827,9 @@ export default function Dashboard() {
                 const asset = node.mediaAsset;
                 const isSelected = selectedAssetIds.has(asset.id);
                 return (
-                  <Card
-                    key={asset.id}
-                    className={`overflow-hidden cursor-pointer hover:shadow-xl hover:scale-105 transition-all duration-200 group relative bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 ${
+                    <Card
+                      key={asset.id}
+                      className={`overflow-hidden cursor-pointer hover:shadow-xl hover:scale-105 transition-all duration-200 group relative bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 ${
                       isSelected ? 'ring-4 ring-blue-500 dark:ring-blue-400 ring-offset-2 dark:ring-offset-gray-900 scale-105 shadow-xl' : ''
                     }`}
                     onClick={() => handleAssetClick(asset)}
@@ -751,7 +856,7 @@ export default function Dashboard() {
                         <Trash2 className="w-4 h-4 text-red-600 dark:text-red-400" />
                       </button>
                     )}
-                    <div className="aspect-square bg-gradient-to-br from-gray-100 to-gray-200 dark:from-gray-700 dark:to-gray-800 relative overflow-hidden">
+                      <div className="aspect-square bg-gradient-to-br from-gray-100 to-gray-200 dark:from-gray-700 dark:to-gray-800 relative overflow-hidden">
                       {asset.thumbnailUrl ? (
                         <img
                           src={`${API_URL}${asset.thumbnailUrl}`}
@@ -765,8 +870,8 @@ export default function Dashboard() {
                       )}
                       <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
                     </div>
-                    <CardContent className="p-4 bg-white dark:bg-gray-800">
-                      <h3 className="font-semibold truncate text-gray-900 dark:text-gray-100 mb-1">{asset.fileName}</h3>
+                    <CardContent className="p-3 sm:p-4 bg-white dark:bg-gray-800">
+                      <h3 className="font-semibold truncate text-sm sm:text-base text-gray-900 dark:text-gray-100 mb-1">{asset.fileName}</h3>
                       <div className="flex items-center justify-between text-xs">
                         <span className="text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded-full">
                           {(Number.parseInt(asset.fileSize) / 1024 / 1024).toFixed(2)} MB
@@ -807,7 +912,7 @@ export default function Dashboard() {
             )}
           </div>
         ) : (
-          <div className="bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm p-6 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 overflow-auto max-h-[calc(100vh-280px)]">
+          <div className="bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm p-3 sm:p-6 rounded-xl sm:rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 overflow-auto max-h-[calc(100vh-230px)] sm:max-h-[calc(100vh-280px)]">
             {directoryTree ? renderTree(directoryTree) : (
               <div className="text-center py-12 text-gray-500 dark:text-gray-400">
                 <FileImage className="w-16 h-16 mx-auto mb-4 opacity-30" />

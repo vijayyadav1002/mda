@@ -211,15 +211,15 @@ export function MediaAssetViewer({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className={`${getDialogSize()} max-h-[90vh] overflow-hidden p-0 flex flex-col bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700`}>
-        <DialogHeader className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
-          <DialogTitle className="text-gray-900 dark:text-white">{asset.fileName}</DialogTitle>
+      <DialogContent className={`w-[95vw] sm:w-auto ${getDialogSize()} max-h-[90vh] overflow-hidden p-0 flex flex-col bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700`}>
+        <DialogHeader className="px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+          <DialogTitle className="text-gray-900 dark:text-white truncate pr-6">{asset.fileName}</DialogTitle>
         </DialogHeader>
         
-        <div className="flex-1 overflow-auto p-6 space-y-4 bg-white dark:bg-gray-800">
+        <div className="flex-1 overflow-auto p-3 sm:p-6 space-y-4 bg-white dark:bg-gray-800">
           {/* Media Preview */}
           {asset.mimeType.startsWith('image/') && (
-            <div className="relative flex items-center justify-center w-full overflow-auto max-h-[60vh] bg-gray-50 dark:bg-gray-900 rounded-lg p-4 group">
+            <div className="relative flex items-center justify-center w-full overflow-auto max-h-[52vh] sm:max-h-[60vh] bg-gray-50 dark:bg-gray-900 rounded-lg p-2 sm:p-4 group">
               <img 
                 src={getOriginalImageUrl()}
                 alt={asset.fileName}
@@ -248,7 +248,7 @@ export function MediaAssetViewer({
             <div className="relative flex items-center justify-center w-full bg-black dark:bg-gray-950 rounded-lg overflow-hidden shadow-lg group">
               <video 
                 controls
-                className="max-w-full max-h-[60vh] object-contain"
+                className="max-w-full max-h-[52vh] sm:max-h-[60vh] object-contain"
                 preload="metadata"
                 onError={(e) => {
                   console.error('Video error:', e);
@@ -285,7 +285,7 @@ export function MediaAssetViewer({
 
           {/* File Details */}
           <div className="space-y-2 pt-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
-            <div className="grid grid-cols-2 gap-4 text-sm">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 text-sm">
               <div>
                 <span className="font-semibold text-gray-900 dark:text-gray-100">File Name:</span>
                 <p className="text-gray-600 dark:text-gray-300 break-all mt-1">{asset.fileName}</p>
@@ -302,7 +302,7 @@ export function MediaAssetViewer({
                 <span className="font-semibold text-gray-900 dark:text-gray-100">Created:</span>
                 <p className="text-gray-600 dark:text-gray-300 mt-1">{formatDate(asset.createdAt)}</p>
               </div>
-              <div className="col-span-2">
+              <div className="sm:col-span-2">
                 <span className="font-semibold text-gray-900 dark:text-gray-100">File Path:</span>
                 <p className="text-gray-600 dark:text-gray-300 text-xs break-all font-mono bg-gray-50 dark:bg-gray-900 p-3 rounded-lg mt-1 border border-gray-200 dark:border-gray-700">
                   {asset.filePath}
@@ -312,17 +312,17 @@ export function MediaAssetViewer({
           </div>
 
           {/* Actions */}
-          <div className="flex justify-end gap-2 pt-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 pt-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
             <Button 
               variant="outline" 
               onClick={onClose}
-              className="border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
+              className="w-full sm:w-auto border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
             >
               Close
             </Button>
             <Button 
               variant="default"
-              className="bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600"
+              className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600"
             >
               <Download className="w-4 h-4 mr-2" />
               Download

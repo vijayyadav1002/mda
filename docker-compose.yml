@@ -28,9 +28,28 @@ services:
     volumes:
       - ./media-files:/data/media
       - backend_cache:/app/apps/backend/cache
+    expose:
+      - "3000"
+      - "4000"
     ports:
       - "3000:3000"
       - "4000:4000"
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: mda-caddy
+    restart: unless-stopped
+    depends_on:
+      - app
+    environment:
+      MDA_HOSTNAME: ${MDA_HOSTNAME:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
 
   postgres:
     image: postgres:16-alpine
@@ -65,6 +84,10 @@ services:
       retries: 3
 volumes:
   backend_cache:
+    driver: local
+  caddy_data:
+    driver: local
+  caddy_config:
     driver: local
   postgres_data:
     driver: local

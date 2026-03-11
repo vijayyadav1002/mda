@@ -10,6 +10,9 @@ import stylesheet from "~/styles/globals.css?url";
 
 export const links: LinksFunction = () => [
   { rel: "stylesheet", href: stylesheet },
+  { rel: "manifest", href: "/manifest.webmanifest" },
+  { rel: "icon", href: "/icons/icon-192.svg", type: "image/svg+xml" },
+  { rel: "apple-touch-icon", href: "/icons/icon-192.svg" },
 ];
 
 export function Layout({ children }: { children: React.ReactNode }) {
@@ -18,6 +21,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="theme-color" content="#2563eb" />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
         <Meta />
         <Links />
         <script
