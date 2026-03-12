@@ -226,3 +226,109 @@ export async function generateAndSaveThumbnail(filePath: string, assetId: string
     console.error(`Failed to generate/save thumbnail for ${filePath}:`, error);
   }
 }
+
+export interface AdvancedCompressOptions {
+  resolution?: string; // e.g. "1920x1080", "1280x720", "original"
+  quality?: number;    // 1-100 for images; maps to CRF for videos
+}
+
+/**
+ * Compress an image with resolution and quality options.
+ * Preserves original format (HEIC outputs as JPEG).
+ */
+export async function compressImageAdvanced(
+  inputPath: string,
+  outputPath: string,
+  options: AdvancedCompressOptions
+): Promise<void> {
+  const ext = path.extname(inputPath).toLowerCase();
+  const quality = options.quality ?? 80;
+
+  let pipeline: sharp.Sharp;
+
+  // HEIC needs special decoding
+  if (ext === '.heic') {
+    if (shouldPreferExternalHeic) {
+      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mda-compress-'));
+      const tempJpeg = path.join(tempDir, 'source.jpg');
+      try {
+        await execFileAsync('heif-convert', [inputPath, tempJpeg]);
+        pipeline = sharp(tempJpeg).rotate();
+      } catch {
+        const decoded = await decodeHeicToRgba(inputPath);
+        pipeline = sharp(decoded.data, {
+          raw: { width: decoded.width, height: decoded.height, channels: 4 }
+        });
+      }
+    } else {
+      const decoded = await decodeHeicToRgba(inputPath);
+      pipeline = sharp(decoded.data, {
+        raw: { width: decoded.width, height: decoded.height, channels: 4 }
+      });
+    }
+  } else {
+    pipeline = sharp(inputPath).rotate();
+  }
+
+  // Apply resolution resize
+  if (options.resolution && options.resolution !== 'original') {
+    const [w, h] = options.resolution.split('x').map(Number);
+    if (w && h) {
+      pipeline = pipeline.resize(w, h, { fit: 'inside', withoutEnlargement: true });
+    }
+  }
+
+  // Output in the closest matching format
+  const outExt = path.extname(outputPath).toLowerCase();
+  if (outExt === '.png') {
+    await pipeline.png({ quality }).toFile(outputPath);
+  } else if (outExt === '.webp') {
+    await pipeline.webp({ quality }).toFile(outputPath);
+  } else {
+    // Default to JPEG for jpg, jpeg, heic, bmp, gif, and anything else
+    await pipeline.jpeg({ quality }).toFile(outputPath);
+  }
+}
+
+/**
+ * Compress a video with resolution and CRF options.
+ * Preserves the original container format. Audio is copied (no re-encode).
+ */
+export async function compressVideoAdvanced(
+  inputPath: string,
+  outputPath: string,
+  options: AdvancedCompressOptions
+): Promise<void> {
+  // Map quality (1-100) to CRF (51-0). Higher quality = lower CRF.
+  const quality = options.quality ?? 70;
+  const crf = Math.round(51 - (quality / 100) * 51);
+
+  return new Promise((resolve, reject) => {
+    let cmd = ffmpeg(inputPath);
+
+    const outputOptions: string[] = [
+      '-c:v libx264',
+      `-crf ${crf}`,
+      '-preset medium',
+      '-c:a copy',
+      '-movflags +faststart',
+      '-pix_fmt yuv420p'
+    ];
+
+    // Apply resolution scaling if specified
+    if (options.resolution && options.resolution !== 'original') {
+      const [w, h] = options.resolution.split('x').map(Number);
+      if (w && h) {
+        // Scale to fit within WxH while maintaining aspect ratio; ensure even dimensions
+        outputOptions.push(`-vf scale='min(${w},iw)':min'(${h},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2`);
+      }
+    }
+
+    cmd
+      .outputOptions(outputOptions)
+      .output(outputPath)
+      .on('end', () => resolve())
+      .on('error', (err) => reject(err))
+      .run();
+  });
+}

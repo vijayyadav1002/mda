@@ -74,5 +74,20 @@ export const schema = `
     compressMediaAsset(id: ID!, quality: Int, overwrite: Boolean): MediaAsset!
     refreshMediaLibrary: String!
     generateThumbnailsForPath(path: String): Int!
+    previewCompressAssets(ids: [ID!]!, options: CompressOptionsInput!): [CompressPreviewResult!]!
+    confirmCompressReplace(ids: [ID!]!): [MediaAsset!]!
+    cancelCompressPreview(ids: [ID!]!): Boolean!
+  }
+
+  input CompressOptionsInput {
+    resolution: String
+    quality: Int
+  }
+
+  type CompressPreviewResult {
+    assetId: ID!
+    originalSize: String!
+    compressedSize: String!
+    previewUrl: String!
   }
 `;

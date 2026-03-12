@@ -6,7 +6,8 @@ import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "~/components/ui/dialog";
 import { MediaAssetViewer } from "~/components/MediaAssetViewer";
-import { Folder, FileImage, ArrowLeft, ChevronDown, ChevronRight, Trash2, CheckSquare, Square, Moon, Sun, Users, Key, RotateCcw, Menu, X, ImagePlus, ArrowUpDown } from "lucide-react";
+import { CompressDialog } from "~/components/CompressDialog";
+import { Folder, FileImage, ArrowLeft, ChevronDown, ChevronRight, Trash2, CheckSquare, Square, Moon, Sun, Users, Key, RotateCcw, Menu, X, ImagePlus, ArrowUpDown, Minimize2 } from "lucide-react";
 
 const API_URL = getApiUrl();
 
@@ -129,6 +130,7 @@ export default function Dashboard() {
   const [sortOption, setSortOption] = useState<"default" | "size-asc" | "size-desc">("default");
   const [showSortMenu, setShowSortMenu] = useState(false);
   const sortMenuRef = useRef<HTMLDivElement>(null);
+  const [isCompressDialogOpen, setIsCompressDialogOpen] = useState(false);
   const refreshInFlightRef = useRef(false);
   const thumbnailPollTimerRef = useRef<number | null>(null);
   const thumbnailPollAttemptsRef = useRef(0);
@@ -909,15 +911,26 @@ export default function Dashboard() {
                   {selectionMode ? 'Cancel' : 'Select'}
                 </Button>
                 {selectionMode && selectedAssetIds.size > 0 && (
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    onClick={handleDeleteSelected}
-                    className="flex items-center gap-2 bg-red-600 hover:bg-red-700 dark:bg-red-500 dark:hover:bg-red-600"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                    Delete ({selectedAssetIds.size})
-                  </Button>
+                  <>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setIsCompressDialogOpen(true)}
+                      className="flex items-center gap-2 border-blue-300 dark:border-blue-600 text-blue-700 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/30"
+                    >
+                      <Minimize2 className="w-4 h-4" />
+                      Compress ({selectedAssetIds.size})
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={handleDeleteSelected}
+                      className="flex items-center gap-2 bg-red-600 hover:bg-red-700 dark:bg-red-500 dark:hover:bg-red-600"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      Delete ({selectedAssetIds.size})
+                    </Button>
+                  </>
                 )}
               </>
             )}
@@ -1116,6 +1129,23 @@ export default function Dashboard() {
         isOpen={isViewerOpen}
         onClose={handleCloseViewer}
         apiUrl={API_URL}
+      />
+
+      <CompressDialog
+        isOpen={isCompressDialogOpen}
+        onClose={() => setIsCompressDialogOpen(false)}
+        selectedAssets={
+          sortedFolderChildren
+            .filter(n => n.type === 'file' && n.mediaAsset && selectedAssetIds.has(n.mediaAsset.id))
+            .map(n => n.mediaAsset!)
+        }
+        onComplete={async () => {
+          setIsCompressDialogOpen(false);
+          setSelectionMode(false);
+          setSelectedAssetIds(new Set());
+          if (rootPath) await loadDirectoryIntoCache(rootPath);
+          if (currentPath && currentPath !== rootPath) await loadDirectoryIntoCache(currentPath);
+        }}
       />
 
       {/* Change Password Dialog */}
