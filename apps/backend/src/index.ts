@@ -52,6 +52,17 @@ await fastify.register(fastifyStatic, {
 const previewCachePath = path.resolve(path.dirname(config.thumbnailCachePath), 'previews');
 await fs.promises.mkdir(previewCachePath, { recursive: true });
 
+const compressPreviewPath = path.resolve(path.dirname(config.thumbnailCachePath), 'compress-preview');
+await fs.promises.mkdir(compressPreviewPath, { recursive: true });
+
+// Serve compress preview files
+await fastify.register(fastifyStatic, {
+  root: compressPreviewPath,
+  prefix: '/compress-preview/',
+  decorateReply: false,
+  cacheControl: false
+});
+
 // Serve media files
 await fastify.register(fastifyStatic, {
   root: path.resolve(config.mediaLibraryPath),
@@ -106,21 +117,57 @@ fastify.get('/image/:id', async (request, reply) => {
       .digest('hex');
     const cachedPath = path.join(previewCachePath, `${cacheKey}.jpg`);
 
+    let cacheExists = false;
     try {
       await fs.promises.access(cachedPath);
+      cacheExists = true;
     } catch {
-      const { renderHeicToJpeg } = await import('./services/thumbnail.js');
-      await renderHeicToJpeg(absPath, cachedPath, {
-        kind: 'inside',
-        maxWidth: config.previewMaxDimension,
-        maxHeight: config.previewMaxDimension,
-        quality: config.previewQuality
-      });
+      // Not cached yet, try to generate
     }
 
-    reply.header('Content-Type', 'image/jpeg');
+    if (!cacheExists) {
+      // Attempt 1: renderHeicToJpeg (libheif-js / heif-convert)
+      try {
+        const { renderHeicToJpeg } = await import('./services/thumbnail.js');
+        await renderHeicToJpeg(absPath, cachedPath, {
+          kind: 'inside',
+          maxWidth: config.previewMaxDimension,
+          maxHeight: config.previewMaxDimension,
+          quality: config.previewQuality
+        });
+        cacheExists = true;
+      } catch (heicError) {
+        fastify.log.warn(`HEIC conversion via renderHeicToJpeg failed for ${path.basename(absPath)}: ${heicError instanceof Error ? heicError.message : String(heicError)}`);
+      }
+
+      // Attempt 2: Try sharp directly (newer libvips can handle HEIC natively)
+      if (!cacheExists) {
+        try {
+          const sharp = (await import('sharp')).default;
+          await sharp(absPath)
+            .rotate()
+            .resize(config.previewMaxDimension, config.previewMaxDimension, { fit: 'inside', withoutEnlargement: true })
+            .jpeg({ quality: config.previewQuality })
+            .toFile(cachedPath);
+          cacheExists = true;
+          fastify.log.info(`HEIC converted via sharp fallback: ${path.basename(absPath)}`);
+        } catch (sharpError) {
+          fastify.log.warn(`HEIC conversion via sharp also failed for ${path.basename(absPath)}: ${sharpError instanceof Error ? sharpError.message : String(sharpError)}`);
+        }
+      }
+    }
+
+    if (cacheExists) {
+      reply.header('Content-Type', 'image/jpeg');
+      reply.header('Cache-Control', 'public, max-age=86400');
+      return reply.send(fs.createReadStream(cachedPath));
+    }
+
+    // All conversions failed — serve the raw HEIC file so the client gets something
+    fastify.log.warn(`All HEIC conversions failed for ${path.basename(absPath)}, serving raw file`);
+    reply.header('Content-Type', 'image/heic');
     reply.header('Cache-Control', 'public, max-age=86400');
-    return reply.send(fs.createReadStream(cachedPath));
+    return reply.send(fs.createReadStream(absPath));
   }
 
   // For non-HEIC images, stream the original from disk with its mime type.

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useNavigate } from "@remix-run/react";
 import { createGraphQLClient, getApiUrl, getAuthToken, clearAuthToken } from "~/lib/api";
 import { Card, CardContent } from "~/components/ui/card";
@@ -6,7 +6,8 @@ import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "~/components/ui/dialog";
 import { MediaAssetViewer } from "~/components/MediaAssetViewer";
-import { Folder, FileImage, ArrowLeft, ChevronDown, ChevronRight, Trash2, CheckSquare, Square, Moon, Sun, Users, Key, RotateCcw, Menu, X, ImagePlus } from "lucide-react";
+import { CompressDialog } from "~/components/CompressDialog";
+import { Folder, FileImage, ArrowLeft, ChevronDown, ChevronRight, Trash2, CheckSquare, Square, Moon, Sun, Users, Key, RotateCcw, Menu, X, ImagePlus, ArrowUpDown, Minimize2 } from "lucide-react";
 
 const API_URL = getApiUrl();
 
@@ -126,6 +127,10 @@ export default function Dashboard() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isGeneratingThumbnails, setIsGeneratingThumbnails] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [sortOption, setSortOption] = useState<"default" | "size-asc" | "size-desc">("default");
+  const [showSortMenu, setShowSortMenu] = useState(false);
+  const sortMenuRef = useRef<HTMLDivElement>(null);
+  const [isCompressDialogOpen, setIsCompressDialogOpen] = useState(false);
   const refreshInFlightRef = useRef(false);
   const thumbnailPollTimerRef = useRef<number | null>(null);
   const thumbnailPollAttemptsRef = useRef(0);
@@ -505,6 +510,35 @@ export default function Dashboard() {
   const currentFolderChildren = Array.isArray(currentFolder?.children) ? currentFolder.children : [];
   const isCurrentFolderLoading = !!currentFolder && currentFolder.children === null;
 
+  // Sort children: folders first, then files sorted by file size if a sort option is active
+  const sortedFolderChildren = useMemo(() => {
+    if (sortOption === "default") return currentFolderChildren;
+
+    const folders = currentFolderChildren.filter(n => n.type === 'directory');
+    const files = currentFolderChildren.filter(n => n.type !== 'directory');
+
+    const sorted = [...files].sort((a, b) => {
+      const sizeA = a.mediaAsset ? Number.parseInt(a.mediaAsset.fileSize) || 0 : 0;
+      const sizeB = b.mediaAsset ? Number.parseInt(b.mediaAsset.fileSize) || 0 : 0;
+      return sortOption === "size-asc" ? sizeA - sizeB : sizeB - sizeA;
+    });
+
+    return [...folders, ...sorted];
+  }, [currentFolderChildren, sortOption]);
+
+  // Close sort menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (sortMenuRef.current && !sortMenuRef.current.contains(e.target as Node)) {
+        setShowSortMenu(false);
+      }
+    };
+    if (showSortMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showSortMenu]);
+
   useEffect(() => {
     if (!currentPath) return;
 
@@ -877,18 +911,71 @@ export default function Dashboard() {
                   {selectionMode ? 'Cancel' : 'Select'}
                 </Button>
                 {selectionMode && selectedAssetIds.size > 0 && (
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    onClick={handleDeleteSelected}
-                    className="flex items-center gap-2 bg-red-600 hover:bg-red-700 dark:bg-red-500 dark:hover:bg-red-600"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                    Delete ({selectedAssetIds.size})
-                  </Button>
+                  <>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setIsCompressDialogOpen(true)}
+                      className="flex items-center gap-2 border-blue-300 dark:border-blue-600 text-blue-700 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/30"
+                    >
+                      <Minimize2 className="w-4 h-4" />
+                      Compress ({selectedAssetIds.size})
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={handleDeleteSelected}
+                      className="flex items-center gap-2 bg-red-600 hover:bg-red-700 dark:bg-red-500 dark:hover:bg-red-600"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      Delete ({selectedAssetIds.size})
+                    </Button>
+                  </>
                 )}
               </>
             )}
+            {/* Sort control */}
+            <div className="relative" ref={sortMenuRef}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowSortMenu(prev => !prev)}
+                className={`flex items-center gap-1.5 border-gray-300 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700 ${
+                  sortOption !== 'default' ? 'bg-blue-50 dark:bg-blue-900/30 border-blue-300 dark:border-blue-600' : ''
+                }`}
+                title="Sort files"
+              >
+                <ArrowUpDown className="w-4 h-4" />
+                <span className="hidden sm:inline">
+                  {sortOption === 'default' ? 'Sort' : sortOption === 'size-asc' ? 'Size ↑' : 'Size ↓'}
+                </span>
+              </Button>
+              {showSortMenu && (
+                <div className="absolute right-0 top-full mt-1 w-40 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50 py-1 overflow-hidden">
+                  {[
+                    { value: 'default' as const, label: 'Default' },
+                    { value: 'size-asc' as const, label: 'Size ↑ (Smallest)' },
+                    { value: 'size-desc' as const, label: 'Size ↓ (Largest)' },
+                  ].map(opt => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      className={`w-full text-left px-3 py-2 text-sm transition-colors ${
+                        sortOption === opt.value
+                          ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 font-medium'
+                          : 'text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700'
+                      }`}
+                      onClick={() => {
+                        setSortOption(opt.value);
+                        setShowSortMenu(false);
+                      }}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
             <div className="flex gap-2 bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm p-1 rounded-lg border border-gray-200 dark:border-gray-700">
               <Button
                 variant={view === "grid" ? "default" : "ghost"}
@@ -918,7 +1005,7 @@ export default function Dashboard() {
 
         {view === 'grid' ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-6">
-            {currentFolderChildren.map((node) => {
+            {sortedFolderChildren.map((node) => {
               if (node.type === 'directory') {
                 return (
                   <Card
@@ -1001,8 +1088,8 @@ export default function Dashboard() {
               return null;
             })}
             
-            {currentFolderChildren.length > 0 &&
-             currentFolderChildren.every((node) => node.type === 'file' && !node.mediaAsset) && (
+            {sortedFolderChildren.length > 0 &&
+             sortedFolderChildren.every((node) => node.type === 'file' && !node.mediaAsset) && (
                <div className="col-span-full text-center py-16 text-gray-500 dark:text-gray-400 bg-white/50 dark:bg-gray-800/50 backdrop-blur-sm rounded-2xl border-2 border-dashed border-gray-300 dark:border-gray-600">
                  <FileImage className="w-16 h-16 mx-auto mb-4 opacity-30" />
                  <p className="text-lg font-medium">This folder is empty</p>
@@ -1017,7 +1104,7 @@ export default function Dashboard() {
                </div>
             )}
 
-            {!isCurrentFolderLoading && currentFolderChildren.length === 0 && (
+            {!isCurrentFolderLoading && sortedFolderChildren.length === 0 && (
                <div className="col-span-full text-center py-16 text-gray-500 dark:text-gray-400 bg-white/50 dark:bg-gray-800/50 backdrop-blur-sm rounded-2xl border-2 border-dashed border-gray-300 dark:border-gray-600">
                  <Folder className="w-16 h-16 mx-auto mb-4 opacity-30" />
                  <p className="text-lg font-medium">This folder is empty</p>
@@ -1042,6 +1129,23 @@ export default function Dashboard() {
         isOpen={isViewerOpen}
         onClose={handleCloseViewer}
         apiUrl={API_URL}
+      />
+
+      <CompressDialog
+        isOpen={isCompressDialogOpen}
+        onClose={() => setIsCompressDialogOpen(false)}
+        selectedAssets={
+          sortedFolderChildren
+            .filter(n => n.type === 'file' && n.mediaAsset && selectedAssetIds.has(n.mediaAsset.id))
+            .map(n => n.mediaAsset!)
+        }
+        onComplete={async () => {
+          setIsCompressDialogOpen(false);
+          setSelectionMode(false);
+          setSelectedAssetIds(new Set());
+          if (rootPath) await loadDirectoryIntoCache(rootPath);
+          if (currentPath && currentPath !== rootPath) await loadDirectoryIntoCache(currentPath);
+        }}
       />
 
       {/* Change Password Dialog */}
