@@ -10,8 +10,17 @@ const SUPPORTED_VIDEO_FORMATS = ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.m4v'
 const SUPPORTED_FORMATS = [...SUPPORTED_IMAGE_FORMATS, ...SUPPORTED_VIDEO_FORMATS];
 
 type IndexFileResult = 'indexed' | 'up_to_date' | 'thumbnail_requeued' | 'unsupported';
+type IndexOptions = {
+  queueThumbnails?: boolean;
+  requeueMissingThumbnails?: boolean;
+};
 
-export async function indexMediaLibrary() {
+const normalizeIndexOptions = (options?: IndexOptions) => ({
+  queueThumbnails: options?.queueThumbnails ?? true,
+  requeueMissingThumbnails: options?.requeueMissingThumbnails ?? true
+});
+
+export async function indexMediaLibrary(options: IndexOptions = {}) {
   try {
     const mediaPath = config.mediaLibraryPath;
 
@@ -35,9 +44,14 @@ export async function indexMediaLibrary() {
     let unsupportedCount = 0;
     let failedCount = 0;
 
+    const normalizedOptions = normalizeIndexOptions({
+      queueThumbnails: options.queueThumbnails ?? !config.thumbnailsOnDemand,
+      requeueMissingThumbnails: options.requeueMissingThumbnails ?? !config.thumbnailsOnDemand
+    });
+
     for (const filePath of files) {
       try {
-        const result = await indexFile(filePath);
+        const result = await indexFile(filePath, normalizedOptions);
         if (result === 'indexed') indexedCount += 1;
         if (result === 'up_to_date') upToDateCount += 1;
         if (result === 'thumbnail_requeued') requeuedCount += 1;
@@ -112,8 +126,10 @@ async function scanDirectory(dir: string, maxDepth: number = 20, currentDepth: n
   return files;
 }
 
-export async function indexFile(filePath: string): Promise<IndexFileResult> {
+export async function indexFile(filePath: string, options: IndexOptions = {}): Promise<IndexFileResult> {
   try {
+    const { queueThumbnails, requeueMissingThumbnails } = normalizeIndexOptions(options);
+
     // Check if file exists
     let stats;
     try {
@@ -121,6 +137,15 @@ export async function indexFile(filePath: string): Promise<IndexFileResult> {
     } catch {
       console.log(`File no longer exists: ${filePath}`);
       return 'up_to_date';
+    }
+
+    const fileName = path.basename(filePath);
+    const ext = path.extname(fileName).toLowerCase();
+
+    // Validate file format
+    if (!SUPPORTED_FORMATS.includes(ext)) {
+      console.log(`Skipping unsupported format: ${ext}`);
+      return 'unsupported';
     }
 
     // Check if already indexed and up to date
@@ -144,7 +169,7 @@ export async function indexFile(filePath: string): Promise<IndexFileResult> {
           }
         }
 
-        if (!hasUsableThumbnail) {
+        if (!hasUsableThumbnail && requeueMissingThumbnails) {
           try {
             await addToThumbnailQueue({ filePath, assetId: String(existing.rows[0].id) });
             return 'thumbnail_requeued';
@@ -152,9 +177,8 @@ export async function indexFile(filePath: string): Promise<IndexFileResult> {
             console.warn(`⚠️  Failed to re-queue thumbnail job for ${path.basename(filePath)}: ${e?.message ?? String(e)}`);
             return 'up_to_date';
           }
-        } else {
-          return 'up_to_date';
         }
+        return 'up_to_date';
       }
       // File was modified, delete old entry and clean up thumbnail
       try {
@@ -173,15 +197,6 @@ export async function indexFile(filePath: string): Promise<IndexFileResult> {
         console.warn(`Could not clean up old thumbnail: ${e}`);
       }
       await db.query('DELETE FROM media_assets WHERE id = $1', [existing.rows[0].id]);
-    }
-
-    const fileName = path.basename(filePath);
-    const ext = path.extname(fileName).toLowerCase();
-
-    // Validate file format
-    if (!SUPPORTED_FORMATS.includes(ext)) {
-      console.log(`Skipping unsupported format: ${ext}`);
-      return 'unsupported';
     }
 
     // Determine mime type
@@ -209,13 +224,16 @@ export async function indexFile(filePath: string): Promise<IndexFileResult> {
     const assetId = result.rows[0].id;
 
     // Queue thumbnail generation
-    try {
-      await addToThumbnailQueue({ filePath, assetId });
-    } catch (e: any) {
-      console.warn(`⚠️  Failed to queue thumbnail job for ${fileName}: ${e?.message ?? String(e)}`);
+    if (queueThumbnails) {
+      try {
+        await addToThumbnailQueue({ filePath, assetId });
+      } catch (e: any) {
+        console.warn(`⚠️  Failed to queue thumbnail job for ${fileName}: ${e?.message ?? String(e)}`);
+      }
     }
 
-    console.log(`✓ Indexed: ${fileName} (queued for processing)`);
+    const queueLabel = queueThumbnails ? 'queued for processing' : 'thumbnail deferred';
+    console.log(`✓ Indexed: ${fileName} (${queueLabel})`);
     return 'indexed';
   } catch (error) {
     console.error(`Error indexing file ${filePath}:`, error);

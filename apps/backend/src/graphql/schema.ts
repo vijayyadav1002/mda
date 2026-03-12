@@ -73,5 +73,6 @@ export const schema = `
     deleteMediaAsset(id: ID!): Boolean!
     compressMediaAsset(id: ID!, quality: Int, overwrite: Boolean): MediaAsset!
     refreshMediaLibrary: String!
+    generateThumbnailsForPath(path: String): Int!
   }
 `;

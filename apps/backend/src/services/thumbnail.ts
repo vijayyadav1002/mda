@@ -3,6 +3,9 @@ import ffmpeg from 'fluent-ffmpeg';
 import path from 'path';
 import crypto from 'crypto';
 import fs from 'fs/promises';
+import os from 'os';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import { config } from '../config.js';
 import { db } from '../db/index.js';
 
@@ -12,6 +15,13 @@ const SUPPORTED_VIDEO_FORMATS = ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.m4v'
 type HeicJpegOptions =
   | { kind: 'cover'; width: number; height: number; quality?: number }
   | { kind: 'inside'; maxWidth: number; maxHeight: number; quality?: number };
+
+const execFileAsync = promisify(execFile);
+
+const heicDecodeMode = (process.env.HEIC_DECODE_MODE || 'auto').toLowerCase();
+const shouldPreferExternalHeic =
+  heicDecodeMode === 'external' ||
+  (heicDecodeMode === 'auto' && process.platform === 'linux' && process.arch.startsWith('arm'));
 
 async function decodeHeicToRgba(inputPath: string): Promise<{ data: Buffer; width: number; height: number }> {
   // @ts-ignore - libheif-js has no types.
@@ -43,6 +53,36 @@ async function decodeHeicToRgba(inputPath: string): Promise<{ data: Buffer; widt
 }
 
 export async function renderHeicToJpeg(inputPath: string, outputPath: string, options: HeicJpegOptions): Promise<void> {
+  if (shouldPreferExternalHeic) {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mda-heic-'));
+    const tempJpeg = path.join(tempDir, 'source.jpg');
+    try {
+      await execFileAsync('heif-convert', [inputPath, tempJpeg]);
+      const pipeline = sharp(tempJpeg).rotate();
+
+      if (options.kind === 'cover') {
+        await pipeline
+          .resize(options.width, options.height, { fit: 'cover', position: 'center' })
+          .jpeg({ quality: options.quality ?? config.thumbnailQuality })
+          .toFile(outputPath);
+        return;
+      }
+
+      await pipeline
+        .resize(options.maxWidth, options.maxHeight, { fit: 'inside', withoutEnlargement: true })
+        .jpeg({ quality: options.quality ?? config.previewQuality })
+        .toFile(outputPath);
+      return;
+    } catch (error) {
+      if (heicDecodeMode === 'external') {
+        throw error;
+      }
+      // Fall back to libheif-js when auto mode is enabled.
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true }).catch(() => undefined);
+    }
+  }
+
   const decoded = await decodeHeicToRgba(inputPath);
 
   const pipeline = sharp(decoded.data, {

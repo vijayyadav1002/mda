@@ -6,7 +6,7 @@ import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "~/components/ui/dialog";
 import { MediaAssetViewer } from "~/components/MediaAssetViewer";
-import { Folder, FileImage, ArrowLeft, ChevronDown, ChevronRight, Trash2, CheckSquare, Square, Moon, Sun, Users, Key, RotateCcw, Menu, X } from "lucide-react";
+import { Folder, FileImage, ArrowLeft, ChevronDown, ChevronRight, Trash2, CheckSquare, Square, Moon, Sun, Users, Key, RotateCcw, Menu, X, ImagePlus } from "lucide-react";
 
 const API_URL = getApiUrl();
 
@@ -40,6 +40,12 @@ const CHANGE_MY_PASSWORD_MUTATION = `
 const REFRESH_MEDIA_LIBRARY_MUTATION = `
   mutation RefreshMediaLibrary {
     refreshMediaLibrary
+  }
+`;
+
+const GENERATE_THUMBNAILS_FOR_PATH_MUTATION = `
+  mutation GenerateThumbnailsForPath($path: String) {
+    generateThumbnailsForPath(path: $path)
   }
 `;
 
@@ -118,8 +124,13 @@ export default function Dashboard() {
     return false;
   });
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isGeneratingThumbnails, setIsGeneratingThumbnails] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const refreshInFlightRef = useRef(false);
+  const thumbnailPollTimerRef = useRef<number | null>(null);
+  const thumbnailPollAttemptsRef = useRef(0);
+  const thumbnailPollInFlightRef = useRef(false);
+  const thumbnailQueueCooldownRef = useRef<Record<string, number>>({});
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -299,6 +310,49 @@ export default function Dashboard() {
     }
   };
 
+  const generateThumbnailsForPath = async (pathToQueue: string, options?: { silent?: boolean }) => {
+    const token = getAuthToken();
+    if (!token) return;
+
+    const client = createGraphQLClient(token);
+    const response: any = await client.request(GENERATE_THUMBNAILS_FOR_PATH_MUTATION, {
+      path: pathToQueue
+    });
+
+    if (!options?.silent) {
+      const queuedCount = response?.generateThumbnailsForPath ?? 0;
+      alert(queuedCount > 0
+        ? `Queued thumbnails for ${queuedCount} item(s).`
+        : "No thumbnails were queued for this folder.");
+    }
+  };
+
+  const handleGenerateThumbnails = async () => {
+    if (!currentPath || isGeneratingThumbnails) return;
+    try {
+      setIsGeneratingThumbnails(true);
+      await generateThumbnailsForPath(currentPath);
+      await loadDirectoryIntoCache(currentPath);
+    } catch (err: any) {
+      console.error("Failed to generate thumbnails:", err);
+      alert(`Failed to generate thumbnails: ${err.message || 'Unknown error'}`);
+    } finally {
+      setIsGeneratingThumbnails(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!currentPath) return;
+    const now = Date.now();
+    const lastQueuedAt = thumbnailQueueCooldownRef.current[currentPath] ?? 0;
+    if (now - lastQueuedAt < 60_000) return;
+
+    thumbnailQueueCooldownRef.current[currentPath] = now;
+    void generateThumbnailsForPath(currentPath, { silent: true }).catch((err) => {
+      console.error("Failed to auto-queue thumbnails:", err);
+    });
+  }, [currentPath]);
+
   const handleAssetClick = (asset: MediaAsset) => {
     if (selectionMode) {
       toggleAssetSelection(asset.id);
@@ -450,6 +504,55 @@ export default function Dashboard() {
   const directoryTree = rootPath ? directoryCache[rootPath] || null : null;
   const currentFolderChildren = Array.isArray(currentFolder?.children) ? currentFolder.children : [];
   const isCurrentFolderLoading = !!currentFolder && currentFolder.children === null;
+
+  useEffect(() => {
+    if (!currentPath) return;
+
+    const hasMissingThumbnails = currentFolderChildren.some((node) => {
+      if (node.type !== 'file') return false;
+      return !!node.mediaAsset && !node.mediaAsset.thumbnailUrl;
+    });
+
+    if (!hasMissingThumbnails) {
+      if (thumbnailPollTimerRef.current) {
+        window.clearInterval(thumbnailPollTimerRef.current);
+        thumbnailPollTimerRef.current = null;
+      }
+      return;
+    }
+
+    if (thumbnailPollTimerRef.current) return;
+
+    thumbnailPollAttemptsRef.current = 0;
+    thumbnailPollTimerRef.current = window.setInterval(async () => {
+      if (!currentPath) return;
+      if (thumbnailPollInFlightRef.current) return;
+      if (thumbnailPollAttemptsRef.current >= 12) {
+        if (thumbnailPollTimerRef.current) {
+          window.clearInterval(thumbnailPollTimerRef.current);
+          thumbnailPollTimerRef.current = null;
+        }
+        return;
+      }
+
+      thumbnailPollAttemptsRef.current += 1;
+      thumbnailPollInFlightRef.current = true;
+      try {
+        await loadDirectoryIntoCache(currentPath);
+      } catch (err) {
+        console.error("Failed to refresh directory thumbnails:", err);
+      } finally {
+        thumbnailPollInFlightRef.current = false;
+      }
+    }, 5000);
+
+    return () => {
+      if (thumbnailPollTimerRef.current) {
+        window.clearInterval(thumbnailPollTimerRef.current);
+        thumbnailPollTimerRef.current = null;
+      }
+    };
+  }, [currentPath, currentFolderChildren]);
 
   const renderTree = (node: DirectoryNode) => {
     if (node.type === 'file') {
@@ -749,6 +852,17 @@ export default function Dashboard() {
           <div className="flex items-center gap-2 flex-wrap lg:justify-end">
             {(user?.role === 'admin' || user?.role === 'editor') && (
               <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleGenerateThumbnails}
+                  disabled={isGeneratingThumbnails || !currentPath}
+                  className={`flex items-center gap-2 border-gray-300 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700 ${isGeneratingThumbnails ? 'opacity-60 cursor-not-allowed' : ''}`}
+                  title="Generate thumbnails for the current folder"
+                >
+                  <ImagePlus className="w-4 h-4" />
+                  <span className="hidden sm:inline">{isGeneratingThumbnails ? 'Queuing...' : 'Generate Thumbnails'}</span>
+                </Button>
                 <Button
                   variant={selectionMode ? "default" : "outline"}
                   size="sm"

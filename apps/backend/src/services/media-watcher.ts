@@ -62,7 +62,10 @@ function createWatcher(usePolling: boolean) {
       if (SUPPORTED_FORMATS.has(ext)) {
         console.log(`[WATCHER] New file detected: ${filePath}`);
         try {
-          await indexFile(filePath);
+          await indexFile(filePath, {
+            queueThumbnails: !config.thumbnailsOnDemand,
+            requeueMissingThumbnails: !config.thumbnailsOnDemand
+          });
           console.log(`[WATCHER] Successfully indexed: ${path.basename(filePath)}`);
         } catch (error) {
           console.error(`[WATCHER] Error indexing ${filePath}:`, error);
@@ -82,7 +85,10 @@ function createWatcher(usePolling: boolean) {
       if (SUPPORTED_FORMATS.has(ext)) {
         console.log(`[WATCHER] File changed: ${filePath}`);
         try {
-          await indexFile(filePath);
+          await indexFile(filePath, {
+            queueThumbnails: !config.thumbnailsOnDemand,
+            requeueMissingThumbnails: !config.thumbnailsOnDemand
+          });
           console.log(`[WATCHER] Successfully reindexed: ${path.basename(filePath)}`);
         } catch (error) {
           console.error(`[WATCHER] Error reindexing ${filePath}:`, error);

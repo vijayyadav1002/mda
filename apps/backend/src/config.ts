@@ -25,6 +25,7 @@ const thumbnailCacheMaxMbDefault = lowStorageMode ? 250 : 1024;
 const previewCacheMaxMbDefault = lowStorageMode ? 150 : 512;
 const hlsCacheMaxMbDefault = lowStorageMode ? 500 : 2048;
 const transcodedCacheMaxMbDefault = lowStorageMode ? 250 : 1024;
+const thumbnailsOnDemandDefault = lowStorageMode;
 
 export const config = {
   port: parseInt(process.env.PORT || '4000', 10),
@@ -36,6 +37,7 @@ export const config = {
   redisHost: process.env.REDIS_HOST || 'localhost',
   redisPort: parseInt(process.env.REDIS_PORT || '6379', 10),
   lowStorageMode,
+  thumbnailsOnDemand: toBool(process.env.THUMBNAILS_ON_DEMAND, thumbnailsOnDemandDefault),
   thumbnailSize: toNumber(process.env.THUMBNAIL_SIZE, thumbnailSizeDefault),
   thumbnailQuality: toNumber(process.env.THUMBNAIL_QUALITY, thumbnailQualityDefault),
   previewMaxDimension: toNumber(process.env.PREVIEW_MAX_DIMENSION, previewMaxDimensionDefault),

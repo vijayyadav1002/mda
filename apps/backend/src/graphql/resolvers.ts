@@ -4,10 +4,15 @@ import { logAudit } from '../services/audit.js';
 import { compressImage, compressVideo } from '../services/thumbnail.js';
 import { enqueueMediaRefresh } from '../services/queue.js';
 import { cleanupDeletedAssetCaches } from '../services/media-cleanup.js';
+import { indexFile } from '../services/media-indexer.js';
 import type { GraphQLContext } from './context.js';
 import fs from 'fs/promises';
 import path from 'path';
 import { config } from '../config.js';
+
+const SUPPORTED_IMAGE_FORMATS = ['.jpg', '.jpeg', '.png', '.heic', '.gif', '.webp', '.bmp'];
+const SUPPORTED_VIDEO_FORMATS = ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.m4v'];
+const SUPPORTED_FORMATS = new Set([...SUPPORTED_IMAGE_FORMATS, ...SUPPORTED_VIDEO_FORMATS]);
 
 const mapMediaAssetRow = (row: any) => ({
   id: row.id,
@@ -38,6 +43,23 @@ const resolveLibraryPath = (requestedPath?: string | null) => {
   return targetPath;
 };
 
+const listMediaFilesInDirectory = async (dirPath: string): Promise<string[]> => {
+  const entries = (await fs.readdir(dirPath, { withFileTypes: true }))
+    .filter((entry) => !entry.name.startsWith('.'));
+
+  const mediaFiles: string[] = [];
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    const fullPath = path.join(dirPath, entry.name);
+    const ext = path.extname(entry.name).toLowerCase();
+    if (SUPPORTED_FORMATS.has(ext)) {
+      mediaFiles.push(fullPath);
+    }
+  }
+
+  return mediaFiles;
+};
+
 const buildDirectoryNode = async (dirPath: string): Promise<any> => {
   const stats = await fs.stat(dirPath);
   if (!stats.isDirectory()) {
@@ -56,11 +78,13 @@ const buildDirectoryNode = async (dirPath: string): Promise<any> => {
     .filter((entry) => entry.isFile())
     .map((entry) => path.join(dirPath, entry.name));
 
+  const mediaFilePaths = filePaths.filter((filePath) => SUPPORTED_FORMATS.has(path.extname(filePath).toLowerCase()));
+
   const assetsByPath = new Map<string, any>();
-  if (filePaths.length > 0) {
+  if (mediaFilePaths.length > 0) {
     const result = await db.query(
       'SELECT * FROM media_assets WHERE file_path = ANY($1::text[])',
-      [filePaths]
+      [mediaFilePaths]
     );
 
     for (const row of result.rows) {
@@ -643,6 +667,32 @@ export const resolvers = {
         console.error('[GRAPHQL] Error refreshing media library:', error);
         throw new Error(`Failed to refresh media library: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
+    },
+
+    generateThumbnailsForPath: async (_: any, args: { path?: string | null }, context: GraphQLContext) => {
+      if (!context.user) throw new Error('Unauthorized');
+
+      const targetPath = resolveLibraryPath(args.path ?? null);
+      const stats = await fs.stat(targetPath);
+      if (!stats.isDirectory()) {
+        throw new Error('Path is not a directory');
+      }
+
+      const mediaFiles = await listMediaFilesInDirectory(targetPath);
+      let queuedCount = 0;
+
+      for (const filePath of mediaFiles) {
+        try {
+          const result = await indexFile(filePath, { queueThumbnails: true, requeueMissingThumbnails: true });
+          if (result === 'indexed' || result === 'thumbnail_requeued') {
+            queuedCount += 1;
+          }
+        } catch (error) {
+          console.warn(`[GenerateThumbnails] Failed for ${path.basename(filePath)}: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+
+      return queuedCount;
     }
   }
 };
