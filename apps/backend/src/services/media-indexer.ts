@@ -37,23 +37,55 @@ export async function indexMediaLibrary() {
   }
 }
 
-async function scanDirectory(dir: string): Promise<string[]> {
+async function scanDirectory(dir: string, maxDepth: number = 20, currentDepth: number = 0, visited: Set<string> = new Set()): Promise<string[]> {
   const files: string[] = [];
   
+  // Prevent stack overflow from circular references
+  if (currentDepth > maxDepth) {
+    console.warn(`Max directory depth exceeded at ${dir}`);
+    return files;
+  }
+  
   try {
+    // Use a simple string-based visited check first to catch circular refs early
+    if (visited.has(dir)) {
+      console.warn(`Circular reference detected at ${dir}`);
+      return files;
+    }
+    
+    visited.add(dir);
+    
     const entries = await fs.readdir(dir, { withFileTypes: true });
     
     for (const entry of entries) {
       const fullPath = path.join(dir, entry.name);
       
-      if (entry.isDirectory()) {
-        const subFiles = await scanDirectory(fullPath);
-        files.push(...subFiles);
-      } else if (entry.isFile()) {
-        const ext = path.extname(entry.name).toLowerCase();
-        if (SUPPORTED_FORMATS.includes(ext)) {
-          files.push(fullPath);
+      try {
+        // Use lstat to detect symlinks without following them
+        const stats = await fs.lstat(fullPath);
+        
+        // Skip symlinks to prevent circular references and symlink loops
+        if (stats.isSymbolicLink()) {
+          console.debug(`Skipping symlink: ${fullPath}`);
+          continue;
         }
+        
+        if (stats.isDirectory()) {
+          // Check visited before recursing
+          if (!visited.has(fullPath)) {
+            const subFiles = await scanDirectory(fullPath, maxDepth, currentDepth + 1, visited);
+            files.push(...subFiles);
+          }
+        } else if (stats.isFile()) {
+          const ext = path.extname(entry.name).toLowerCase();
+          if (SUPPORTED_FORMATS.includes(ext)) {
+            files.push(fullPath);
+          }
+        }
+      } catch (entryError) {
+        console.warn(`Error processing entry ${fullPath}: ${entryError instanceof Error ? entryError.message : String(entryError)}`);
+        // Continue with next entry instead of stopping
+        continue;
       }
     }
   } catch (error) {
