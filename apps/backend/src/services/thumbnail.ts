@@ -297,7 +297,7 @@ export async function compressImageAdvanced(
 export async function compressVideoAdvanced(
   inputPath: string,
   outputPath: string,
-  options: AdvancedCompressOptions
+  options: AdvancedCompressOptions & { onProgress?: (percent: number) => void }
 ): Promise<void> {
   // Map quality (1-100) to CRF (51-0). Higher quality = lower CRF.
   const quality = options.quality ?? 70;
@@ -327,6 +327,11 @@ export async function compressVideoAdvanced(
     cmd
       .outputOptions(outputOptions)
       .output(outputPath)
+      .on('progress', (progress) => {
+        if (options.onProgress && progress.percent != null) {
+          options.onProgress(Math.min(Math.round(progress.percent), 100));
+        }
+      })
       .on('end', () => resolve())
       .on('error', (err) => reject(err))
       .run();

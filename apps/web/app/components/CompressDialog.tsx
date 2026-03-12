@@ -2,20 +2,9 @@ import { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "~/components/ui/dialog";
 import { Button } from "~/components/ui/button";
 import { createGraphQLClient, getApiUrl, getAuthToken } from "~/lib/api";
-import { Loader2, Check, X, ChevronDown, Eye } from "lucide-react";
+import { Loader2, Check, X, ChevronDown, Eye, Clock } from "lucide-react";
 
 const API_URL = getApiUrl();
-
-const PREVIEW_COMPRESS_MUTATION = `
-  mutation PreviewCompressAssets($ids: [ID!]!, $options: CompressOptionsInput!) {
-    previewCompressAssets(ids: $ids, options: $options) {
-      assetId
-      originalSize
-      compressedSize
-      previewUrl
-    }
-  }
-`;
 
 const CONFIRM_COMPRESS_MUTATION = `
   mutation ConfirmCompressReplace($ids: [ID!]!) {
@@ -50,6 +39,11 @@ interface CompressPreviewResult {
   previewUrl: string;
 }
 
+interface CompressProgress {
+  percent: number;
+  etaSeconds: number | null;
+}
+
 interface CompressDialogProps {
   readonly isOpen: boolean;
   readonly onClose: () => void;
@@ -81,6 +75,14 @@ function calcSavings(original: string, compressed: string): string {
   return `${pct.toFixed(1)}%`;
 }
 
+function formatEta(seconds: number | null): string {
+  if (seconds == null) return "calculating...";
+  if (seconds < 60) return `${seconds}s remaining`;
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}m ${s}s remaining`;
+}
+
 type Phase = "configure" | "compressing" | "preview" | "replacing" | "done";
 
 export function CompressDialog({
@@ -93,6 +95,9 @@ export function CompressDialog({
   const [resolution, setResolution] = useState("original");
   const [quality, setQuality] = useState(70);
   const [previews, setPreviews] = useState<CompressPreviewResult[]>([]);
+  const [progress, setProgress] = useState<Record<string, CompressProgress>>({});
+  const [currentCompressingId, setCurrentCompressingId] = useState<string | null>(null);
+  const [overallEta, setOverallEta] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [previewAssetId, setPreviewAssetId] = useState<string | null>(null);
   const [showResDropdown, setShowResDropdown] = useState(false);
@@ -118,31 +123,105 @@ export function CompressDialog({
       }
     }
     setPreviews([]);
+    setProgress({});
     setPhase("configure");
     setError(null);
     setPreviewAssetId(null);
+    setCurrentCompressingId(null);
+    setOverallEta(null);
     onClose();
   };
 
   const handlePreview = async () => {
     setError(null);
     setPhase("compressing");
+    setProgress({});
+    setCurrentCompressingId(null);
+    setOverallEta(null);
+    
+    // Initialize progress for all
+    const initProgress: Record<string, CompressProgress> = {};
+    for (const a of selectedAssets) {
+      initProgress[a.id] = { percent: 0, etaSeconds: null };
+    }
+    setProgress(initProgress);
 
     try {
       const token = getAuthToken();
       if (!token) throw new Error("Not authenticated");
 
-      const client = createGraphQLClient(token);
-      const data: any = await client.request(PREVIEW_COMPRESS_MUTATION, {
-        ids: selectedAssets.map((a) => a.id),
-        options: {
-          resolution: resolution === "original" ? null : resolution,
-          quality,
+      const response = await fetch(`${API_URL}/api/compress/preview`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
         },
+        body: JSON.stringify({
+          ids: selectedAssets.map(a => a.id),
+          options: {
+            resolution: resolution === "original" ? null : resolution,
+            quality
+          }
+        })
       });
 
-      setPreviews(data.previewCompressAssets);
+      if (!response.ok) {
+        throw new Error(`HTTP error ${response.status}`);
+      }
+      
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error("No readable stream");
+      
+      const decoder = new TextDecoder();
+      let buffer = "";
+      
+      const newPreviews: CompressPreviewResult[] = [];
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? "";
+        
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const event = JSON.parse(line);
+            if (event.type === 'file_start') {
+              setCurrentCompressingId(event.assetId);
+            } else if (event.type === 'file_progress') {
+              setProgress(prev => ({
+                ...prev,
+                [event.assetId]: { percent: event.percent, etaSeconds: event.etaSeconds }
+              }));
+            } else if (event.type === 'file_complete') {
+              newPreviews.push({
+                assetId: event.assetId,
+                originalSize: event.originalSize,
+                compressedSize: event.compressedSize,
+                previewUrl: event.previewUrl
+              });
+              setProgress(prev => ({
+                ...prev,
+                [event.assetId]: { percent: 100, etaSeconds: 0 }
+              }));
+              if (event.overallEtaSeconds != null) {
+                setOverallEta(event.overallEtaSeconds);
+              }
+            } else if (event.type === 'file_error') {
+               console.error(`File compression error for ${event.assetId}:`, event.error);
+            }
+          } catch(e) {
+            console.error("NDJSON parse error:", e);
+          }
+        }
+      }
+      
+      setPreviews(newPreviews);
       setPhase("preview");
+      
     } catch (err: any) {
       setError(err.message || "Compression failed");
       setPhase("configure");
@@ -184,7 +263,6 @@ export function CompressDialog({
       ? (((totalOriginalSize - totalCompressedSize) / totalOriginalSize) * 100).toFixed(1)
       : "0";
 
-  // Find the asset object that matches a given preview for rendering
   const getAssetForPreview = (p: CompressPreviewResult) =>
     selectedAssets.find((a) => a.id === p.assetId);
 
@@ -194,6 +272,9 @@ export function CompressDialog({
   const previewingAsset = previewingItem
     ? getAssetForPreview(previewingItem)
     : null;
+
+  const currentAsset = selectedAssets.find(a => a.id === currentCompressingId);
+  const currentProgress = currentCompressingId ? progress[currentCompressingId] : null;
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
@@ -313,14 +394,37 @@ export function CompressDialog({
 
           {/* COMPRESSING PHASE */}
           {phase === "compressing" && (
-            <div className="flex flex-col items-center justify-center py-12 gap-4">
+            <div className="flex flex-col items-center justify-center py-8 gap-6">
               <Loader2 className="w-10 h-10 text-blue-500 animate-spin" />
-              <p className="text-sm text-gray-600 dark:text-gray-300">
-                Compressing {selectedAssets.length} file{selectedAssets.length !== 1 ? "s" : ""}…
-              </p>
-              <p className="text-xs text-gray-400 dark:text-gray-500">
-                This may take a while for large video files
-              </p>
+              
+              <div className="text-center w-full max-w-sm">
+                <p className="text-sm font-medium text-gray-800 dark:text-gray-200 mb-2 truncate px-4">
+                  Compressing {currentAsset ? currentAsset.fileName : "..."}
+                </p>
+                
+                {/* Progress bar */}
+                <div className="w-full bg-gray-200 dark:bg-gray-700 h-2 rounded-full overflow-hidden mb-2">
+                  <div 
+                    className="bg-blue-500 h-full transition-all duration-300 ease-out"
+                    style={{ width: `${currentProgress?.percent ?? 0}%` }}
+                  />
+                </div>
+                
+                <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400">
+                  <span>{currentProgress?.percent ?? 0}%</span>
+                  <span className="flex items-center gap-1">
+                    <Clock className="w-3 h-3" />
+                    {formatEta(currentProgress?.etaSeconds ?? null)}
+                  </span>
+                </div>
+              </div>
+
+              <div className="text-xs text-gray-400 dark:text-gray-500 flex flex-col items-center gap-1 mt-2 border-t border-gray-100 dark:border-gray-800 pt-4 w-full">
+                <span>Total overall ETA</span>
+                <span className="font-medium text-gray-600 dark:text-gray-300">
+                   {formatEta(overallEta)}
+                </span>
+              </div>
             </div>
           )}
 
@@ -392,7 +496,7 @@ export function CompressDialog({
 
               {/* Media preview */}
               {previewingItem && previewingAsset && (
-                <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+                <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden mt-4">
                   <div className="bg-gray-50 dark:bg-gray-900/50 px-3 py-2 text-xs font-medium text-gray-600 dark:text-gray-300 flex items-center justify-between">
                     <span>Preview: {previewingAsset.fileName}</span>
                     <button

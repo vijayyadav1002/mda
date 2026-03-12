@@ -332,6 +332,133 @@ fastify.delete('/video/:id/cleanup', async (request, reply) => {
   }
 });
 
+// Streaming compress preview endpoint with progress events
+fastify.post('/api/compress/preview', async (request, reply) => {
+  // Auth check
+  const authHeader = request.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) {
+    return reply.code(401).send({ error: 'Unauthorized' });
+  }
+  const token = authHeader.slice(7);
+  let userId: string;
+  try {
+    const decoded = fastify.jwt.verify<any>(token);
+    userId = decoded.id;
+    const userResult = await db.query('SELECT role FROM users WHERE id = $1', [userId]);
+    if (userResult.rows.length === 0 || !['admin', 'editor'].includes(userResult.rows[0].role)) {
+      return reply.code(403).send({ error: 'Forbidden' });
+    }
+  } catch {
+    return reply.code(401).send({ error: 'Invalid token' });
+  }
+
+  const { ids, options } = request.body as { ids: string[]; options: { resolution?: string; quality?: number } };
+  if (!ids?.length) {
+    return reply.code(400).send({ error: 'No asset IDs provided' });
+  }
+
+  const previewDir = path.resolve(path.dirname(config.thumbnailCachePath), 'compress-preview');
+  await fs.promises.mkdir(previewDir, { recursive: true });
+
+  // Set up NDJSON streaming response
+  reply.raw.writeHead(200, {
+    'Content-Type': 'application/x-ndjson',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'Access-Control-Allow-Origin': '*'
+  });
+
+  const send = (event: Record<string, any>) => {
+    reply.raw.write(JSON.stringify(event) + '\n');
+  };
+
+  send({ type: 'start', total: ids.length });
+
+  const fileStartTimes: number[] = [];
+
+  for (let i = 0; i < ids.length; i++) {
+    const id = ids[i];
+    const fileStartTime = Date.now();
+
+    try {
+      const result = await db.query('SELECT * FROM media_assets WHERE id = $1', [id]);
+      if (result.rows.length === 0) {
+        send({ type: 'file_error', assetId: id, error: 'Asset not found' });
+        continue;
+      }
+
+      const asset = result.rows[0];
+      const ext = path.extname(asset.file_path).toLowerCase();
+      const previewExt = ext === '.heic' ? '.jpg' : ext;
+      const previewFileName = `${id}_preview${previewExt}`;
+      const previewPath = path.join(previewDir, previewFileName);
+      const originalStats = await fs.promises.stat(asset.file_path);
+
+      send({
+        type: 'file_start',
+        assetId: id,
+        fileName: asset.file_name,
+        index: i,
+        total: ids.length,
+        originalSize: originalStats.size.toString(),
+        isVideo: asset.mime_type.startsWith('video/')
+      });
+
+      if (asset.mime_type.startsWith('image/')) {
+        const { compressImageAdvanced } = await import('./services/thumbnail.js');
+        await compressImageAdvanced(asset.file_path, previewPath, {
+          resolution: options.resolution,
+          quality: options.quality
+        });
+        send({ type: 'file_progress', assetId: id, percent: 100 });
+      } else if (asset.mime_type.startsWith('video/')) {
+        const { compressVideoAdvanced } = await import('./services/thumbnail.js');
+        let lastSent = 0;
+        await compressVideoAdvanced(asset.file_path, previewPath, {
+          resolution: options.resolution,
+          quality: options.quality,
+          onProgress: (percent: number) => {
+            // Throttle: only send every 2% change
+            if (percent - lastSent >= 2 || percent >= 100) {
+              lastSent = percent;
+              const elapsed = (Date.now() - fileStartTime) / 1000;
+              const etaSeconds = percent > 0 ? Math.round((elapsed / percent) * (100 - percent)) : null;
+              send({ type: 'file_progress', assetId: id, percent, etaSeconds });
+            }
+          }
+        });
+      } else {
+        send({ type: 'file_error', assetId: id, error: `Unsupported type: ${asset.mime_type}` });
+        continue;
+      }
+
+      const compressedStats = await fs.promises.stat(previewPath);
+      const elapsed = (Date.now() - fileStartTime) / 1000;
+      fileStartTimes.push(elapsed);
+
+      // Calculate overall ETA for remaining files
+      const avgTimePerFile = fileStartTimes.reduce((a, b) => a + b, 0) / fileStartTimes.length;
+      const remainingFiles = ids.length - (i + 1);
+      const overallEtaSeconds = Math.round(avgTimePerFile * remainingFiles);
+
+      send({
+        type: 'file_complete',
+        assetId: id,
+        originalSize: originalStats.size.toString(),
+        compressedSize: compressedStats.size.toString(),
+        previewUrl: `/compress-preview/${previewFileName}`,
+        elapsedSeconds: Math.round(elapsed),
+        overallEtaSeconds
+      });
+    } catch (err: any) {
+      send({ type: 'file_error', assetId: id, error: err.message || 'Compression failed' });
+    }
+  }
+
+  send({ type: 'done' });
+  reply.raw.end();
+});
+
 // GraphQL
 // @ts-ignore
 await fastify.register(mercurius, {
