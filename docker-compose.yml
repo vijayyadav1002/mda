@@ -1,4 +1,56 @@
 services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.app
+    container_name: mda-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 4000
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/mda
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      JWT_SECRET: docker-dev-secret-change-me
+      MEDIA_LIBRARY_PATH: /data/media
+      THUMBNAIL_CACHE_PATH: /app/apps/backend/cache/thumbnails
+      LOW_STORAGE_MODE: "true"
+      CHOKIDAR_USEPOLLING: "true"
+      CHOKIDAR_INTERVAL: 1000
+      CHOKIDAR_BINARY_INTERVAL: 3000
+      CHOKIDAR_AWAIT_WRITE_POLL_INTERVAL: 300
+    volumes:
+      - ./media-files:/data/media
+      - backend_cache:/app/apps/backend/cache
+    expose:
+      - "3000"
+      - "4000"
+    ports:
+      - "3000:3000"
+      - "4000:4000"
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: mda-caddy
+    restart: unless-stopped
+    depends_on:
+      - app
+    environment:
+      MDA_HOSTNAME: ${MDA_HOSTNAME:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
   postgres:
     image: postgres:16-alpine
     container_name: mda-postgres
@@ -17,8 +69,29 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+  redis:
+    image: redis:alpine
+    container_name: mda-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 volumes:
+  backend_cache:
+    driver: local
+  caddy_data:
+    driver: local
+  caddy_config:
+    driver: local
   postgres_data:
+    driver: local
+  redis_data:
     driver: local
 networks:
   default:

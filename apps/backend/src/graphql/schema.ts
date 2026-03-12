@@ -54,6 +54,7 @@ export const schema = `
     mediaAssets(limit: Int, offset: Int, mimeType: String): [MediaAsset!]!
     mediaAsset(id: ID!): MediaAsset
     directoryTree: DirectoryNode!
+    directoryNode(path: String): DirectoryNode!
     auditLogs(limit: Int, offset: Int): [AuditLog!]!
     hasAdminUser: Boolean!
   }
@@ -72,5 +73,6 @@ export const schema = `
     deleteMediaAsset(id: ID!): Boolean!
     compressMediaAsset(id: ID!, quality: Int, overwrite: Boolean): MediaAsset!
     refreshMediaLibrary: String!
+    generateThumbnailsForPath(path: String): Int!
   }
 `;
