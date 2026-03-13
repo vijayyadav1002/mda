@@ -680,15 +680,27 @@ export const resolvers = {
 
       const mediaFiles = await listMediaFilesInDirectory(targetPath);
       let queuedCount = 0;
+      const BATCH_SIZE = 10;
+      const BATCH_DELAY_MS = 200; // Throttle job production to prevent queue explosion
 
-      for (const filePath of mediaFiles) {
-        try {
-          const result = await indexFile(filePath, { queueThumbnails: true, requeueMissingThumbnails: true });
-          if (result === 'indexed' || result === 'thumbnail_requeued') {
-            queuedCount += 1;
+      // Process in batches with delay to keep queue manageable and CPU responsive
+      for (let i = 0; i < mediaFiles.length; i += BATCH_SIZE) {
+        const batch = mediaFiles.slice(i, i + BATCH_SIZE);
+        
+        for (const filePath of batch) {
+          try {
+            const result = await indexFile(filePath, { queueThumbnails: true, requeueMissingThumbnails: true });
+            if (result === 'indexed' || result === 'thumbnail_requeued') {
+              queuedCount += 1;
+            }
+          } catch (error) {
+            console.warn(`[GenerateThumbnails] Failed for ${path.basename(filePath)}: ${error instanceof Error ? error.message : String(error)}`);
           }
-        } catch (error) {
-          console.warn(`[GenerateThumbnails] Failed for ${path.basename(filePath)}: ${error instanceof Error ? error.message : String(error)}`);
+        }
+
+        // Delay before next batch to throttle job production (except on last batch)
+        if (i + BATCH_SIZE < mediaFiles.length) {
+          await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS));
         }
       }
 

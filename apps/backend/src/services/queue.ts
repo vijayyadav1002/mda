@@ -74,7 +74,7 @@ export function startWorkers() {
         console.log(`[Worker] Finished encoding job ${job.id}`);
     }, {
         connection,
-        concurrency: 2 // Process max 2 videos at a time
+        concurrency: 1 // Process max 1 video at a time (video transcoding is very CPU-intensive on 4-core RPi)
     });
 
     const thumbnailWorker = new Worker<ThumbnailJobData>('thumbnail', async (job) => {
@@ -86,7 +86,7 @@ export function startWorkers() {
         }
     }, {
         connection,
-        concurrency: 4 // Process max 4 thumbnails at a time
+        concurrency: 2 // Process max 2 thumbnails at a time (optimized for 4-core Raspberry Pi)
     });
 
     const mediaRefreshWorker = new Worker<MediaRefreshJobData>('media-refresh', async (job) => {
