@@ -171,7 +171,12 @@ export async function indexFile(filePath: string, options: IndexOptions = {}): P
 
         if (!hasUsableThumbnail && requeueMissingThumbnails) {
           try {
-            await addToThumbnailQueue({ filePath, assetId: String(existing.rows[0].id) });
+            const isVideoFile = SUPPORTED_VIDEO_FORMATS.includes(ext);
+            await addToThumbnailQueue({ 
+              filePath, 
+              assetId: String(existing.rows[0].id),
+              mediaType: isVideoFile ? 'video' : 'image'
+            });
             return 'thumbnail_requeued';
           } catch (e: any) {
             console.warn(`⚠️  Failed to re-queue thumbnail job for ${path.basename(filePath)}: ${e?.message ?? String(e)}`);
@@ -223,10 +228,14 @@ export async function indexFile(filePath: string, options: IndexOptions = {}): P
 
     const assetId = result.rows[0].id;
 
-    // Queue thumbnail generation
+    // Queue thumbnail generation with priority (images first, videos second)
     if (queueThumbnails) {
       try {
-        await addToThumbnailQueue({ filePath, assetId });
+        await addToThumbnailQueue({ 
+          filePath, 
+          assetId,
+          mediaType: isVideo ? 'video' : 'image'
+        });
       } catch (e: any) {
         console.warn(`⚠️  Failed to queue thumbnail job for ${fileName}: ${e?.message ?? String(e)}`);
       }

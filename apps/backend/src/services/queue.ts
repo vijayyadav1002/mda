@@ -51,7 +51,14 @@ export interface EncodingJobData {
 export interface ThumbnailJobData {
     filePath: string;
     assetId?: string; // If present, update DB thumbnail_path
+    mediaType?: 'image' | 'video'; // For priority-based processing
 }
+
+// Priority levels for thumbnail queue (higher = processed first)
+const THUMBNAIL_PRIORITY = {
+    IMAGE: 10,    // High priority: fast to generate (~50ms)
+    VIDEO: 1      // Low priority: slow to generate (~5-30s, process in background)
+};
 
 export interface MediaRefreshJobData {
     requestedByUserId: number;
@@ -112,7 +119,16 @@ export function startWorkers() {
 }
 
 export const addToEncodingQueue = (data: EncodingJobData) => encodingQueue.add('transcode', data);
-export const addToThumbnailQueue = (data: ThumbnailJobData) => thumbnailQueue.add('generate', data);
+
+/**
+ * Add thumbnail job with priority-based ordering (Bull priority queue)
+ * Images: priority 10 (high) - processed first, fast (~50ms)
+ * Videos: priority 1 (low) - processed in background, can take 5-30s
+ */
+export const addToThumbnailQueue = (data: ThumbnailJobData) => {
+    const priority = data.mediaType === 'video' ? THUMBNAIL_PRIORITY.VIDEO : THUMBNAIL_PRIORITY.IMAGE;
+    return thumbnailQueue.add('generate', data, { priority });
+};
 
 export async function enqueueMediaRefresh(data: MediaRefreshJobData) {
     const now = Date.now();
