@@ -32,6 +32,28 @@ const mapMediaAssetRow = (row: any) => ({
   updatedAt: row.updated_at.toISOString()
 });
 
+const cleanupCompressPreviewFiles = async (previewDir: string, ids: string[]) => {
+  if (ids.length === 0) return;
+  let entries: string[];
+  try {
+    entries = await fs.readdir(previewDir);
+  } catch {
+    return;
+  }
+
+  const idSet = new Set(ids);
+  const deletions = entries
+    .filter((name) => {
+      const markerIndex = name.lastIndexOf('_preview');
+      if (markerIndex <= 0) return false;
+      const assetId = name.slice(0, markerIndex);
+      return idSet.has(assetId);
+    })
+    .map((name) => fs.unlink(path.join(previewDir, name)).catch(() => {}));
+
+  await Promise.all(deletions);
+};
+
 const resolveLibraryPath = (requestedPath?: string | null) => {
   const rootPath = path.resolve(config.mediaLibraryPath);
   const targetPath = requestedPath ? path.resolve(requestedPath) : rootPath;
@@ -836,6 +858,7 @@ export const resolvers = {
 
         // Clean up preview file
         await fs.unlink(previewPath).catch(() => {});
+        await cleanupCompressPreviewFiles(previewDir, [id]);
 
         const updated = await db.query('SELECT * FROM media_assets WHERE id = $1', [id]);
         results.push(mapMediaAssetRow(updated.rows[0]));
@@ -868,6 +891,7 @@ export const resolvers = {
           const previewPath = path.join(previewDir, `${id}_preview${previewExt}`);
           await fs.unlink(previewPath).catch(() => {});
         }
+        await cleanupCompressPreviewFiles(previewDir, [id]);
       }
 
       return true;
