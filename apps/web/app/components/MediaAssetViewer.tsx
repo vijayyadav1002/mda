@@ -1,4 +1,4 @@
-import { Download, File, Maximize2, Minimize2, X, Share2 } from "lucide-react";
+import { Download, File, Maximize2, Minimize2, X } from "lucide-react";
 import { useState, useEffect } from "react";
 
 interface MediaAsset {
@@ -229,13 +229,6 @@ export function MediaAssetViewer({
               <Download className="w-4 h-4" />
               Download
             </a>
-            <button
-              type="button"
-              className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-border/30 text-sm text-foreground hover:bg-accent transition-all"
-            >
-              <Share2 className="w-4 h-4" />
-              Share
-            </button>
           </div>
 
           {/* Divider */}

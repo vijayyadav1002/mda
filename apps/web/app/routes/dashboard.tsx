@@ -170,7 +170,7 @@ export default function Dashboard() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isGeneratingThumbnails, setIsGeneratingThumbnails] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [sortOption, setSortOption] = useState<"default" | "size-asc" | "size-desc">("default");
+  const [sortOption, setSortOption] = useState<"default" | "size-asc" | "size-desc" | "date-asc" | "date-desc">("default");
   const [showSortMenu, setShowSortMenu] = useState(false);
   const sortMenuRef = useRef<HTMLDivElement>(null);
   const [isCompressDialogOpen, setIsCompressDialogOpen] = useState(false);
@@ -610,9 +610,14 @@ export default function Dashboard() {
     const folders = currentFolderChildren.filter((n) => n.type === "directory");
     const files = currentFolderChildren.filter((n) => n.type !== "directory");
     const sorted = [...files].sort((a, b) => {
-      const sizeA = a.mediaAsset ? parseInt(a.mediaAsset.fileSize) || 0 : 0;
-      const sizeB = b.mediaAsset ? parseInt(b.mediaAsset.fileSize) || 0 : 0;
-      return sortOption === "size-asc" ? sizeA - sizeB : sizeB - sizeA;
+      if (sortOption === "size-asc" || sortOption === "size-desc") {
+        const sizeA = a.mediaAsset ? parseInt(a.mediaAsset.fileSize) || 0 : 0;
+        const sizeB = b.mediaAsset ? parseInt(b.mediaAsset.fileSize) || 0 : 0;
+        return sortOption === "size-asc" ? sizeA - sizeB : sizeB - sizeA;
+      }
+      const dateA = a.mediaAsset ? new Date(a.mediaAsset.createdAt).getTime() : 0;
+      const dateB = b.mediaAsset ? new Date(b.mediaAsset.createdAt).getTime() : 0;
+      return sortOption === "date-asc" ? dateA - dateB : dateB - dateA;
     });
     return [...folders, ...sorted];
   }, [currentFolderChildren, sortOption]);
@@ -1035,12 +1040,22 @@ export default function Dashboard() {
               >
                 <ArrowUpDown className="w-4 h-4" />
                 <span className="hidden sm:inline">
-                  {sortOption === "default" ? "Sort" : sortOption === "size-asc" ? "Size ↑" : "Size ↓"}
+                  {sortOption === "default" ? "Sort"
+                    : sortOption === "size-asc" ? "Size ↑"
+                    : sortOption === "size-desc" ? "Size ↓"
+                    : sortOption === "date-asc" ? "Date ↑"
+                    : "Date ↓"}
                 </span>
               </button>
               {showSortMenu && (
-                <div className="absolute right-0 top-full mt-1 w-40 bg-card border border-border/20 rounded-xl shadow-ambient z-50 py-1 overflow-hidden">
-                  {(["default", "size-asc", "size-desc"] as const).map((opt) => (
+                <div className="absolute right-0 top-full mt-1 w-48 bg-card border border-border/20 rounded-xl shadow-ambient z-50 py-1 overflow-hidden">
+                  {([
+                    ["default",   "Default"],
+                    ["size-asc",  "Size ↑ (Smallest)"],
+                    ["size-desc", "Size ↓ (Largest)"],
+                    ["date-asc",  "Date ↑ (Oldest)"],
+                    ["date-desc", "Date ↓ (Newest)"],
+                  ] as const).map(([opt, label]) => (
                     <button
                       key={opt}
                       type="button"
@@ -1051,7 +1066,7 @@ export default function Dashboard() {
                       }`}
                       onClick={() => { setSortOption(opt); setShowSortMenu(false); }}
                     >
-                      {opt === "default" ? "Default" : opt === "size-asc" ? "Size ↑ (Smallest)" : "Size ↓ (Largest)"}
+                      {label}
                     </button>
                   ))}
                 </div>
