@@ -12,7 +12,7 @@ import { db } from './db/index.js';
 import { ensureAdminExists } from './services/auth.js';
 import { indexMediaLibrary } from './services/media-indexer.js';
 import { startMediaWatcher } from './services/media-watcher.js';
-import { startWorkers, addToCompressionQueue, encodingQueue } from './services/queue.js';
+import { startWorkers, addToCompressionQueue, encodingQueue, compressionQueue, activeCompressionAborts } from './services/queue.js';
 import { redis } from './services/redis.js';
 import { getWebCompatibleVideo, markTranscodeAccessed, startTranscodeCleanup, deleteTranscodedVideo, ensureHLS, checkVideoCompatibility } from './services/video-transcode.js';
 import { startCacheMaintenance } from './services/cache-maintenance.js';
@@ -735,6 +735,70 @@ fastify.post('/api/compress/enqueue', async (request, reply) => {
   // Enqueue BullMQ job with full asset data (including filePath for worker)
   await addToCompressionQueue({ userId, jobId, assets, options });
   return reply.send({ jobId });
+});
+
+// Cancel an active or pending compression job
+fastify.post('/api/compress/cancel', async (request, reply) => {
+  const authHeader = request.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) {
+    return reply.code(401).send({ error: 'Unauthorized' });
+  }
+  const token = authHeader.slice(7);
+  let userId: string;
+  try {
+    const decoded = fastify.jwt.verify<any>(token);
+    userId = String(decoded.id);
+    const userResult = await db.query('SELECT role FROM users WHERE id = $1', [userId]);
+    if (userResult.rows.length === 0 || !['admin', 'editor'].includes(userResult.rows[0].role)) {
+      return reply.code(403).send({ error: 'Forbidden' });
+    }
+  } catch {
+    return reply.code(401).send({ error: 'Invalid token' });
+  }
+
+  const { jobId } = request.body as { jobId?: string };
+  if (!jobId) return reply.code(400).send({ error: 'jobId is required' });
+
+  const queueKey = `compress_queue:${userId}`;
+  const raw = await redis.get(queueKey);
+  const queue: any[] = raw ? JSON.parse(raw) : [];
+  const idx = queue.findIndex((j: any) => j.id === jobId);
+  if (idx < 0) return reply.code(404).send({ error: 'Job not found' });
+
+  const jobEntry = queue[idx];
+  const status = jobEntry.status as string;
+
+  // Already settled — nothing to cancel.
+  if (['done', 'error', 'cancelled', 'preview_ready', 'confirming'].includes(status)) {
+    return reply.send({ ok: true, status });
+  }
+
+  // Mark cancelled in Redis first so the worker sees it on its next tick
+  // and so the frontend reflects the state immediately.
+  queue[idx] = { ...jobEntry, status: 'cancelled', currentFileId: null, progress: {} };
+  await redis.set(queueKey, JSON.stringify(queue), 'EX', 604800);
+
+  // If a worker is currently running this job, abort it (kills ffmpeg and breaks the loop).
+  const controller = activeCompressionAborts.get(jobId);
+  if (controller) {
+    controller.abort();
+  }
+
+  // If the job is still waiting in BullMQ (not yet picked up), remove it.
+  try {
+    const waitingJobs = await compressionQueue.getJobs(['waiting', 'delayed', 'prioritized', 'paused']);
+    for (const bullJob of waitingJobs) {
+      if (bullJob?.data?.jobId === jobId) {
+        await bullJob.remove().catch((err) => {
+          fastify.log.warn(`failed to remove waiting compression job ${jobId}: ${err?.message}`);
+        });
+      }
+    }
+  } catch (err: any) {
+    fastify.log.warn(`error scanning compression queue for cancel: ${err?.message}`);
+  }
+
+  return reply.send({ ok: true, status: 'cancelled' });
 });
 
 // Get current compression queue state for authenticated user

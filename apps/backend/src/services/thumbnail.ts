@@ -297,14 +297,19 @@ export async function compressImageAdvanced(
 export async function compressVideoAdvanced(
   inputPath: string,
   outputPath: string,
-  options: AdvancedCompressOptions & { onProgress?: (percent: number) => void }
+  options: AdvancedCompressOptions & { onProgress?: (percent: number) => void; signal?: AbortSignal }
 ): Promise<void> {
   // Map quality (1-100) to CRF (51-0). Higher quality = lower CRF.
   const quality = options.quality ?? 70;
   const crf = Math.round(51 - (quality / 100) * 51);
 
   return new Promise((resolve, reject) => {
-    let cmd = ffmpeg(inputPath);
+    if (options.signal?.aborted) {
+      reject(new Error('Compression cancelled'));
+      return;
+    }
+
+    const cmd = ffmpeg(inputPath);
 
     const outputOptions: string[] = [
       '-c:v libx264',
@@ -324,6 +329,13 @@ export async function compressVideoAdvanced(
       }
     }
 
+    let cancelled = false;
+    const onAbort = () => {
+      cancelled = true;
+      try { cmd.kill('SIGKILL'); } catch { /* ignore */ }
+    };
+    options.signal?.addEventListener('abort', onAbort, { once: true });
+
     cmd
       .outputOptions(outputOptions)
       .output(outputPath)
@@ -332,8 +344,18 @@ export async function compressVideoAdvanced(
           options.onProgress(Math.min(Math.round(progress.percent), 100));
         }
       })
-      .on('end', () => resolve())
-      .on('error', (err) => reject(err))
+      .on('end', () => {
+        options.signal?.removeEventListener('abort', onAbort);
+        resolve();
+      })
+      .on('error', (err) => {
+        options.signal?.removeEventListener('abort', onAbort);
+        if (cancelled) {
+          reject(new Error('Compression cancelled'));
+        } else {
+          reject(err);
+        }
+      })
       .run();
   });
 }

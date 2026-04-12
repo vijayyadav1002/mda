@@ -1,4 +1,4 @@
-import { X, Check, Loader2, Clock, AlertCircle, Eye, ChevronDown, ChevronRight } from "lucide-react";
+import { X, Check, Loader2, Clock, AlertCircle, Eye, ChevronDown, ChevronRight, Ban } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "~/components/ui/dialog";
 import { useState } from "react";
 
@@ -20,7 +20,7 @@ export interface CompressJob {
   id: string;
   assets: MediaAsset[];
   options: { resolution: string; quality: number };
-  status: "pending" | "compressing" | "preview_ready" | "confirming" | "done" | "error";
+  status: "pending" | "compressing" | "preview_ready" | "confirming" | "done" | "error" | "cancelled";
   progress: Record<string, { percent: number; etaSeconds: number | null }>;
   currentFileId: string | null;
   previews: CompressPreviewResult[];
@@ -34,6 +34,7 @@ interface CompressQueuePanelProps {
   readonly jobs: CompressJob[];
   readonly onConfirm: (jobId: string) => void;
   readonly onDismiss: (jobId: string) => void;
+  readonly onCancel: (jobId: string) => void;
   readonly onClearCompleted: () => void;
   readonly apiUrl: string;
 }
@@ -65,6 +66,7 @@ const STATUS: Record<CompressJob["status"], { label: string; color: string; bg: 
   confirming:    { label: "Applying",       color: "text-brand-primary",    bg: "bg-brand-primary/10", spin: true },
   done:          { label: "Done",           color: "text-emerald-400",      bg: "bg-emerald-400/10" },
   error:         { label: "Error",          color: "text-destructive",      bg: "bg-destructive/10" },
+  cancelled:     { label: "Cancelled",      color: "text-muted-foreground", bg: "bg-muted" },
 };
 
 function StatusIcon({ status }: { status: CompressJob["status"] }) {
@@ -72,19 +74,20 @@ function StatusIcon({ status }: { status: CompressJob["status"] }) {
   const cls = `w-4 h-4 ${cfg.color} ${cfg.spin ? "animate-spin" : ""}`;
   if (status === "done") return <Check className={cls} />;
   if (status === "error") return <AlertCircle className={cls} />;
+  if (status === "cancelled") return <Ban className={cls} />;
   if (status === "preview_ready") return <Eye className={cls} />;
   if (status === "pending") return <Clock className={cls} />;
   return <Loader2 className={cls} />;
 }
 
 export function CompressQueuePanel({
-  isOpen, onClose, jobs, onConfirm, onDismiss, onClearCompleted, apiUrl,
+  isOpen, onClose, jobs, onConfirm, onDismiss, onCancel, onClearCompleted, apiUrl,
 }: CompressQueuePanelProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [previewAssetId, setPreviewAssetId] = useState<string | null>(null);
 
-  const activeCount = jobs.filter(j => !["done", "error"].includes(j.status)).length;
-  const hasCompleted = jobs.some(j => j.status === "done" || j.status === "error");
+  const activeCount = jobs.filter(j => !["done", "error", "cancelled"].includes(j.status)).length;
+  const hasCompleted = jobs.some(j => j.status === "done" || j.status === "error" || j.status === "cancelled");
 
   return (
     <Dialog open={isOpen} onOpenChange={open => !open && onClose()}>
@@ -151,16 +154,38 @@ export function CompressQueuePanel({
 
                     {/* PENDING */}
                     {job.status === "pending" && (
-                      <p className="pt-3 text-xs text-muted-foreground">
-                        Waiting · {job.assets.length} file{job.assets.length !== 1 ? "s" : ""}
-                        {" · "}Quality {job.options.quality}%
-                        {job.options.resolution !== "original" ? ` · ${job.options.resolution}` : ""}
-                      </p>
+                      <div className="pt-3 flex items-center justify-between gap-3">
+                        <p className="text-xs text-muted-foreground">
+                          Waiting · {job.assets.length} file{job.assets.length !== 1 ? "s" : ""}
+                          {" · "}Quality {job.options.quality}%
+                          {job.options.resolution !== "original" ? ` · ${job.options.resolution}` : ""}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => onCancel(job.id)}
+                          className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs text-destructive hover:bg-destructive/10 transition-all flex-shrink-0"
+                          title="Cancel job"
+                        >
+                          <Ban className="w-3.5 h-3.5" />
+                          Cancel
+                        </button>
+                      </div>
                     )}
 
                     {/* COMPRESSING */}
                     {job.status === "compressing" && (
                       <div className="pt-3 space-y-3">
+                        <div className="flex justify-end">
+                          <button
+                            type="button"
+                            onClick={() => onCancel(job.id)}
+                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs text-destructive hover:bg-destructive/10 transition-all"
+                            title="Cancel job"
+                          >
+                            <Ban className="w-3.5 h-3.5" />
+                            Cancel
+                          </button>
+                        </div>
                         {job.assets.map(asset => {
                           const p = job.progress[asset.id];
                           const isCurrent = asset.id === job.currentFileId;
@@ -304,6 +329,16 @@ export function CompressQueuePanel({
                     {job.status === "error" && (
                       <div className="pt-3 flex items-center justify-between gap-3">
                         <p className="text-xs text-destructive truncate">{job.errorMessage ?? "Unknown error"}</p>
+                        <button type="button" onClick={() => onDismiss(job.id)} className="text-xs text-muted-foreground hover:text-foreground transition-colors flex-shrink-0">
+                          Dismiss
+                        </button>
+                      </div>
+                    )}
+
+                    {/* CANCELLED */}
+                    {job.status === "cancelled" && (
+                      <div className="pt-3 flex items-center justify-between gap-3">
+                        <p className="text-xs text-muted-foreground">Job cancelled.</p>
                         <button type="button" onClick={() => onDismiss(job.id)} className="text-xs text-muted-foreground hover:text-foreground transition-colors flex-shrink-0">
                           Dismiss
                         </button>

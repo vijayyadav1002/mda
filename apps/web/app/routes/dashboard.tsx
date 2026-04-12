@@ -594,11 +594,35 @@ export default function Dashboard() {
     });
   }, [saveQueueToServer]);
 
+  const cancelCompressJob = useCallback(async (jobId: string) => {
+    const token = getAuthToken();
+    if (!token) return;
+    // Optimistic UI: mark cancelled locally right away so the user gets feedback.
+    setCompressQueue(prev => prev.map(j => j.id === jobId
+      ? { ...j, status: "cancelled" as const, currentFileId: null, progress: {} }
+      : j));
+    try {
+      const res = await fetch(`${API_URL}/api/compress/cancel`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ jobId }),
+      });
+      if (!res.ok) throw new Error(`Server error ${res.status}`);
+    } catch (err: any) {
+      console.error("Failed to cancel compression job:", err.message);
+      // Roll back to error state so the user knows the cancel didn't land.
+      setCompressQueue(prev => prev.map(j => j.id === jobId
+        ? { ...j, status: "error" as const, errorMessage: "Failed to cancel job" }
+        : j));
+    }
+  }, []);
+
   const clearCompletedJobs = useCallback(() => {
+    const isFinished = (s: CompressJob["status"]) => s === "done" || s === "error" || s === "cancelled";
     setCompressQueue(prev => {
-      const updated = prev.filter(j => j.status !== "done" && j.status !== "error");
+      const updated = prev.filter(j => !isFinished(j.status));
       // Cancel preview files for completed jobs that had previews
-      const toCancel = prev.filter(j => (j.status === "done" || j.status === "error") && j.previews.length > 0);
+      const toCancel = prev.filter(j => isFinished(j.status) && j.previews.length > 0);
       if (toCancel.length > 0) {
         const token = getAuthToken();
         if (token) {
@@ -1507,6 +1531,7 @@ export default function Dashboard() {
         jobs={compressQueue}
         onConfirm={confirmCompressJob}
         onDismiss={dismissCompressJob}
+        onCancel={cancelCompressJob}
         onClearCompleted={clearCompletedJobs}
         apiUrl={API_URL}
       />
