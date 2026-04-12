@@ -86,6 +86,45 @@ await fastify.register(fastifyStatic, {
   decorateReply: false
 });
 
+// Force-download endpoint — streams original file with Content-Disposition: attachment
+fastify.get('/download/:id', async (request, reply) => {
+  const { id } = request.params as { id: string };
+
+  const result = await db.query(
+    'SELECT file_path, file_name, mime_type FROM media_assets WHERE id = $1',
+    [id]
+  );
+  if (result.rows.length === 0) {
+    return reply.code(404).send({ error: 'Asset not found' });
+  }
+
+  const { file_path: filePathRaw, file_name: fileName, mime_type: mimeType } = result.rows[0];
+  const absPath = path.resolve(filePathRaw as string);
+
+  try {
+    await fs.promises.access(absPath);
+  } catch {
+    return reply.code(404).send({ error: 'File not found on disk' });
+  }
+
+  const stat = await fs.promises.stat(absPath);
+  const safeName = encodeURIComponent(fileName as string).replace(/'/g, "%27");
+
+  reply.raw.writeHead(200, {
+    'Content-Type': mimeType as string,
+    'Content-Length': stat.size,
+    'Content-Disposition': `attachment; filename="${safeName}"; filename*=UTF-8''${safeName}`,
+    'Cache-Control': 'no-store',
+  });
+
+  const stream = fs.createReadStream(absPath);
+  stream.pipe(reply.raw);
+  await new Promise<void>((resolve, reject) => {
+    stream.on('end', resolve);
+    stream.on('error', reject);
+  });
+});
+
 // Web-compatible image endpoint (HEIC -> JPEG).
 fastify.get('/image/:id', async (request, reply) => {
   const { id } = request.params as { id: string };

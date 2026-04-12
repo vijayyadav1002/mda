@@ -1072,6 +1072,14 @@ export default function Dashboard() {
             <div className="absolute inset-0 bg-black/50" onClick={() => setMobileMenuOpen(false)} />
             <div className="relative w-64 bg-card h-full flex flex-col p-4 space-y-1 shadow-ambient">
               <SidebarNavItem icon={Folder} label="Collections" active onClick={() => { setCurrentPath(rootPath); setFolderHistory([]); setMobileMenuOpen(false); }} />
+              {(user?.role === "admin" || user?.role === "editor") && (
+                <SidebarNavItem
+                  icon={ListTodo}
+                  label="Queue"
+                  onClick={() => { setShowQueuePanel(true); setMobileMenuOpen(false); }}
+                  badge={compressQueue.filter(j => !["done", "error"].includes(j.status)).length || undefined}
+                />
+              )}
               {user?.role === "admin" && (
                 <SidebarNavItem icon={Users} label="Users" onClick={() => { navigate("/users"); setMobileMenuOpen(false); }} />
               )}
@@ -1360,35 +1368,41 @@ export default function Dashboard() {
                       )}
 
                       {/* Thumbnail — 4:5 portrait */}
-                      <div className="aspect-[4/5] bg-muted relative overflow-hidden">
-                        {asset.thumbnailUrl ? (
-                          <img
-                            src={`${API_URL}${asset.thumbnailUrl}`}
-                            alt={asset.fileName}
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center">
-                            <FileImage className="w-12 h-12 text-muted-foreground/30" />
-                          </div>
-                        )}
+                      {/* overflow-hidden is on the inner div so the download button isn't clipped */}
+                      <div className="aspect-[4/5] bg-muted relative">
+                        <div className="absolute inset-0 overflow-hidden">
+                          {asset.thumbnailUrl ? (
+                            <img
+                              src={`${API_URL}${asset.thumbnailUrl}`}
+                              alt={asset.fileName}
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center">
+                              <FileImage className="w-12 h-12 text-muted-foreground/30" />
+                            </div>
+                          )}
+
+                          {/* Gradient overlay */}
+                          <div className="absolute inset-0 bg-gradient-to-t from-background/50 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                        </div>
 
                         {/* Type badge */}
-                        <div className="absolute top-3 left-3 bg-background/70 backdrop-blur-sm px-2 py-0.5 rounded-lg">
+                        <div className="absolute top-3 left-3 z-10 bg-background/70 backdrop-blur-sm px-2 py-0.5 rounded-lg">
                           <span className="label-meta">{isImage ? "Image" : "Video"}</span>
                         </div>
 
-                        {/* Download on hover */}
-                        <button
-                          type="button"
-                          onClick={(e) => e.stopPropagation()}
-                          className="absolute bottom-3 right-3 opacity-0 group-hover:opacity-100 w-8 h-8 bg-background/80 backdrop-blur-sm rounded-xl flex items-center justify-center transition-all duration-200"
-                        >
-                          <Download className="w-3.5 h-3.5 text-foreground" />
-                        </button>
-
-                        {/* Gradient overlay */}
-                        <div className="absolute inset-0 bg-gradient-to-t from-background/50 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                        {/* Download button */}
+                        {!selectionMode && (
+                          <a
+                            href={`${API_URL}/download/${asset.id}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="absolute bottom-3 right-3 z-10 opacity-0 group-hover:opacity-100 w-8 h-8 bg-background/80 backdrop-blur-sm rounded-xl flex items-center justify-center hover:bg-accent transition-all duration-200"
+                            title={`Download ${asset.fileName}`}
+                          >
+                            <Download className="w-3.5 h-3.5 text-foreground" />
+                          </a>
+                        )}
                       </div>
 
                       {/* Meta */}
