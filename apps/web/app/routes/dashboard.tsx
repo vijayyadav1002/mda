@@ -1,15 +1,16 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useNavigate } from "@remix-run/react";
 import { createGraphQLClient, getApiUrl, getAuthToken, clearAuthToken } from "~/lib/api";
 import { Input } from "~/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "~/components/ui/dialog";
 import { MediaAssetViewer } from "~/components/MediaAssetViewer";
 import { CompressDialog } from "~/components/CompressDialog";
+import { CompressQueuePanel, type CompressJob } from "~/components/CompressQueuePanel";
 import {
   Folder, FileImage, ArrowLeft, ChevronDown, ChevronRight,
   Trash2, CheckSquare, Square, Users, Key, RotateCcw,
   Menu, X, ImagePlus, ArrowUpDown, Minimize2,
-  Upload, LogOut, Download, FolderPlus,
+  Upload, LogOut, Download, FolderPlus, ListTodo,
   Moon, Sun, User,
 } from "lucide-react";
 
@@ -36,6 +37,18 @@ const REFRESH_MEDIA_LIBRARY_MUTATION = `
 const GENERATE_THUMBNAILS_FOR_PATH_MUTATION = `
   mutation GenerateThumbnailsForPath($path: String) {
     generateThumbnailsForPath(path: $path)
+  }
+`;
+
+const CONFIRM_COMPRESS_MUTATION = `
+  mutation ConfirmCompressReplace($ids: [ID!]!) {
+    confirmCompressReplace(ids: $ids) { id fileName fileSize }
+  }
+`;
+
+const CANCEL_COMPRESS_MUTATION = `
+  mutation CancelCompressPreview($ids: [ID!]!) {
+    cancelCompressPreview(ids: $ids)
   }
 `;
 
@@ -119,11 +132,13 @@ function SidebarNavItem({
   label,
   active,
   onClick,
+  badge,
 }: {
   icon: React.ElementType;
   label: string;
   active?: boolean;
   onClick?: () => void;
+  badge?: number;
 }) {
   return (
     <button
@@ -137,6 +152,11 @@ function SidebarNavItem({
     >
       <Icon className="w-4 h-4 flex-shrink-0" />
       {label}
+      {badge != null && badge > 0 && (
+        <span className="ml-auto w-5 h-5 gradient-brand rounded-full flex items-center justify-center text-[10px] font-bold text-[#060e20]">
+          {badge > 9 ? "9+" : badge}
+        </span>
+      )}
     </button>
   );
 }
@@ -174,6 +194,10 @@ export default function Dashboard() {
   const [showSortMenu, setShowSortMenu] = useState(false);
   const sortMenuRef = useRef<HTMLDivElement>(null);
   const [isCompressDialogOpen, setIsCompressDialogOpen] = useState(false);
+  const [compressDialogAssets, setCompressDialogAssets] = useState<MediaAsset[]>([]);
+  const [compressQueue, setCompressQueue] = useState<CompressJob[]>([]);
+  const [showQueuePanel, setShowQueuePanel] = useState(false);
+  const compressQueueRef = useRef<CompressJob[]>([]);
   const [showUploadDialog, setShowUploadDialog] = useState(false);
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
   const [uploadTargetPath, setUploadTargetPath] = useState('');
@@ -436,6 +460,143 @@ export default function Dashboard() {
       alert("Failed to delete asset. Please try again.");
     }
   };
+
+  // Keep queue ref in sync so confirmCompressJob can read current jobs without stale closures
+  useEffect(() => { compressQueueRef.current = compressQueue; }, [compressQueue]);
+
+  // Load queue from server on login
+  useEffect(() => {
+    if (!user) return;
+    const token = getAuthToken();
+    if (!token) return;
+    fetch(`${API_URL}/api/queue-state`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json())
+      .then(({ queue }) => {
+        if (!Array.isArray(queue) || queue.length === 0) return;
+        setCompressQueue(
+          (queue as CompressJob[]).map(job => ({
+            ...job,
+            progress: {},
+            currentFileId: null,
+            status: (
+              job.status === "compressing" ? "pending"       // BullMQ retries the job
+              : job.status === "confirming" ? "preview_ready" // let user retry confirm
+              : job.status
+            ) as CompressJob["status"],
+          }))
+        );
+      })
+      .catch(() => {});
+  }, [user?.username]);
+
+  // Poll for queue updates every 5 s when jobs are active
+  const hasActiveJobs = compressQueue.some(j => j.status === "pending" || j.status === "compressing");
+  useEffect(() => {
+    if (!hasActiveJobs || !user) return;
+    const token = getAuthToken();
+    if (!token) return;
+    const intervalId = setInterval(() => {
+      fetch(`${API_URL}/api/queue-state`, { headers: { Authorization: `Bearer ${token}` } })
+        .then(r => r.json())
+        .then(({ queue }) => { if (Array.isArray(queue)) setCompressQueue(queue as CompressJob[]); })
+        .catch(() => {});
+    }, 5000);
+    return () => clearInterval(intervalId);
+  }, [hasActiveJobs, user]);
+
+  const addToCompressQueue = useCallback(async (assets: MediaAsset[], options: { resolution: string; quality: number }) => {
+    const token = getAuthToken();
+    if (!token) return;
+    try {
+      const res = await fetch(`${API_URL}/api/compress/enqueue`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ ids: assets.map(a => a.id), options }),
+      });
+      if (!res.ok) throw new Error(`Server error ${res.status}`);
+      const { jobId } = await res.json();
+      setCompressQueue(prev => [...prev, {
+        id: jobId,
+        assets,
+        options,
+        status: "pending" as const,
+        progress: {},
+        currentFileId: null,
+        previews: [],
+        addedAt: Date.now(),
+      }]);
+      setShowQueuePanel(true);
+    } catch (err: any) {
+      console.error("Failed to enqueue compression job:", err.message);
+    }
+  }, []);
+
+  const saveQueueToServer = useCallback((updatedQueue: CompressJob[]) => {
+    const token = getAuthToken();
+    if (!token || !user) return;
+    fetch(`${API_URL}/api/queue-state`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ queue: updatedQueue }),
+    }).catch(() => {});
+  }, [user]);
+
+  const confirmCompressJob = useCallback(async (jobId: string) => {
+    const job = compressQueueRef.current.find(j => j.id === jobId);
+    if (!job) return;
+    setCompressQueue(prev => prev.map(j => j.id === jobId ? { ...j, status: "confirming" as const } : j));
+    try {
+      const token = getAuthToken();
+      if (!token) throw new Error("Not authenticated");
+      const client = createGraphQLClient(token);
+      await client.request(CONFIRM_COMPRESS_MUTATION, { ids: job.assets.map(a => a.id) });
+      const updated = compressQueueRef.current.map(j => j.id === jobId ? { ...j, status: "done" as const } : j);
+      setCompressQueue(updated);
+      saveQueueToServer(updated);
+      if (currentPath) await loadDirectoryIntoCache(currentPath);
+      if (rootPath && rootPath !== currentPath) await loadDirectoryIntoCache(rootPath);
+    } catch (err: any) {
+      setCompressQueue(prev => prev.map(j => j.id === jobId
+        ? { ...j, status: "error" as const, errorMessage: err.message || "Failed to apply compression" }
+        : j));
+    }
+  }, [currentPath, rootPath, saveQueueToServer]);
+
+  const dismissCompressJob = useCallback((jobId: string) => {
+    const job = compressQueueRef.current.find(j => j.id === jobId);
+    if (!job) return;
+    // Clean up preview files via GraphQL cancel if previews exist
+    if (job.previews.length > 0) {
+      const token = getAuthToken();
+      if (token) {
+        createGraphQLClient(token)
+          .request(CANCEL_COMPRESS_MUTATION, { ids: job.assets.map(a => a.id) })
+          .catch(() => {});
+      }
+    }
+    setCompressQueue(prev => {
+      const updated = prev.filter(j => j.id !== jobId);
+      saveQueueToServer(updated);
+      return updated;
+    });
+  }, [saveQueueToServer]);
+
+  const clearCompletedJobs = useCallback(() => {
+    setCompressQueue(prev => {
+      const updated = prev.filter(j => j.status !== "done" && j.status !== "error");
+      // Cancel preview files for completed jobs that had previews
+      const toCancel = prev.filter(j => (j.status === "done" || j.status === "error") && j.previews.length > 0);
+      if (toCancel.length > 0) {
+        const token = getAuthToken();
+        if (token) {
+          const ids = toCancel.flatMap(j => j.assets.map(a => a.id));
+          createGraphQLClient(token).request(CANCEL_COMPRESS_MUTATION, { ids }).catch(() => {});
+        }
+      }
+      saveQueueToServer(updated);
+      return updated;
+    });
+  }, [saveQueueToServer]);
 
   const handleCreateFolder = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -810,6 +971,14 @@ export default function Dashboard() {
         {/* Nav */}
         <nav className="flex-1 px-3 space-y-0.5">
           <SidebarNavItem icon={Folder} label="Collections" active onClick={() => { setCurrentPath(rootPath); setFolderHistory([]); }} />
+          {(user?.role === "admin" || user?.role === "editor") && (
+            <SidebarNavItem
+              icon={ListTodo}
+              label="Queue"
+              onClick={() => setShowQueuePanel(true)}
+              badge={compressQueue.filter(j => !["done", "error"].includes(j.status)).length || undefined}
+            />
+          )}
           {user?.role === "admin" && (
             <SidebarNavItem icon={Users} label="Users" onClick={() => navigate("/users")} />
           )}
@@ -993,7 +1162,14 @@ export default function Dashboard() {
                   <>
                     <button
                       type="button"
-                      onClick={() => setIsCompressDialogOpen(true)}
+                      onClick={() => {
+                        setCompressDialogAssets(
+                          sortedFolderChildren
+                            .filter(n => n.type === "file" && n.mediaAsset && selectedAssetIds.has(n.mediaAsset.id))
+                            .map(n => n.mediaAsset!)
+                        );
+                        setIsCompressDialogOpen(true);
+                      }}
                       className="flex items-center gap-1 px-2.5 py-2 rounded-xl text-sm text-brand-primary hover:bg-accent transition-all"
                     >
                       <Minimize2 className="w-4 h-4" />
@@ -1267,21 +1443,35 @@ export default function Dashboard() {
         isOpen={isViewerOpen}
         onClose={handleCloseViewer}
         apiUrl={API_URL}
+        userRole={user?.role}
+        onCompress={() => {
+          if (selectedAsset) {
+            setCompressDialogAssets([selectedAsset]);
+            setIsCompressDialogOpen(true);
+          }
+        }}
       />
 
       <CompressDialog
         isOpen={isCompressDialogOpen}
         onClose={() => setIsCompressDialogOpen(false)}
-        selectedAssets={sortedFolderChildren
-          .filter((n) => n.type === "file" && n.mediaAsset && selectedAssetIds.has(n.mediaAsset.id))
-          .map((n) => n.mediaAsset!)}
-        onComplete={async () => {
+        selectedAssets={compressDialogAssets}
+        onAddToQueue={(options) => {
+          addToCompressQueue(compressDialogAssets, options);
           setIsCompressDialogOpen(false);
           setSelectionMode(false);
           setSelectedAssetIds(new Set());
-          if (rootPath) await loadDirectoryIntoCache(rootPath);
-          if (currentPath && currentPath !== rootPath) await loadDirectoryIntoCache(currentPath);
         }}
+      />
+
+      <CompressQueuePanel
+        isOpen={showQueuePanel}
+        onClose={() => setShowQueuePanel(false)}
+        jobs={compressQueue}
+        onConfirm={confirmCompressJob}
+        onDismiss={dismissCompressJob}
+        onClearCompleted={clearCompletedJobs}
+        apiUrl={API_URL}
       />
 
       {/* Change Password */}

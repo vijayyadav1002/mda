@@ -12,7 +12,8 @@ import { db } from './db/index.js';
 import { ensureAdminExists } from './services/auth.js';
 import { indexMediaLibrary } from './services/media-indexer.js';
 import { startMediaWatcher } from './services/media-watcher.js';
-import { startWorkers } from './services/queue.js';
+import { startWorkers, addToCompressionQueue } from './services/queue.js';
+import { redis } from './services/redis.js';
 import { getWebCompatibleVideo, markTranscodeAccessed, startTranscodeCleanup, deleteTranscodedVideo, ensureHLS } from './services/video-transcode.js';
 import { startCacheMaintenance } from './services/cache-maintenance.js';
 import path from 'node:path';
@@ -459,6 +460,112 @@ fastify.post('/api/compress/preview', async (request, reply) => {
 
   send({ type: 'done' });
   reply.raw.end();
+});
+
+// Enqueue compression job — creates BullMQ job + initial Redis state
+fastify.post('/api/compress/enqueue', async (request, reply) => {
+  const authHeader = request.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) {
+    return reply.code(401).send({ error: 'Unauthorized' });
+  }
+  const token = authHeader.slice(7);
+  let userId: string;
+  try {
+    const decoded = fastify.jwt.verify<any>(token);
+    userId = String(decoded.id);
+    const userResult = await db.query('SELECT role FROM users WHERE id = $1', [userId]);
+    if (userResult.rows.length === 0 || !['admin', 'editor'].includes(userResult.rows[0].role)) {
+      return reply.code(403).send({ error: 'Forbidden' });
+    }
+  } catch {
+    return reply.code(401).send({ error: 'Invalid token' });
+  }
+
+  const { ids, options } = request.body as { ids: string[]; options: { resolution: string; quality: number } };
+  if (!ids?.length) return reply.code(400).send({ error: 'No asset IDs provided' });
+
+  // Resolve file paths and metadata from DB
+  const rows = await Promise.all(
+    ids.map(id =>
+      db.query('SELECT id, file_name, file_size, mime_type, file_path FROM media_assets WHERE id = $1', [id])
+        .then(r => r.rows[0] ?? null)
+    )
+  );
+  const assets = rows.filter(Boolean).map(r => ({
+    id: String(r.id),
+    fileName: r.file_name as string,
+    fileSize: String(r.file_size),
+    mimeType: r.mime_type as string,
+    filePath: r.file_path as string,
+  }));
+
+  if (assets.length === 0) return reply.code(400).send({ error: 'No valid assets found' });
+
+  const jobId = crypto.randomUUID();
+  const queueKey = `compress_queue:${userId}`;
+  const raw = await redis.get(queueKey);
+  const queue: any[] = raw ? JSON.parse(raw) : [];
+
+  // Store frontend-visible job data (no filePath)
+  const newJob = {
+    id: jobId,
+    assets: assets.map(({ filePath: _fp, ...a }) => a),
+    options,
+    status: 'pending',
+    progress: {},
+    currentFileId: null,
+    previews: [],
+    addedAt: Date.now(),
+  };
+  queue.push(newJob);
+  await redis.set(queueKey, JSON.stringify(queue), 'EX', 604800);
+
+  // Enqueue BullMQ job with full asset data (including filePath for worker)
+  await addToCompressionQueue({ userId, jobId, assets, options });
+  return reply.send({ jobId });
+});
+
+// Get current compression queue state for authenticated user
+fastify.get('/api/queue-state', async (request, reply) => {
+  const authHeader = request.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) {
+    return reply.code(401).send({ error: 'Unauthorized' });
+  }
+  const token = authHeader.slice(7);
+  let userId: string;
+  try {
+    const decoded = fastify.jwt.verify<any>(token);
+    userId = String(decoded.id);
+    const userResult = await db.query('SELECT id FROM users WHERE id = $1', [userId]);
+    if (userResult.rows.length === 0) return reply.code(401).send({ error: 'Invalid token' });
+  } catch {
+    return reply.code(401).send({ error: 'Invalid token' });
+  }
+
+  const raw = await redis.get(`compress_queue:${userId}`);
+  return reply.send({ queue: raw ? JSON.parse(raw) : [] });
+});
+
+// Persist queue state (for dismiss / clear completed operations)
+fastify.put('/api/queue-state', async (request, reply) => {
+  const authHeader = request.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) {
+    return reply.code(401).send({ error: 'Unauthorized' });
+  }
+  const token = authHeader.slice(7);
+  let userId: string;
+  try {
+    const decoded = fastify.jwt.verify<any>(token);
+    userId = String(decoded.id);
+    const userResult = await db.query('SELECT id FROM users WHERE id = $1', [userId]);
+    if (userResult.rows.length === 0) return reply.code(401).send({ error: 'Invalid token' });
+  } catch {
+    return reply.code(401).send({ error: 'Invalid token' });
+  }
+
+  const { queue } = request.body as { queue: unknown[] };
+  await redis.set(`compress_queue:${userId}`, JSON.stringify(queue ?? []), 'EX', 604800);
+  return reply.send({ ok: true });
 });
 
 // Upload endpoint

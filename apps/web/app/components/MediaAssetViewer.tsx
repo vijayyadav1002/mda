@@ -1,4 +1,4 @@
-import { Download, File, Maximize2, Minimize2, X } from "lucide-react";
+import { Download, File, Maximize2, Minimize2, X, ListTodo } from "lucide-react";
 import { useState, useEffect } from "react";
 
 interface MediaAsset {
@@ -17,6 +17,8 @@ interface MediaAssetViewerProps {
   readonly isOpen: boolean;
   readonly onClose: () => void;
   readonly apiUrl: string;
+  readonly userRole?: string;
+  readonly onCompress?: () => void;
 }
 
 function formatFileSize(bytes: string) {
@@ -43,6 +45,8 @@ export function MediaAssetViewer({
   isOpen,
   onClose,
   apiUrl,
+  userRole,
+  onCompress,
 }: Readonly<MediaAssetViewerProps>) {
   const [imageDimensions, setImageDimensions] = useState({ width: 0, height: 0 });
   const [currentVideoId, setCurrentVideoId] = useState<string | null>(null);
@@ -220,15 +224,25 @@ export function MediaAssetViewer({
           </div>
 
           {/* Action buttons */}
-          <div className="px-6 pb-5 flex gap-2">
+          <div className="px-6 pb-5 flex flex-col gap-2">
             <a
               href={isImage ? originalImageUrl : `${apiUrl}/video/${asset.id}`}
               download={asset.fileName}
-              className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl gradient-brand text-[#060e20] font-manrope font-bold text-sm shadow-ambient hover:opacity-90 transition-opacity"
+              className="flex items-center justify-center gap-2 py-2.5 rounded-xl gradient-brand text-[#060e20] font-manrope font-bold text-sm shadow-ambient hover:opacity-90 transition-opacity"
             >
               <Download className="w-4 h-4" />
               Download
             </a>
+            {(userRole === "admin" || userRole === "editor") && onCompress && (
+              <button
+                type="button"
+                onClick={onCompress}
+                className="flex items-center justify-center gap-2 py-2.5 rounded-xl border border-border/30 text-sm text-foreground hover:bg-accent transition-all"
+              >
+                <ListTodo className="w-4 h-4" />
+                Add to Compress Queue
+              </button>
+            )}
           </div>
 
           {/* Divider */}
