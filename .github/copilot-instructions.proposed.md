@@ -1,4 +1,4 @@
-# Copilot instructions for the MDA repo (merged updates)
+# Copilot instructions for the MDA repo (proposed updates)
 
 Purpose: concise, action-oriented guidance to help future Copilot sessions understand how to build, run, and reason about this monorepo.
 
@@ -81,8 +81,6 @@ mda/
 - DOCKER.md — docker-compose usage, service roles, mount points, ports.
 - apps/backend/README.md — backend-specific env vars, migration and seed commands.
 - turbo.json — caching and task orchestration rules.
-- .github/mcp-servers/PLAYWRIGHT.md — Playwright MCP server usage and examples (docker-compose.playwright.yml).
-- .github/mcp-servers/docker-compose.playwright.yml — Docker Compose service to run Playwright tests in a container.
 
 5) AI-assistant config files (scanned)
 
@@ -99,6 +97,6 @@ mda/
 
 ---
 
-If these merged edits look good, the proposed file can be removed or retained for history.
+If these proposed edits look good, they can be merged into `.github/copilot-instructions.md` (proposal kept as `.proposed.md` to avoid overwriting).  
 
 Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>

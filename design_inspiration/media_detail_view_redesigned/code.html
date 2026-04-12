@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>The Curated Gallery - Media Detail</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@200;300;400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "surface-container-highest": "#d5e3fc",
+              "primary-container": "#4f46e5",
+              "surface-bright": "#f8f9ff",
+              "on-primary-container": "#dad7ff",
+              "on-secondary-fixed-variant": "#413f82",
+              "on-secondary-container": "#454386",
+              "on-tertiary-fixed": "#351000",
+              "tertiary-fixed": "#ffdbcc",
+              "on-tertiary": "#ffffff",
+              "on-secondary": "#ffffff",
+              "outline-variant": "#c7c4d8",
+              "tertiary-container": "#a44100",
+              "surface-container": "#e6eeff",
+              "background": "#f8f9ff",
+              "primary": "#3525cd",
+              "on-surface": "#0d1c2e",
+              "on-primary-fixed": "#0f0069",
+              "on-background": "#0d1c2e",
+              "on-tertiary-container": "#ffd2be",
+              "primary-fixed-dim": "#c3c0ff",
+              "tertiary": "#7e3000",
+              "on-error": "#ffffff",
+              "error": "#ba1a1a",
+              "on-primary": "#ffffff",
+              "surface-dim": "#ccdbf3",
+              "inverse-surface": "#233144",
+              "primary-fixed": "#e2dfff",
+              "tertiary-fixed-dim": "#ffb695",
+              "outline": "#777587",
+              "on-secondary-fixed": "#140f54",
+              "surface-container-high": "#dce9ff",
+              "on-primary-fixed-variant": "#3323cc",
+              "inverse-primary": "#c3c0ff",
+              "secondary": "#58579b",
+              "surface-tint": "#4d44e3",
+              "on-error-container": "#93000a",
+              "secondary-container": "#b6b4ff",
+              "surface-container-low": "#eff4ff",
+              "surface-container-lowest": "#ffffff",
+              "error-container": "#ffdad6",
+              "secondary-fixed": "#e2dfff",
+              "on-tertiary-fixed-variant": "#7b2f00",
+              "on-surface-variant": "#464555",
+              "surface": "#f8f9ff",
+              "secondary-fixed-dim": "#c3c0ff",
+              "surface-variant": "#d5e3fc",
+              "inverse-on-surface": "#eaf1ff"
+            },
+            fontFamily: {
+              "headline": ["Manrope", "sans-serif"],
+              "body": ["Manrope", "sans-serif"],
+              "label": ["Manrope", "sans-serif"]
+            },
+            borderRadius: {"DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem"},
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        body { font-family: 'Manrope', sans-serif; }
+    </style>
+</head>
+<body class="bg-background text-on-surface min-h-screen">
+<!-- TopNavBar Mockup (Background) -->
+<header class="fixed top-0 w-full z-40 bg-slate-50/70 backdrop-blur-xl shadow-sm shadow-indigo-500/5 flex justify-between items-center px-6 h-16">
+<div class="text-xl font-bold tracking-tighter text-slate-900">The Curated Gallery</div>
+<div class="flex items-center gap-6">
+<span class="material-symbols-outlined text-slate-600">notifications</span>
+<span class="material-symbols-outlined text-slate-600">settings</span>
+<div class="w-8 h-8 rounded-full bg-primary-container"></div>
+</div>
+</header>
+<!-- Content Mockup (Background Grid) -->
+<main class="pt-24 px-8 pb-32 max-w-7xl mx-auto">
+<div class="grid grid-cols-2 md:grid-cols-4 gap-8">
+<!-- Simulated Grid Items -->
+<div class="aspect-[3/4] bg-surface-container-low rounded-xl opacity-20"></div>
+<div class="aspect-[3/4] bg-surface-container-low rounded-xl opacity-20"></div>
+<div class="aspect-[3/4] bg-surface-container-low rounded-xl opacity-20"></div>
+<div class="aspect-[3/4] bg-surface-container-low rounded-xl opacity-20"></div>
+</div>
+</main>
+<!-- Modal Overlay -->
+<div class="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-8 bg-on-surface/20 backdrop-blur-md">
+<!-- Media Detail Modal -->
+<div class="bg-surface-container-lowest w-full max-w-6xl max-h-[921px] rounded-xl overflow-hidden shadow-2xl flex flex-col md:flex-row relative">
+<!-- Close Action (Absolute) -->
+<button class="absolute top-6 right-6 z-50 bg-white/10 backdrop-blur-md text-white md:text-on-surface md:bg-transparent p-2 rounded-full transition-transform active:scale-90">
+<span class="material-symbols-outlined">close</span>
+</button>
+<!-- Left: Media Preview Canvas -->
+<div class="w-full md:w-[60%] bg-on-surface flex items-center justify-center relative group min-h-[300px] md:min-h-[auto]">
+<img class="w-full h-full object-cover opacity-90 transition-opacity group-hover:opacity-100" data-alt="high-end abstract 3d rendering with fluid indigo and violet shapes, soft cinematic lighting, premium texture, elegant composition" src="https://lh3.googleusercontent.com/aida-public/AB6AXuD8Ech8hcDBSC6e5e9f92UF1Egeo43XqWhZFGtmo6-YkED1ZeueJdY1nM_FRWb4xfrWexeLZn2ppzx7Q7ttHT5tUJWM3uZp1dZUxk4vAzYMdr_I6yAUgSbKwEEngJPiFIKWUxBNdH3jGE-2bsffrxjsu8I4nOCCxSg6y7Egoqk7WsLBEnoYBCEkNHHcm9lOLaoLZeVqEyyhxGAIVRo9226JenuCimzgFxsNwi9v6VN4aS7KXQBwUXmE6BsjxqGz7lKywCmYJsvOfR4U"/>
+<!-- Media Floating Label -->
+<div class="absolute bottom-6 left-6 px-4 py-2 bg-black/40 backdrop-blur-xl border border-white/10 rounded-lg">
+<p class="text-[10px] font-bold uppercase tracking-[0.15em] text-white/70 mb-1">Asset Status</p>
+<div class="flex items-center gap-2">
+<div class="w-2 h-2 rounded-full bg-indigo-400 animate-pulse"></div>
+<span class="text-white font-medium text-sm">Active in Gallery</span>
+</div>
+</div>
+</div>
+<!-- Right: Metadata & Editorial Panel -->
+<div class="w-full md:w-[40%] flex flex-col overflow-y-auto bg-surface-container-lowest p-8 md:p-10">
+<!-- Header -->
+<div class="mb-10">
+<span class="inline-block px-2 py-1 bg-primary-container/10 text-primary font-bold text-[10px] uppercase tracking-widest rounded mb-4">Master Asset</span>
+<h2 class="text-3xl font-extrabold tracking-tight text-on-surface leading-none mb-2">Ethereal_Indigo_04.jpg</h2>
+<p class="text-on-surface-variant text-sm font-medium">Captured by <span class="text-primary cursor-pointer hover:underline">Studio Noir</span> · June 2024</p>
+</div>
+<!-- Primary Actions Grid -->
+<div class="grid grid-cols-2 gap-3 mb-12">
+<button class="flex items-center justify-center gap-2 bg-gradient-to-br from-primary-container to-primary text-white py-3 px-4 rounded-lg font-bold text-sm tracking-tight transition-all active:scale-95 shadow-lg shadow-primary/20">
+<span class="material-symbols-outlined text-[18px]">download</span>
+                        Download
+                    </button>
+<button class="flex items-center justify-center gap-2 bg-surface-container-high text-on-surface py-3 px-4 rounded-lg font-bold text-sm tracking-tight transition-all active:scale-95 hover:bg-surface-container-highest">
+<span class="material-symbols-outlined text-[18px]">share</span>
+                        Share
+                    </button>
+</div>
+<!-- Technical Specs (Metadata) -->
+<div class="space-y-6 mb-12">
+<h3 class="text-[10px] font-black uppercase tracking-[0.2em] text-outline">Technical Inventory</h3>
+<div class="grid grid-cols-2 gap-y-6">
+<div>
+<p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Dimensions</p>
+<p class="text-on-surface font-semibold text-base">7680 × 4320</p>
+<p class="text-[10px] text-outline font-medium">8K Ultra HD</p>
+</div>
+<div>
+<p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">File Size</p>
+<p class="text-on-surface font-semibold text-base">42.8 MB</p>
+<p class="text-[10px] text-outline font-medium">Lossless Format</p>
+</div>
+<div>
+<p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Resolution</p>
+<p class="text-on-surface font-semibold text-base">300 DPI</p>
+<p class="text-[10px] text-outline font-medium">Print Ready</p>
+</div>
+<div>
+<p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Format</p>
+<p class="text-on-surface font-semibold text-base">HEIF / RAW</p>
+<p class="text-[10px] text-outline font-medium">Adobe RGB (1998)</p>
+</div>
+</div>
+</div>
+<!-- Color Palette Analysis -->
+<div class="mb-12">
+<h3 class="text-[10px] font-black uppercase tracking-[0.2em] text-outline mb-4">Palette Analysis</h3>
+<div class="flex items-center gap-2 h-12 w-full rounded-xl overflow-hidden ring-1 ring-outline-variant/20">
+<div class="flex-1 h-full bg-[#3525cd]" title="#3525cd"></div>
+<div class="flex-[0.7] h-full bg-[#4f46e5]" title="#4f46e5"></div>
+<div class="flex-[0.4] h-full bg-[#d5e3fc]" title="#d5e3fc"></div>
+<div class="flex-[0.2] h-full bg-[#0d1c2e]" title="#0d1c2e"></div>
+</div>
+<div class="flex justify-between mt-2 px-1">
+<span class="text-[10px] font-bold text-outline">Indigo Dominant (62%)</span>
+<span class="text-[10px] font-bold text-outline">#3525CD</span>
+</div>
+</div>
+<!-- Taxonomy Tags -->
+<div class="mb-12">
+<div class="flex justify-between items-center mb-4">
+<h3 class="text-[10px] font-black uppercase tracking-[0.2em] text-outline">Taxonomy</h3>
+<button class="text-[10px] font-bold text-primary flex items-center gap-1 hover:underline">
+<span class="material-symbols-outlined text-[14px]">edit</span>
+                            EDIT TAGS
+                        </button>
+</div>
+<div class="flex flex-wrap gap-2">
+<span class="px-3 py-1 bg-surface-container text-on-secondary-container text-xs font-bold rounded-full border border-outline-variant/10">Abstract</span>
+<span class="px-3 py-1 bg-surface-container text-on-secondary-container text-xs font-bold rounded-full border border-outline-variant/10">Minimalism</span>
+<span class="px-3 py-1 bg-surface-container text-on-secondary-container text-xs font-bold rounded-full border border-outline-variant/10">Futurism</span>
+<span class="px-3 py-1 bg-surface-container text-on-secondary-container text-xs font-bold rounded-full border border-outline-variant/10">3D-Render</span>
+<span class="px-3 py-1 bg-surface-container text-on-secondary-container text-xs font-bold rounded-full border border-outline-variant/10">Editorial</span>
+</div>
+</div>
+<!-- Secondary Actions -->
+<div class="mt-auto pt-8 border-t border-outline-variant/20 flex items-center justify-between">
+<button class="flex items-center gap-2 text-on-surface-variant font-bold text-xs hover:text-on-surface transition-colors">
+<span class="material-symbols-outlined text-[18px]">edit_note</span>
+                        Edit Meta
+                    </button>
+<button class="flex items-center gap-2 text-error font-bold text-xs hover:text-error/80 transition-colors">
+<span class="material-symbols-outlined text-[18px]">delete</span>
+                        Delete Asset
+                    </button>
+</div>
+</div>
+</div>
+</div>
+<!-- BottomNavBar (Mobile Shell Only) -->
+<nav class="lg:hidden fixed bottom-0 left-0 w-full flex justify-around items-center px-4 pt-2 pb-6 bg-white/80 backdrop-blur-2xl z-50 rounded-t-2xl shadow-[0_-4px_20px_rgba(79,70,229,0.1)] border-t border-slate-200/30">
+<div class="flex flex-col items-center justify-center text-slate-400 p-2">
+<span class="material-symbols-outlined">dashboard</span>
+<span class="font-manrope text-[10px] font-bold uppercase tracking-widest mt-1">Home</span>
+</div>
+<div class="flex flex-col items-center justify-center bg-indigo-600 text-white rounded-xl p-2 scale-110 -translate-y-1 shadow-lg shadow-indigo-500/40">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">perm_media</span>
+<span class="font-manrope text-[10px] font-bold uppercase tracking-widest mt-1">Library</span>
+</div>
+<div class="flex flex-col items-center justify-center text-slate-400 p-2">
+<span class="material-symbols-outlined">add_box</span>
+<span class="font-manrope text-[10px] font-bold uppercase tracking-widest mt-1">Add</span>
+</div>
+<div class="flex flex-col items-center justify-center text-slate-400 p-2">
+<span class="material-symbols-outlined">analytics</span>
+<span class="font-manrope text-[10px] font-bold uppercase tracking-widest mt-1">Stats</span>
+</div>
+<div class="flex flex-col items-center justify-center text-slate-400 p-2">
+<span class="material-symbols-outlined">group</span>
+<span class="font-manrope text-[10px] font-bold uppercase tracking-widest mt-1">Users</span>
+</div>
+</nav>
+</body></html>

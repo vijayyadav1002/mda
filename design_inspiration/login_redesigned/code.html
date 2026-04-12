@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>The Curator - Secure Access</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@200..800&amp;family=Inter:wght@300..700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "primary-fixed": "#9396ff",
+              "surface-variant": "#192540",
+              "on-primary-fixed": "#000000",
+              "on-secondary": "#33005b",
+              "on-tertiary": "#4b002a",
+              "on-error-container": "#ffb2b9",
+              "surface": "#060e20",
+              "on-background": "#dee5ff",
+              "secondary-fixed-dim": "#dbb4ff",
+              "on-tertiary-fixed-variant": "#740044",
+              "background": "#060e20",
+              "on-primary-fixed-variant": "#0e009d",
+              "primary-container": "#9396ff",
+              "error": "#ff6e84",
+              "tertiary-fixed": "#ff8cbc",
+              "surface-tint": "#a3a6ff",
+              "on-secondary-fixed-variant": "#7511c3",
+              "surface-dim": "#060e20",
+              "inverse-on-surface": "#4d556b",
+              "surface-container-highest": "#192540",
+              "on-error": "#490013",
+              "secondary": "#c180ff",
+              "error-dim": "#d73357",
+              "surface-container-low": "#091328",
+              "on-primary-container": "#0a0081",
+              "on-surface-variant": "#a3aac4",
+              "on-surface": "#dee5ff",
+              "error-container": "#a70138",
+              "on-secondary-container": "#e9cdff",
+              "on-tertiary-container": "#2f0018",
+              "secondary-dim": "#9c48ea",
+              "outline": "#6d758c",
+              "tertiary-container": "#fa53a4",
+              "surface-container-lowest": "#000000",
+              "tertiary": "#ff6daf",
+              "on-secondary-fixed": "#4f0089",
+              "tertiary-dim": "#ff67ad",
+              "primary-dim": "#6063ee",
+              "secondary-fixed": "#e5c6ff",
+              "tertiary-fixed-dim": "#ff73b1",
+              "surface-container": "#0f1930",
+              "surface-container-high": "#141f38",
+              "inverse-surface": "#faf8ff",
+              "outline-variant": "#40485d",
+              "inverse-primary": "#494bd7",
+              "on-tertiary-fixed": "#37001d",
+              "on-primary": "#0f00a4",
+              "surface-bright": "#1f2b49",
+              "primary-fixed-dim": "#8387ff",
+              "primary": "#a3a6ff",
+              "secondary-container": "#6f00be"
+            },
+            fontFamily: {
+              "headline": ["Manrope"],
+              "body": ["Inter"],
+              "label": ["Inter"]
+            },
+            borderRadius: {"DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem"},
+          },
+        },
+      }
+    </script>
+<style>
+      .material-symbols-outlined {
+        font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      }
+      .bg-signature-gradient {
+        background: linear-gradient(135deg, #a3a6ff 0%, #c180ff 100%);
+      }
+      .bg-obsidian-mesh {
+        background-color: #060e20;
+        background-image: 
+          radial-gradient(at 0% 0%, rgba(163, 166, 255, 0.08) 0px, transparent 50%),
+          radial-gradient(at 100% 100%, rgba(193, 128, 255, 0.08) 0px, transparent 50%);
+      }
+    </style>
+</head>
+<body class="bg-obsidian-mesh text-on-surface font-body min-h-screen flex items-center justify-center p-6 selection:bg-secondary/30">
+<main class="w-full max-w-md">
+<!-- Brand Header -->
+<div class="text-center mb-12">
+<div class="inline-flex items-center justify-center w-16 h-16 rounded-xl bg-surface-container-low mb-6 relative overflow-hidden group">
+<div class="absolute inset-0 bg-signature-gradient opacity-20 group-hover:opacity-30 transition-opacity"></div>
+<span class="material-symbols-outlined text-primary text-3xl z-10" data-icon="auto_awesome">auto_awesome</span>
+</div>
+<h1 class="font-headline text-4xl font-black tracking-tight text-on-surface mb-2">
+                The Curator
+            </h1>
+<p class="text-on-surface-variant font-body text-sm tracking-wide uppercase">
+                Media Archive Management
+            </p>
+</div>
+<!-- Login Card -->
+<div class="bg-surface-container-low rounded-[2rem] p-10 shadow-[0px_20px_40px_rgba(0,0,0,0.4)] relative border border-outline-variant/10">
+<div class="mb-8">
+<h2 class="font-headline text-2xl font-bold text-on-surface">Welcome Back</h2>
+<p class="text-on-surface-variant text-sm mt-1">Please enter your credentials to access the vault.</p>
+</div>
+<form class="space-y-6">
+<!-- Username Field -->
+<div class="space-y-2">
+<label class="block text-xs font-bold uppercase tracking-widest text-on-surface-variant ml-1" for="username">
+                        Identifier
+                    </label>
+<div class="relative">
+<span class="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-on-surface-variant text-xl" data-icon="person">person</span>
+<input class="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded-xl py-4 pl-12 pr-4 text-on-surface placeholder:text-on-surface-variant/40 transition-all font-body text-sm" id="username" name="username" placeholder="username or email" type="text"/>
+</div>
+</div>
+<!-- Password Field -->
+<div class="space-y-2">
+<div class="flex justify-between items-end ml-1">
+<label class="block text-xs font-bold uppercase tracking-widest text-on-surface-variant" for="password">
+                            Passphrase
+                        </label>
+<a class="text-[10px] font-bold text-primary hover:text-secondary transition-colors uppercase tracking-tighter" href="#">
+                            Forgot?
+                        </a>
+</div>
+<div class="relative">
+<span class="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-on-surface-variant text-xl" data-icon="lock">lock</span>
+<input class="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded-xl py-4 pl-12 pr-4 text-on-surface placeholder:text-on-surface-variant/40 transition-all font-body text-sm" id="password" name="password" placeholder="••••••••" type="password"/>
+</div>
+</div>
+<!-- Submit Action -->
+<div class="pt-4">
+<button class="w-full bg-signature-gradient text-on-primary-fixed font-headline font-extrabold text-sm uppercase tracking-widest py-5 rounded-xl shadow-lg shadow-primary/20 hover:shadow-primary/40 hover:scale-[1.01] active:scale-[0.98] transition-all" type="submit">
+                        Authenticate
+                    </button>
+</div>
+</form>
+<!-- Secondary Action -->
+<div class="mt-8 text-center">
+<p class="text-on-surface-variant text-sm">
+                    New archivist? 
+                    <a class="text-secondary font-bold hover:underline decoration-secondary/30 underline-offset-4 ml-1" href="#">
+                        Request Access
+                    </a>
+</p>
+</div>
+</div>
+<!-- Footer Metadata -->
+<div class="mt-12 flex justify-between items-center px-4">
+<div class="flex items-center gap-2">
+<div class="w-1.5 h-1.5 rounded-full bg-tertiary shadow-[0_0_8px_rgba(255,109,175,0.6)]"></div>
+<span class="text-[10px] font-medium text-on-surface-variant uppercase tracking-widest">System Operational</span>
+</div>
+<div class="text-[10px] font-medium text-on-surface-variant/40 uppercase tracking-widest">
+                v2.4.0 Obsidian Core
+            </div>
+</div>
+</main>
+<!-- Decorative Elements (Subtle depths) -->
+<div class="fixed top-[-10%] left-[-5%] w-96 h-96 bg-primary/5 rounded-full blur-[120px] pointer-events-none"></div>
+<div class="fixed bottom-[-10%] right-[-5%] w-96 h-96 bg-secondary/5 rounded-full blur-[120px] pointer-events-none"></div>
+</body></html>
