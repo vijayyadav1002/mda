@@ -420,6 +420,19 @@ export default function Dashboard() {
     if (selectionMode) setSelectedAssetIds(new Set());
   };
 
+  const handleDownloadSelected = () => {
+    if (selectedAssetIds.size === 0) return;
+    const ids = Array.from(selectedAssetIds);
+    if (ids.length === 1) {
+      window.location.href = `${API_URL}/download/${ids[0]}`;
+      return;
+    }
+    const folderName = currentPath ? currentPath.split("/").filter(Boolean).pop() : "";
+    const zipName = `${folderName || "media"}-${ids.length}-files.zip`;
+    const url = `${API_URL}/download-zip?ids=${ids.join(",")}&name=${encodeURIComponent(zipName)}`;
+    window.location.href = url;
+  };
+
   const handleDeleteSelected = async () => {
     if (selectedAssetIds.size === 0) return;
     const confirmDelete = window.confirm(
@@ -1168,6 +1181,16 @@ export default function Dashboard() {
                 </button>
                 {selectionMode && selectedAssetIds.size > 0 && (
                   <>
+                    <button
+                      type="button"
+                      onClick={handleDownloadSelected}
+                      className="flex items-center gap-1 px-2.5 py-2 rounded-xl text-sm text-foreground hover:bg-accent transition-all"
+                      title={`Download ${selectedAssetIds.size} file(s)`}
+                    >
+                      <Download className="w-4 h-4" />
+                      <span className="hidden sm:inline">Download</span>
+                      <span className="text-xs">({selectedAssetIds.size})</span>
+                    </button>
                     <button
                       type="button"
                       onClick={() => {
