@@ -1,11 +1,13 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "@remix-run/react";
 import { createGraphQLClient, getAuthToken, clearAuthToken } from "~/lib/api";
-import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
-import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "~/components/ui/dialog";
-import { UserPlus, Trash2, Edit, Key, ArrowLeft, Moon, Sun } from "lucide-react";
+import {
+  UserPlus, Trash2, Edit, Key, ArrowLeft,
+  Users, Folder,
+  LogOut, User, Moon, Sun,
+} from "lucide-react";
 
 const USERS_QUERY = `
   query GetUsers {
@@ -62,58 +64,85 @@ const CHANGE_MY_PASSWORD_MUTATION = `
   }
 `;
 
-interface User {
+interface UserData {
   id: string;
   username: string;
   role: string;
   createdAt: string;
 }
 
-export default function Users() {
-  const [users, setUsers] = useState<User[]>([]);
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
+function SidebarNavItem({
+  icon: Icon,
+  label,
+  active,
+  onClick,
+}: {
+  icon: React.ElementType;
+  label: string;
+  active?: boolean;
+  onClick?: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 relative ${
+        active
+          ? "nav-active bg-accent text-foreground"
+          : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+      }`}
+    >
+      <Icon className="w-4 h-4 flex-shrink-0" />
+      {label}
+    </button>
+  );
+}
+
+function getRoleBadge(role: string) {
+  switch (role) {
+    case "admin":
+      return "bg-brand-secondary/20 text-brand-secondary";
+    case "editor":
+      return "bg-brand-primary/20 text-brand-primary";
+    default:
+      return "bg-muted text-muted-foreground";
+  }
+}
+
+export default function UsersPage() {
+  const [users, setUsers] = useState<UserData[]>([]);
+  const [currentUser, setCurrentUser] = useState<UserData | null>(null);
   const [loading, setLoading] = useState(true);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showResetPasswordDialog, setShowResetPasswordDialog] = useState(false);
   const [showChangeMyPasswordDialog, setShowChangeMyPasswordDialog] = useState(false);
-  const [selectedUser, setSelectedUser] = useState<User | null>(null);
-  const [formData, setFormData] = useState({
-    username: "",
-    password: "",
-    role: "readonly"
-  });
+  const [selectedUser, setSelectedUser] = useState<UserData | null>(null);
+  const [formData, setFormData] = useState({ username: "", password: "", role: "readonly" });
   const [newPassword, setNewPassword] = useState("");
   const [currentPassword, setCurrentPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [darkMode, setDarkMode] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('darkMode') === 'true' || 
-             (!localStorage.getItem('darkMode') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem("darkMode");
+      return stored !== null ? stored === "true" : true;
     }
-    return false;
+    return true;
   });
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('darkMode', darkMode.toString());
-      if (darkMode) {
-        document.documentElement.classList.add('dark');
-      } else {
-        document.documentElement.classList.remove('dark');
-      }
+    if (typeof window !== "undefined") {
+      localStorage.setItem("darkMode", darkMode.toString());
+      if (darkMode) document.documentElement.classList.add("dark");
+      else document.documentElement.classList.remove("dark");
     }
   }, [darkMode]);
 
   useEffect(() => {
     const token = getAuthToken();
-    if (!token) {
-      navigate("/login");
-      return;
-    }
-
+    if (!token) { navigate("/login"); return; }
     loadUsers();
   }, []);
 
@@ -121,18 +150,12 @@ export default function Users() {
     try {
       const token = getAuthToken();
       if (!token) return;
-
       const client = createGraphQLClient(token);
       const data: any = await client.request(USERS_QUERY);
       setUsers(data.users);
       setCurrentUser(data.me);
-
-      // Check if user is admin
-      if (data.me.role !== 'admin') {
-        navigate("/dashboard");
-      }
-    } catch (err) {
-      console.error("Failed to load users:", err);
+      if (data.me.role !== "admin") navigate("/dashboard");
+    } catch {
       setError("Failed to load users");
     } finally {
       setLoading(false);
@@ -142,14 +165,11 @@ export default function Users() {
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-
     try {
       const token = getAuthToken();
       if (!token) return;
-
       const client = createGraphQLClient(token);
       await client.request(CREATE_USER_MUTATION, formData);
-      
       setShowCreateDialog(false);
       setFormData({ username: "", password: "", role: "readonly" });
       loadUsers();
@@ -162,10 +182,8 @@ export default function Users() {
     try {
       const token = getAuthToken();
       if (!token) return;
-
       const client = createGraphQLClient(token);
       await client.request(UPDATE_USER_ROLE_MUTATION, { id: userId, role: newRole });
-      
       setShowEditDialog(false);
       setSelectedUser(null);
       loadUsers();
@@ -175,14 +193,10 @@ export default function Users() {
   };
 
   const handleDeleteUser = async (userId: string) => {
-    if (!confirm("Are you sure you want to delete this user?")) {
-      return;
-    }
-
+    if (!confirm("Are you sure you want to delete this user?")) return;
     try {
       const token = getAuthToken();
       if (!token) return;
-
       const client = createGraphQLClient(token);
       await client.request(DELETE_USER_MUTATION, { id: userId });
       loadUsers();
@@ -194,19 +208,12 @@ export default function Users() {
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-
     if (!selectedUser) return;
-
     try {
       const token = getAuthToken();
       if (!token) return;
-
       const client = createGraphQLClient(token);
-      await client.request(RESET_PASSWORD_MUTATION, {
-        userId: selectedUser.id,
-        newPassword
-      });
-      
+      await client.request(RESET_PASSWORD_MUTATION, { userId: selectedUser.id, newPassword });
       setShowResetPasswordDialog(false);
       setSelectedUser(null);
       setNewPassword("");
@@ -219,466 +226,396 @@ export default function Users() {
   const handleChangeMyPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-
-    if (newPassword !== confirmPassword) {
-      setError("New passwords do not match");
-      return;
-    }
-
-    if (newPassword.length < 6) {
-      setError("Password must be at least 6 characters long");
-      return;
-    }
-
+    if (newPassword !== confirmPassword) { setError("New passwords do not match"); return; }
+    if (newPassword.length < 6) { setError("Password must be at least 6 characters long"); return; }
     try {
       const token = getAuthToken();
       if (!token) return;
-
       const client = createGraphQLClient(token);
-      await client.request(CHANGE_MY_PASSWORD_MUTATION, {
-        currentPassword,
-        newPassword
-      });
-      
+      await client.request(CHANGE_MY_PASSWORD_MUTATION, { currentPassword, newPassword });
       setShowChangeMyPasswordDialog(false);
-      setCurrentPassword("");
-      setNewPassword("");
-      setConfirmPassword("");
-      setError("");
+      setCurrentPassword(""); setNewPassword(""); setConfirmPassword(""); setError("");
       alert("Password changed successfully");
     } catch (err: any) {
       setError(err.message || "Failed to change password");
     }
   };
 
-  const getRoleBadgeColor = (role: string) => {
-    switch (role) {
-      case 'admin':
-        return 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300';
-      case 'editor':
-        return 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300';
-      case 'readonly':
-        return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300';
-      default:
-        return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300';
-    }
+  const handleLogout = () => {
+    clearAuthToken();
+    navigate("/login");
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 via-blue-50/30 to-purple-50/30 dark:from-gray-900 dark:via-gray-900 dark:to-gray-900">
-        <p className="text-gray-600 dark:text-gray-400">Loading...</p>
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="w-10 h-10 rounded-2xl gradient-brand flex items-center justify-center animate-pulse">
+          <Users className="w-5 h-5 text-[#060e20]" />
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50/30 to-purple-50/30 dark:from-gray-900 dark:via-gray-900 dark:to-gray-900 p-8 transition-colors duration-200">
-      {/* Header */}
-      <div className="sticky top-0 z-40 mb-8 bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm border-b border-gray-200 dark:border-gray-700 -mx-8 -mt-8 px-8 py-6 shadow-sm">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Button
-              onClick={() => navigate("/dashboard")}
-              variant="ghost"
-              size="sm"
-              className="hover:bg-gray-100 dark:hover:bg-gray-700"
-            >
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Back to Dashboard
-            </Button>
+    <div className="min-h-screen flex bg-background">
+      {/* ── Sidebar ── */}
+      <aside className="hidden md:flex flex-col fixed left-0 top-0 h-screen w-64 bg-card z-30 flex-shrink-0">
+        <div className="px-5 py-6">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl gradient-brand flex items-center justify-center shadow-ambient flex-shrink-0">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#060e20" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+              </svg>
+            </div>
             <div>
-              <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 dark:from-blue-400 dark:to-purple-400 bg-clip-text text-transparent">
-                User Management
-              </h1>
-              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                Manage users and their permissions
-              </p>
+              <p className="font-manrope font-bold text-sm text-foreground leading-none">The Curator</p>
+              <p className="label-meta mt-0.5">Media Archive</p>
             </div>
           </div>
-          <div className="flex items-center gap-4">
-            <Button
-              onClick={() => setShowChangeMyPasswordDialog(true)}
-              variant="outline"
-              size="sm"
-              className="border-gray-300 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
-            >
-              <Key className="w-4 h-4 mr-2" />
-              Change My Password
-            </Button>
-            <Button
-              onClick={() => setDarkMode(!darkMode)}
-              variant="ghost"
-              size="sm"
-              className="rounded-full p-2"
-            >
-              {darkMode ? (
-                <Sun className="w-5 h-5 text-yellow-500" />
-              ) : (
-                <Moon className="w-5 h-5 text-gray-700" />
-              )}
-            </Button>
-            <Button
+        </div>
+
+        <nav className="flex-1 px-3 space-y-0.5">
+          <SidebarNavItem icon={Folder} label="Collections" onClick={() => navigate("/dashboard")} />
+          <SidebarNavItem icon={Users} label="Users" active />
+        </nav>
+
+        <div className="px-3 pb-6 space-y-3">
+          <button
+            type="button"
+            onClick={() => setDarkMode(!darkMode)}
+            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-border/40 text-muted-foreground text-sm hover:text-foreground hover:bg-accent transition-all duration-200"
+          >
+            {darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+            {darkMode ? "Light Mode" : "Dark Mode"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowCreateDialog(true)}
+            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl gradient-brand text-[#060e20] font-manrope font-bold text-sm shadow-ambient hover:opacity-90 transition-opacity duration-200"
+          >
+            <UserPlus className="w-4 h-4" />
+            Add User
+          </button>
+
+          {currentUser && (
+            <div className="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-accent/50 transition-colors group">
+              <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
+                <User className="w-4 h-4 text-muted-foreground" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-foreground truncate">{currentUser.username}</p>
+                <p className="label-meta capitalize">{currentUser.role}</p>
+              </div>
+              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button
+                  type="button"
+                  onClick={() => setShowChangeMyPasswordDialog(true)}
+                  className="p-1.5 rounded-lg hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+                  title="Change Password"
+                >
+                  <Key className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="p-1.5 rounded-lg hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+                  title="Sign Out"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </aside>
+
+      {/* ── Main content ── */}
+      <div className="flex-1 md:ml-64 min-h-screen">
+        {/* Toolbar */}
+        <div className="sticky top-0 z-10 bg-background/80 backdrop-blur-sm px-6 md:px-10 py-4 flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => navigate("/dashboard")}
+            className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4" /> Dashboard
+          </button>
+        </div>
+
+        {/* Hero */}
+        <div className="px-6 md:px-10 pt-6 pb-8">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h1 className="font-manrope text-3xl md:text-4xl font-bold text-foreground tracking-tight">
+                System Overview
+              </h1>
+              <p className="text-muted-foreground mt-1.5 text-sm">
+                Manage curators and access permissions.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <span className="w-2 h-2 rounded-full bg-emerald-400" />
+              <span className="label-meta text-emerald-400">Operational</span>
+            </div>
+          </div>
+
+          {/* Stats row */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mt-8">
+            {[
+              { label: "Total Curators", value: users.length.toString(), sub: "Active accounts" },
+              { label: "Administrators", value: users.filter((u) => u.role === "admin").length.toString(), sub: "Full access" },
+              { label: "Read-Only", value: users.filter((u) => u.role === "readonly").length.toString(), sub: "View access" },
+            ].map((stat) => (
+              <div key={stat.label} className="bg-card rounded-2xl p-5">
+                <p className="label-meta">{stat.label}</p>
+                <p className="font-manrope text-3xl font-bold text-foreground mt-1">{stat.value}</p>
+                <p className="text-xs text-muted-foreground mt-1">{stat.sub}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Users table */}
+        <div className="px-6 md:px-10 pb-10">
+          <div className="flex items-center justify-between mb-4">
+            <p className="font-manrope font-semibold text-foreground">Active Curators</p>
+            <button
+              type="button"
               onClick={() => setShowCreateDialog(true)}
-              className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 dark:from-blue-500 dark:to-purple-500 dark:hover:from-blue-600 dark:hover:to-purple-600 text-white"
+              className="flex items-center gap-2 px-4 py-2 rounded-xl gradient-brand text-[#060e20] font-manrope font-bold text-sm shadow-ambient hover:opacity-90 transition-opacity md:hidden"
             >
-              <UserPlus className="w-4 h-4 mr-2" />
-              Add User
-            </Button>
+              <UserPlus className="w-4 h-4" /> Add User
+            </button>
+          </div>
+
+          {error && (
+            <div className="mb-4 px-4 py-3 bg-destructive/10 text-destructive text-sm rounded-xl">
+              {error}
+            </div>
+          )}
+
+          <div className="bg-card rounded-2xl overflow-hidden">
+            {/* Table header — hidden on mobile */}
+            <div className="hidden sm:grid sm:grid-cols-[1fr_120px_140px_120px] px-6 py-3">
+              {["Username", "Role", "Joined", "Actions"].map((h) => (
+                <p key={h} className="label-meta">{h}</p>
+              ))}
+            </div>
+
+            {/* Table rows */}
+            <div className="divide-y divide-border/10">
+              {users.map((user) => (
+                <div
+                  key={user.id}
+                  className="flex flex-col sm:grid sm:grid-cols-[1fr_120px_140px_120px] px-4 sm:px-6 py-4 gap-2 sm:gap-0 sm:items-center hover:bg-accent/30 transition-colors"
+                >
+                  {/* Username + role (mobile: stacked; desktop: separate cols) */}
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
+                      <User className="w-4 h-4 text-muted-foreground" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-sm font-medium text-foreground truncate">{user.username}</p>
+                        {currentUser?.id === user.id && (
+                          <p className="text-xs text-brand-primary">You</p>
+                        )}
+                        {/* Role badge on mobile */}
+                        <span className={`sm:hidden inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold capitalize ${getRoleBadge(user.role)}`}>
+                          {user.role}
+                        </span>
+                      </div>
+                      {/* Date on mobile */}
+                      <p className="sm:hidden text-xs text-muted-foreground mt-0.5">
+                        {new Date(user.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                      </p>
+                    </div>
+                    {/* Actions on mobile */}
+                    {currentUser?.id !== user.id && (
+                      <div className="flex items-center gap-1 sm:hidden">
+                        <button type="button" onClick={() => { setSelectedUser(user); setShowEditDialog(true); }}
+                          className="p-2 rounded-xl text-muted-foreground hover:text-brand-primary hover:bg-brand-primary/10 transition-all" title="Edit role">
+                          <Edit className="w-4 h-4" />
+                        </button>
+                        <button type="button" onClick={() => { setSelectedUser(user); setShowResetPasswordDialog(true); }}
+                          className="p-2 rounded-xl text-muted-foreground hover:text-brand-secondary hover:bg-brand-secondary/10 transition-all" title="Reset password">
+                          <Key className="w-4 h-4" />
+                        </button>
+                        <button type="button" onClick={() => handleDeleteUser(user.id)}
+                          className="p-2 rounded-xl text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all" title="Delete user">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  {/* Desktop-only columns */}
+                  <div className="hidden sm:block">
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold capitalize ${getRoleBadge(user.role)}`}>
+                      {user.role}
+                    </span>
+                  </div>
+                  <p className="hidden sm:block text-sm text-muted-foreground">
+                    {new Date(user.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                  </p>
+                  <div className="hidden sm:flex items-center gap-1 justify-end">
+                    {currentUser?.id !== user.id && (
+                      <>
+                        <button type="button" onClick={() => { setSelectedUser(user); setShowEditDialog(true); }}
+                          className="p-2 rounded-xl text-muted-foreground hover:text-brand-primary hover:bg-brand-primary/10 transition-all" title="Edit role">
+                          <Edit className="w-4 h-4" />
+                        </button>
+                        <button type="button" onClick={() => { setSelectedUser(user); setShowResetPasswordDialog(true); }}
+                          className="p-2 rounded-xl text-muted-foreground hover:text-brand-secondary hover:bg-brand-secondary/10 transition-all" title="Reset password">
+                          <Key className="w-4 h-4" />
+                        </button>
+                        <button type="button" onClick={() => handleDeleteUser(user.id)}
+                          className="p-2 rounded-xl text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all" title="Delete user">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Error Message */}
-      {error && (
-        <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-red-600 dark:text-red-400">
-          {error}
-        </div>
-      )}
+      {/* ── Dialogs ── */}
 
-      {/* Users Table */}
-      <Card className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm border-gray-200 dark:border-gray-700 shadow-xl">
-        <CardHeader>
-          <CardTitle className="text-gray-900 dark:text-white">
-            Users ({users.length})
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-gray-200 dark:border-gray-700">
-                  <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">Username</th>
-                  <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">Role</th>
-                  <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">Created</th>
-                  <th className="text-right py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {users.map((user) => (
-                  <tr key={user.id} className="border-b border-gray-100 dark:border-gray-700/50 hover:bg-gray-50 dark:hover:bg-gray-700/30">
-                    <td className="py-4 px-4">
-                      <div className="flex items-center gap-2">
-                        <span className="text-gray-900 dark:text-white font-medium">{user.username}</span>
-                        {currentUser?.id === user.id && (
-                          <span className="text-xs bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300 px-2 py-1 rounded-full">
-                            You
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="py-4 px-4">
-                      <span className={`inline-block px-3 py-1 rounded-full text-xs font-semibold ${getRoleBadgeColor(user.role)}`}>
-                        {user.role}
-                      </span>
-                    </td>
-                    <td className="py-4 px-4 text-sm text-gray-600 dark:text-gray-400">
-                      {new Date(user.createdAt).toLocaleDateString()}
-                    </td>
-                    <td className="py-4 px-4">
-                      <div className="flex items-center justify-end gap-2">
-                        {currentUser?.id !== user.id && (
-                          <>
-                            <Button
-                              onClick={() => {
-                                setSelectedUser(user);
-                                setShowEditDialog(true);
-                              }}
-                              variant="ghost"
-                              size="sm"
-                              className="hover:bg-blue-50 dark:hover:bg-blue-900/20"
-                            >
-                              <Edit className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                            </Button>
-                            <Button
-                              onClick={() => {
-                                setSelectedUser(user);
-                                setShowResetPasswordDialog(true);
-                              }}
-                              variant="ghost"
-                              size="sm"
-                              className="hover:bg-yellow-50 dark:hover:bg-yellow-900/20"
-                            >
-                              <Key className="w-4 h-4 text-yellow-600 dark:text-yellow-400" />
-                            </Button>
-                            <Button
-                              onClick={() => handleDeleteUser(user.id)}
-                              variant="ghost"
-                              size="sm"
-                              className="hover:bg-red-50 dark:hover:bg-red-900/20"
-                            >
-                              <Trash2 className="w-4 h-4 text-red-600 dark:text-red-400" />
-                            </Button>
-                          </>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Create User Dialog */}
+      {/* Create User */}
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-        <DialogContent className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
+        <DialogContent className="bg-card border-border/20 shadow-ambient rounded-2xl">
           <DialogHeader>
-            <DialogTitle className="text-gray-900 dark:text-white">Create New User</DialogTitle>
+            <DialogTitle className="font-manrope text-foreground">Add New Curator</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleCreateUser} className="space-y-4">
-            <div>
-              <label htmlFor="create-username" className="text-sm font-medium mb-1 block text-gray-700 dark:text-gray-300">
-                Username
-              </label>
+          <form onSubmit={handleCreateUser} className="space-y-4 mt-2">
+            <div className="space-y-1.5">
+              <label htmlFor="create-username" className="label-meta">Username</label>
               <Input
                 id="create-username"
                 type="text"
                 value={formData.username}
                 onChange={(e) => setFormData({ ...formData, username: e.target.value })}
                 required
-                className="dark:bg-gray-900/50 dark:border-gray-600 dark:text-white"
                 placeholder="Enter username"
+                className="bg-muted border-border/20 text-foreground placeholder:text-muted-foreground"
               />
             </div>
-            <div>
-              <label htmlFor="create-password" className="text-sm font-medium mb-1 block text-gray-700 dark:text-gray-300">
-                Password
-              </label>
+            <div className="space-y-1.5">
+              <label htmlFor="create-password" className="label-meta">Passphrase</label>
               <Input
                 id="create-password"
                 type="password"
                 value={formData.password}
                 onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                 required
-                className="dark:bg-gray-900/50 dark:border-gray-600 dark:text-white"
                 placeholder="Enter password"
+                className="bg-muted border-border/20 text-foreground placeholder:text-muted-foreground"
               />
             </div>
-            <div>
-              <label htmlFor="create-role" className="text-sm font-medium mb-1 block text-gray-700 dark:text-gray-300">
-                Role
-              </label>
+            <div className="space-y-1.5">
+              <label htmlFor="create-role" className="label-meta">Access Level</label>
               <select
                 id="create-role"
                 value={formData.role}
                 onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900/50 text-gray-900 dark:text-white"
+                className="w-full px-3 py-2.5 rounded-xl bg-muted border border-border/20 text-foreground text-sm outline-none focus:border-brand-primary/80"
               >
-                <option value="readonly">Read Only</option>
-                <option value="editor">Editor</option>
-                <option value="admin">Admin</option>
+                <option value="readonly">Read Only — View media only</option>
+                <option value="editor">Editor — View, edit, delete media</option>
+                <option value="admin">Admin — Full access</option>
               </select>
-              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                <strong>Read Only:</strong> View media only • 
-                <strong> Editor:</strong> View, edit, delete media • 
-                <strong> Admin:</strong> Full access including user management
-              </p>
             </div>
-            {error && (
-              <div className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md p-3">
-                {error}
-              </div>
-            )}
-            <div className="flex gap-2 justify-end">
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => {
-                  setShowCreateDialog(false);
-                  setFormData({ username: "", password: "", role: "readonly" });
-                  setError("");
-                }}
-                className="dark:hover:bg-gray-700"
-              >
+            {error && <p className="text-sm text-destructive bg-destructive/10 rounded-xl px-3 py-2">{error}</p>}
+            <div className="flex gap-2 justify-end pt-2">
+              <button type="button" onClick={() => { setShowCreateDialog(false); setFormData({ username: "", password: "", role: "readonly" }); setError(""); }}
+                className="px-4 py-2 rounded-xl text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-all">
                 Cancel
-              </Button>
-              <Button
-                type="submit"
-                className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white"
-              >
-                Create User
-              </Button>
+              </button>
+              <button type="submit" className="px-4 py-2 rounded-xl gradient-brand text-[#060e20] font-manrope font-bold text-sm shadow-ambient hover:opacity-90 transition-opacity">
+                Create Curator
+              </button>
             </div>
           </form>
         </DialogContent>
       </Dialog>
 
-      {/* Edit Role Dialog */}
+      {/* Edit Role */}
       <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-        <DialogContent className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
+        <DialogContent className="bg-card border-border/20 shadow-ambient rounded-2xl">
           <DialogHeader>
-            <DialogTitle className="text-gray-900 dark:text-white">
-              Edit User Role - {selectedUser?.username}
-            </DialogTitle>
+            <DialogTitle className="font-manrope text-foreground">Edit Role — {selectedUser?.username}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <label htmlFor="edit-role" className="text-sm font-medium mb-1 block text-gray-700 dark:text-gray-300">
-                Role
-              </label>
+          <div className="space-y-4 mt-2">
+            <div className="space-y-1.5">
+              <label htmlFor="edit-role" className="label-meta">Access Level</label>
               <select
                 id="edit-role"
                 value={selectedUser?.role || "readonly"}
-                onChange={(e) => {
-                  if (selectedUser) {
-                    handleUpdateRole(selectedUser.id, e.target.value);
-                  }
-                }}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900/50 text-gray-900 dark:text-white"
+                onChange={(e) => selectedUser && handleUpdateRole(selectedUser.id, e.target.value)}
+                className="w-full px-3 py-2.5 rounded-xl bg-muted border border-border/20 text-foreground text-sm outline-none focus:border-brand-primary/80"
               >
                 <option value="readonly">Read Only</option>
                 <option value="editor">Editor</option>
                 <option value="admin">Admin</option>
               </select>
-              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                <strong>Read Only:</strong> View media only • 
-                <strong> Editor:</strong> View, edit, delete media • 
-                <strong> Admin:</strong> Full access including user management
-              </p>
             </div>
-            {error && (
-              <div className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md p-3">
-                {error}
-              </div>
-            )}
+            {error && <p className="text-sm text-destructive bg-destructive/10 rounded-xl px-3 py-2">{error}</p>}
           </div>
         </DialogContent>
       </Dialog>
 
-      {/* Reset Password Dialog */}
+      {/* Reset Password */}
       <Dialog open={showResetPasswordDialog} onOpenChange={setShowResetPasswordDialog}>
-        <DialogContent className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
+        <DialogContent className="bg-card border-border/20 shadow-ambient rounded-2xl">
           <DialogHeader>
-            <DialogTitle className="text-gray-900 dark:text-white">
-              Reset Password - {selectedUser?.username}
-            </DialogTitle>
+            <DialogTitle className="font-manrope text-foreground">Reset Password — {selectedUser?.username}</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleResetPassword} className="space-y-4">
-            <div>
-              <label htmlFor="new-password" className="text-sm font-medium mb-1 block text-gray-700 dark:text-gray-300">
-                New Password
-              </label>
-              <Input
-                id="new-password"
-                type="password"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                required
-                className="dark:bg-gray-900/50 dark:border-gray-600 dark:text-white"
-                placeholder="Enter new password"
-              />
+          <form onSubmit={handleResetPassword} className="space-y-4 mt-2">
+            <div className="space-y-1.5">
+              <label htmlFor="new-pwd-reset" className="label-meta">New Passphrase</label>
+              <Input id="new-pwd-reset" type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required
+                placeholder="Enter new password" className="bg-muted border-border/20 text-foreground placeholder:text-muted-foreground" />
             </div>
-            {error && (
-              <div className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md p-3">
-                {error}
-              </div>
-            )}
-            <div className="flex gap-2 justify-end">
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => {
-                  setShowResetPasswordDialog(false);
-                  setSelectedUser(null);
-                  setNewPassword("");
-                  setError("");
-                }}
-                className="dark:hover:bg-gray-700"
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                className="bg-gradient-to-r from-yellow-600 to-orange-600 hover:from-yellow-700 hover:to-orange-700 text-white"
-              >
+            {error && <p className="text-sm text-destructive bg-destructive/10 rounded-xl px-3 py-2">{error}</p>}
+            <div className="flex gap-2 justify-end pt-2">
+              <button type="button" onClick={() => { setShowResetPasswordDialog(false); setSelectedUser(null); setNewPassword(""); setError(""); }}
+                className="px-4 py-2 rounded-xl text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-all">Cancel</button>
+              <button type="submit" className="px-4 py-2 rounded-xl gradient-brand text-[#060e20] font-manrope font-bold text-sm shadow-ambient hover:opacity-90 transition-opacity">
                 Reset Password
-              </Button>
+              </button>
             </div>
           </form>
         </DialogContent>
       </Dialog>
 
-      {/* Change My Password Dialog */}
+      {/* Change My Password */}
       <Dialog open={showChangeMyPasswordDialog} onOpenChange={setShowChangeMyPasswordDialog}>
-        <DialogContent className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
+        <DialogContent className="bg-card border-border/20 shadow-ambient rounded-2xl">
           <DialogHeader>
-            <DialogTitle className="text-gray-900 dark:text-white">
-              Change My Password
-            </DialogTitle>
+            <DialogTitle className="font-manrope text-foreground">Change My Password</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleChangeMyPassword} className="space-y-4">
-            <div>
-              <label htmlFor="current-password" className="text-sm font-medium mb-1 block text-gray-700 dark:text-gray-300">
-                Current Password
-              </label>
-              <Input
-                id="current-password"
-                type="password"
-                value={currentPassword}
-                onChange={(e) => setCurrentPassword(e.target.value)}
-                required
-                className="dark:bg-gray-900/50 dark:border-gray-600 dark:text-white"
-                placeholder="Enter current password"
-              />
-            </div>
-            <div>
-              <label htmlFor="new-password-change" className="text-sm font-medium mb-1 block text-gray-700 dark:text-gray-300">
-                New Password
-              </label>
-              <Input
-                id="new-password-change"
-                type="password"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                required
-                className="dark:bg-gray-900/50 dark:border-gray-600 dark:text-white"
-                placeholder="Enter new password"
-                minLength={6}
-              />
-            </div>
-            <div>
-              <label htmlFor="confirm-password" className="text-sm font-medium mb-1 block text-gray-700 dark:text-gray-300">
-                Confirm New Password
-              </label>
-              <Input
-                id="confirm-password"
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                required
-                className="dark:bg-gray-900/50 dark:border-gray-600 dark:text-white"
-                placeholder="Confirm new password"
-                minLength={6}
-              />
-            </div>
-            {error && (
-              <div className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md p-3">
-                {error}
+          <form onSubmit={handleChangeMyPassword} className="space-y-4 mt-2">
+            {[
+              { id: "cur-pwd-u", label: "Current Password", value: currentPassword, set: setCurrentPassword },
+              { id: "new-pwd-u", label: "New Password", value: newPassword, set: setNewPassword },
+              { id: "con-pwd-u", label: "Confirm New Password", value: confirmPassword, set: setConfirmPassword },
+            ].map((f) => (
+              <div key={f.id} className="space-y-1.5">
+                <label htmlFor={f.id} className="label-meta">{f.label}</label>
+                <Input id={f.id} type="password" value={f.value} onChange={(e) => f.set(e.target.value)} required minLength={6}
+                  className="bg-muted border-border/20 text-foreground placeholder:text-muted-foreground" />
               </div>
-            )}
-            <div className="flex gap-2 justify-end">
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => {
-                  setShowChangeMyPasswordDialog(false);
-                  setCurrentPassword("");
-                  setNewPassword("");
-                  setConfirmPassword("");
-                  setError("");
-                }}
-                className="dark:hover:bg-gray-700"
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                className="bg-gradient-to-r from-green-600 to-teal-600 hover:from-green-700 hover:to-teal-700 text-white"
-              >
-                Change Password
-              </Button>
+            ))}
+            {error && <p className="text-sm text-destructive bg-destructive/10 rounded-xl px-3 py-2">{error}</p>}
+            <div className="flex gap-2 justify-end pt-2">
+              <button type="button" onClick={() => { setShowChangeMyPasswordDialog(false); setCurrentPassword(""); setNewPassword(""); setConfirmPassword(""); setError(""); }}
+                className="px-4 py-2 rounded-xl text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-all">Cancel</button>
+              <button type="submit" className="px-4 py-2 rounded-xl gradient-brand text-[#060e20] font-manrope font-bold text-sm shadow-ambient hover:opacity-90 transition-opacity">
+                Update Password
+              </button>
             </div>
           </form>
         </DialogContent>

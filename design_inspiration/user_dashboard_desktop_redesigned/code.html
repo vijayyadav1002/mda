@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>The Curator | Media Archive</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "primary-fixed": "#9396ff",
+              "surface-variant": "#192540",
+              "on-primary-fixed": "#000000",
+              "on-secondary": "#33005b",
+              "on-tertiary": "#4b002a",
+              "on-error-container": "#ffb2b9",
+              "surface": "#060e20",
+              "on-background": "#dee5ff",
+              "secondary-fixed-dim": "#dbb4ff",
+              "on-tertiary-fixed-variant": "#740044",
+              "background": "#060e20",
+              "on-primary-fixed-variant": "#0e009d",
+              "primary-container": "#9396ff",
+              "error": "#ff6e84",
+              "tertiary-fixed": "#ff8cbc",
+              "surface-tint": "#a3a6ff",
+              "on-secondary-fixed-variant": "#7511c3",
+              "surface-dim": "#060e20",
+              "inverse-on-surface": "#4d556b",
+              "surface-container-highest": "#192540",
+              "on-error": "#490013",
+              "secondary": "#c180ff",
+              "error-dim": "#d73357",
+              "surface-container-low": "#091328",
+              "on-primary-container": "#0a0081",
+              "on-surface-variant": "#a3aac4",
+              "on-surface": "#dee5ff",
+              "error-container": "#a70138",
+              "on-secondary-container": "#e9cdff",
+              "on-tertiary-container": "#2f0018",
+              "secondary-dim": "#9c48ea",
+              "outline": "#6d758c",
+              "tertiary-container": "#fa53a4",
+              "surface-container-lowest": "#000000",
+              "tertiary": "#ff6daf",
+              "on-secondary-fixed": "#4f0089",
+              "tertiary-dim": "#ff67ad",
+              "primary-dim": "#6063ee",
+              "secondary-fixed": "#e5c6ff",
+              "tertiary-fixed-dim": "#ff73b1",
+              "surface-container": "#0f1930",
+              "surface-container-high": "#141f38",
+              "inverse-surface": "#faf8ff",
+              "outline-variant": "#40485d",
+              "inverse-primary": "#494bd7",
+              "on-tertiary-fixed": "#37001d",
+              "on-primary": "#0f00a4",
+              "surface-bright": "#1f2b49",
+              "primary-fixed-dim": "#8387ff",
+              "primary": "#a3a6ff",
+              "secondary-container": "#6f00be"
+            },
+            fontFamily: {
+              "headline": ["Manrope"],
+              "body": ["Inter"],
+              "label": ["Inter"]
+            },
+            borderRadius: {"DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem"},
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            display: inline-block;
+            line-height: 1;
+            text-transform: none;
+            letter-spacing: normal;
+            word-wrap: normal;
+            white-space: nowrap;
+            direction: ltr;
+        }
+        .signature-gradient {
+            background: linear-gradient(135deg, #a3a6ff 0%, #c180ff 100%);
+        }
+        .glass-panel {
+            background: rgba(31, 43, 73, 0.7);
+            backdrop-filter: blur(24px);
+        }
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #060e20;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #192540;
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #40485d;
+        }
+    </style>
+</head>
+<body class="bg-surface text-on-surface font-body selection:bg-primary/30">
+<!-- Desktop Side Navigation Rail -->
+<aside class="hidden lg:flex flex-col py-8 z-50 h-screen w-64 fixed left-0 top-0 bg-[#091328] dark:bg-[#091328]">
+<div class="px-6 mb-8">
+<h1 class="text-2xl font-bold tracking-tighter text-[#a3a6ff]">The Curator</h1>
+<p class="text-[10px] uppercase tracking-[0.2em] text-on-surface-variant/60 font-medium">Media Archive</p>
+</div>
+<nav class="flex-1 space-y-1">
+<!-- Library is Active -->
+<a class="flex items-center gap-3 px-6 py-3 bg-[#1f2b49] text-[#c180ff] border-l-4 border-[#c180ff] transition-all font-manrope text-sm font-medium" href="#">
+<span class="material-symbols-outlined" data-icon="grid_view">grid_view</span>
+                Library
+            </a>
+<a class="flex items-center gap-3 px-6 py-3 text-[#a3aac4] hover:bg-[#192540] hover:text-[#a3a6ff] transition-all font-manrope text-sm font-medium" href="#">
+<span class="material-symbols-outlined" data-icon="folder_special">folder_special</span>
+                Collections
+            </a>
+<a class="flex items-center gap-3 px-6 py-3 text-[#a3aac4] hover:bg-[#192540] hover:text-[#a3a6ff] transition-all font-manrope text-sm font-medium" href="#">
+<span class="material-symbols-outlined" data-icon="share">share</span>
+                Shared
+            </a>
+<a class="flex items-center gap-3 px-6 py-3 text-[#a3aac4] hover:bg-[#192540] hover:text-[#a3a6ff] transition-all font-manrope text-sm font-medium" href="#">
+<span class="material-symbols-outlined" data-icon="insights">insights</span>
+                Analytics
+            </a>
+<a class="flex items-center gap-3 px-6 py-3 text-[#a3aac4] hover:bg-[#192540] hover:text-[#a3a6ff] transition-all font-manrope text-sm font-medium" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+                Settings
+            </a>
+</nav>
+<div class="px-6 mt-auto">
+<button class="w-full signature-gradient text-on-primary-fixed font-bold py-3 rounded-xl flex items-center justify-center gap-2 hover:opacity-90 transition-opacity shadow-lg shadow-primary/10">
+<span class="material-symbols-outlined" data-icon="cloud_upload">cloud_upload</span>
+                Upload Media
+            </button>
+<div class="mt-8 flex items-center gap-3">
+<div class="w-10 h-10 rounded-full bg-surface-container-highest overflow-hidden border border-outline-variant/20">
+<img alt="User Profile Avatar" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAbaRd3X63c3yv8uKBfXSzzoP1HR9FI4CTG0ja_DIcLiJ7iugJllCzfBicAbuLiTjKTJPZScB0p9ROpqlCAz2VwdMVXavver4PcuFg_W-97SXTRibmBxKPHTnmaIwHFBHA-BkN-ZA7YV-7rDiHPNnqPMaUPVYbjnr4CZyuE8492AhozBaogmMBC3Gy_j6BkuR0OX7pXrTDZSdneum9ZcYzJWrDXTSVfpecYxCxjOkX61A2MvIm4QKGnk_-KcuOzspMxQX8vIG_BPd8a"/>
+</div>
+<div class="flex flex-col">
+<span class="text-sm font-semibold">Alex Rivers</span>
+<span class="text-xs text-on-surface-variant">Pro Curator</span>
+</div>
+</div>
+</div>
+</aside>
+<!-- Mobile Top Navigation -->
+<header class="flex lg:hidden justify-between items-center px-6 h-16 w-full fixed top-0 z-40 bg-[#060e20]/70 backdrop-blur-xl">
+<span class="text-lg font-black tracking-widest text-[#a3a6ff] font-manrope uppercase">The Curator</span>
+<div class="flex items-center gap-4 text-[#a3aac4]">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+<span class="material-symbols-outlined" data-icon="account_circle">account_circle</span>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="lg:ml-64 min-h-screen pt-16 lg:pt-0 pb-24 lg:pb-8 px-6 lg:px-10">
+<!-- Header Section -->
+<header class="py-10 flex flex-col md:flex-row md:items-end justify-between gap-6">
+<div class="space-y-2">
+<h2 class="font-headline text-4xl lg:text-5xl font-extrabold tracking-tight text-on-surface">Your Collection</h2>
+<p class="font-body text-on-surface-variant max-w-md">Organized precision for your creative assets and digital artifacts.</p>
+</div>
+<!-- Storage Indicator Card -->
+<div class="bg-surface-container-low p-6 rounded-xl min-w-[280px] border-l-2 border-secondary/30">
+<div class="flex justify-between items-center mb-3">
+<span class="text-xs font-label uppercase tracking-wider text-on-surface-variant">Storage Capacity</span>
+<span class="text-xs font-bold text-secondary">72% USED</span>
+</div>
+<div class="h-1.5 w-full bg-surface-container-highest rounded-full overflow-hidden mb-2">
+<div class="h-full signature-gradient w-[72%] rounded-full"></div>
+</div>
+<div class="flex justify-between text-[11px] font-medium text-on-surface-variant">
+<span>1.4 TB of 2.0 TB</span>
+<a class="text-primary hover:underline" href="#">Upgrade Plan</a>
+</div>
+</div>
+</header>
+<!-- Dynamic Content Layout (Bento Grid Style) -->
+<section class="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-12 gap-6">
+<!-- Folders Section -->
+<div class="md:col-span-4 lg:col-span-12">
+<div class="flex items-center justify-between mb-6">
+<h3 class="font-headline text-xl font-bold flex items-center gap-2">
+<span class="material-symbols-outlined text-secondary" data-icon="folder">folder</span>
+                        Active Folders
+                    </h3>
+<button class="text-sm font-medium text-primary flex items-center gap-1 hover:gap-2 transition-all">
+                        View All <span class="material-symbols-outlined text-xs" data-icon="arrow_forward">arrow_forward</span>
+</button>
+</div>
+<div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-4">
+<!-- Folder Item -->
+<div class="bg-surface-container-low p-5 rounded-xl group hover:bg-surface-container-highest transition-all cursor-pointer">
+<div class="flex items-start justify-between mb-4">
+<span class="material-symbols-outlined text-4xl text-primary/80 group-hover:scale-110 transition-transform" data-icon="folder_open">folder_open</span>
+<span class="material-symbols-outlined text-on-surface-variant hover:text-on-surface" data-icon="more_vert">more_vert</span>
+</div>
+<h4 class="font-headline font-semibold text-sm mb-1">Cinematography 2024</h4>
+<p class="font-label text-xs text-on-surface-variant">1,248 items • 420 GB</p>
+</div>
+<!-- Folder Item -->
+<div class="bg-surface-container-low p-5 rounded-xl group hover:bg-surface-container-highest transition-all cursor-pointer border-l-2 border-primary/20">
+<div class="flex items-start justify-between mb-4">
+<span class="material-symbols-outlined text-4xl text-secondary/80 group-hover:scale-110 transition-transform" data-icon="auto_awesome_motion">auto_awesome_motion</span>
+<span class="material-symbols-outlined text-on-surface-variant hover:text-on-surface" data-icon="more_vert">more_vert</span>
+</div>
+<h4 class="font-headline font-semibold text-sm mb-1">Editorial Mastershots</h4>
+<p class="font-label text-xs text-on-surface-variant">842 items • 156 GB</p>
+</div>
+<!-- Folder Item -->
+<div class="bg-surface-container-low p-5 rounded-xl group hover:bg-surface-container-highest transition-all cursor-pointer">
+<div class="flex items-start justify-between mb-4">
+<span class="material-symbols-outlined text-4xl text-tertiary/80 group-hover:scale-110 transition-transform" data-icon="video_library">video_library</span>
+<span class="material-symbols-outlined text-on-surface-variant hover:text-on-surface" data-icon="more_vert">more_vert</span>
+</div>
+<h4 class="font-headline font-semibold text-sm mb-1">Raw Footage / 4K</h4>
+<p class="font-label text-xs text-on-surface-variant">312 items • 890 GB</p>
+</div>
+<!-- Folder Item -->
+<div class="bg-surface-container-low p-5 rounded-xl group hover:bg-surface-container-highest transition-all cursor-pointer">
+<div class="flex items-start justify-between mb-4">
+<span class="material-symbols-outlined text-4xl text-outline/80 group-hover:scale-110 transition-transform" data-icon="photo_library">photo_library</span>
+<span class="material-symbols-outlined text-on-surface-variant hover:text-on-surface" data-icon="more_vert">more_vert</span>
+</div>
+<h4 class="font-headline font-semibold text-sm mb-1">Reference Board</h4>
+<p class="font-label text-xs text-on-surface-variant">2.1k items • 12 GB</p>
+</div>
+</div>
+</div>
+<!-- Recent Media Section (Main Grid) -->
+<div class="md:col-span-4 lg:col-span-12 mt-4">
+<div class="flex items-center justify-between mb-6">
+<h3 class="font-headline text-xl font-bold">Recent Media</h3>
+<div class="flex items-center gap-3">
+<div class="bg-surface-container-lowest px-3 py-1.5 rounded-full flex items-center gap-2 border border-outline-variant/20">
+<span class="material-symbols-outlined text-sm text-on-surface-variant" data-icon="search">search</span>
+<input class="bg-transparent border-none text-xs focus:ring-0 p-0 w-32 md:w-48 placeholder:text-on-surface-variant" placeholder="Search files..." type="text"/>
+</div>
+<button class="bg-surface-container-highest p-2 rounded-lg text-on-surface-variant hover:text-on-surface transition-colors">
+<span class="material-symbols-outlined" data-icon="filter_list">filter_list</span>
+</button>
+</div>
+</div>
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+<!-- Media Card 1 -->
+<div class="group bg-surface-container-low rounded-xl overflow-hidden transition-all duration-300 hover:shadow-2xl hover:shadow-primary/5">
+<div class="h-48 overflow-hidden relative">
+<img alt="Media Preview" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" data-alt="high contrast architectural photograph of a minimalist concrete building with deep shadows and harsh sunlight geometric patterns" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAusEm1XZJDW_C9tyJcO5GCG8bXv99HjwdL28YI3WlwBHzx7dRv9TLHiiptNivPDSZwCySO_6HEm4LOx4gD45MEUmzvVtAll3bohfaa7pIHZVjElBfc_2uZBVgErp-KYE3b-jSOoeAUxnj36rSKL6W0pICQQiJikODTsx-plEzERpSvB5SyN7Y6j6Pjet9uMiWpLi2Fli0eybCx0SRVATzR5AnFuxFgN6Q1dFZQkEcsAXB3GwZTwCu-BjX1Pges2pQeE3YpBFy9gt5Q"/>
+<div class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="bg-surface/80 backdrop-blur-md p-2 rounded-full text-white hover:text-primary">
+<span class="material-symbols-outlined text-sm" data-icon="favorite">favorite</span>
+</button>
+</div>
+<div class="absolute bottom-3 left-3">
+<span class="bg-primary/90 text-on-primary-fixed text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-tighter">IMAGE</span>
+</div>
+</div>
+<div class="p-4">
+<h5 class="font-headline font-bold text-sm text-on-surface truncate">Architectural_Visions_01.jpg</h5>
+<div class="flex justify-between items-center mt-2">
+<span class="font-label text-xs text-on-surface-variant">12.4 MB • Oct 12</span>
+<span class="material-symbols-outlined text-on-surface-variant text-lg cursor-pointer hover:text-on-surface" data-icon="download">download</span>
+</div>
+</div>
+</div>
+<!-- Media Card 2 -->
+<div class="group bg-surface-container-low rounded-xl overflow-hidden transition-all duration-300">
+<div class="h-48 overflow-hidden relative bg-black flex items-center justify-center">
+<img alt="Media Preview" class="w-full h-full object-cover opacity-60 transition-transform duration-500 group-hover:scale-110" data-alt="cinematic wide shot of a futuristic cityscape at night with glowing purple and blue neon signs reflecting in rain-slicked streets" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAktUVj8KFrmNkpncrm2orFCGU8uqyM5ZSehDEcG6wKLhlfJZrfjRmmRgJWs3UR5G6I1GLTYeBjtquiUNcZWCmab5wiMWZIAx83CTsizcrZzwg5vr8KY4nzqBqOtTWO1OaszeXu2voJCvUTD_F430zau7N0GuTK-DEyFMZep2buzUVAaUmlKocUb5uChl3o2t8jGrfApxNSL3_XBWJdx4YmuJ8OePt45q51b8dqC8eYV42AqwSDgXvu6sj4LTeqsF2ZZ6yVtWx0eKYh"/>
+<div class="absolute inset-0 flex items-center justify-center">
+<div class="w-12 h-12 rounded-full glass-panel flex items-center justify-center border border-white/20 group-hover:scale-125 transition-transform">
+<span class="material-symbols-outlined text-white" data-icon="play_arrow" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
+</div>
+</div>
+<div class="absolute bottom-3 left-3">
+<span class="bg-secondary/90 text-on-secondary text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-tighter">VIDEO</span>
+</div>
+</div>
+<div class="p-4">
+<h5 class="font-headline font-bold text-sm text-on-surface truncate">Neon_City_B_Roll_4K.mp4</h5>
+<div class="flex justify-between items-center mt-2">
+<span class="font-label text-xs text-on-surface-variant">1.2 GB • Oct 10</span>
+<span class="material-symbols-outlined text-on-surface-variant text-lg cursor-pointer hover:text-on-surface" data-icon="download">download</span>
+</div>
+</div>
+</div>
+<!-- Media Card 3 -->
+<div class="group bg-surface-container-low rounded-xl overflow-hidden transition-all duration-300">
+<div class="h-48 overflow-hidden relative">
+<img alt="Media Preview" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" data-alt="serene mountain landscape at twilight with calm lake reflection and a tiny glowing cabin in the distance soft blue tones" src="https://lh3.googleusercontent.com/aida-public/AB6AXuD_z072baesne-iQ5oSzn0HeLrznsJAeTeUkc4RpN6TNWzQod5G6285f6y7imPdz67mbsYpybW3EotqpB8yChncNrzZchjBa0S5_T-c2MC5SlayfOS1QVMWKqjGsOJeNfLUGZjfXBixeZVpYg3l4YHuqhNS1ffgPBC5PSn4wYDIhKUcwFqPIZolu94o3LeZw_81gymp7wGHwuVy3n0XJHWxACZ6lJqut4doOfHj2wT6ePYbLNWcmyyGL7p8TNz0eA5q2FumrbhIzx0m"/>
+<div class="absolute bottom-3 left-3">
+<span class="bg-primary/90 text-on-primary-fixed text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-tighter">RAW</span>
+</div>
+</div>
+<div class="p-4">
+<h5 class="font-headline font-bold text-sm text-on-surface truncate">Twilight_Peaks_Master.cr3</h5>
+<div class="flex justify-between items-center mt-2">
+<span class="font-label text-xs text-on-surface-variant">48.2 MB • Oct 09</span>
+<span class="material-symbols-outlined text-on-surface-variant text-lg cursor-pointer hover:text-on-surface" data-icon="download">download</span>
+</div>
+</div>
+</div>
+<!-- Media Card 4 -->
+<div class="group bg-surface-container-low rounded-xl overflow-hidden transition-all duration-300">
+<div class="h-48 overflow-hidden relative">
+<img alt="Media Preview" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" data-alt="abstract explosion of vibrant pink and indigo ink swirls in clear water macro photography with organic shapes" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDWZrgDNcH2HuAxwmGn-BSzF0A0OKyll1zUJXotPRC19L33tmCzJDWZQaw6rW57PV5AgXw3Y3oGndfsRGLLaQk3uSbsBhdvvtOAy_k9kJdJ1KQG0zPu_iR8S7bhQdqxpOAGfxFcT4WN4JsQdsI5aQ-4q64_T8ZDcuzVOHXqf3rNqAumFD_wPRhnelfgOf5xijS_gYtVAmKFpWQXHmvBpEentomSJsOWeMz2xCOC9IKp2gnaylsktcyFRMI6WhBEpwxxMfhXQUvs944r"/>
+<div class="absolute bottom-3 left-3">
+<span class="bg-tertiary/90 text-on-tertiary text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-tighter">PROJECT</span>
+</div>
+</div>
+<div class="p-4">
+<h5 class="font-headline font-bold text-sm text-on-surface truncate">Vibrant_Flow_v2.ae</h5>
+<div class="flex justify-between items-center mt-2">
+<span class="font-label text-xs text-on-surface-variant">256.4 MB • Oct 08</span>
+<span class="material-symbols-outlined text-on-surface-variant text-lg cursor-pointer hover:text-on-surface" data-icon="download">download</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Dashboard Insights Widget Area (Asymmetric Layout) -->
+<div class="md:col-span-4 lg:col-span-8 bg-surface-container rounded-2xl p-8 relative overflow-hidden group">
+<div class="absolute top-0 right-0 w-64 h-64 signature-gradient opacity-5 rounded-full -mr-20 -mt-20 blur-3xl transition-opacity group-hover:opacity-10"></div>
+<div class="relative z-10">
+<h3 class="font-headline text-2xl font-bold mb-6">Archive Insights</h3>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+<div class="space-y-1">
+<p class="text-[10px] uppercase tracking-widest text-on-surface-variant font-bold">Total Assets</p>
+<p class="text-3xl font-extrabold text-primary">12,842</p>
+<p class="text-xs text-green-400 flex items-center gap-1">
+<span class="material-symbols-outlined text-xs" data-icon="trending_up">trending_up</span> +12% this month
+                            </p>
+</div>
+<div class="space-y-1">
+<p class="text-[10px] uppercase tracking-widest text-on-surface-variant font-bold">Processing</p>
+<p class="text-3xl font-extrabold text-secondary">24</p>
+<p class="text-xs text-on-surface-variant">Active cloud renders</p>
+</div>
+<div class="space-y-1">
+<p class="text-[10px] uppercase tracking-widest text-on-surface-variant font-bold">Collaborators</p>
+<div class="flex -space-x-2 pt-2">
+<img alt="Avatar" class="w-8 h-8 rounded-full border-2 border-surface" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCZl62HdvY6k7s0H9HzZ1rAE_7Y9B23MSoge-sMHdmOVNgzLuT_kY5slLY_nRWD251naZVqI5S5FXOsdlT5rsJpgOMrxIh4rWe-bNh03LkHeHxQPOniluxnwo_ZEcpaHnCYm6hdJZUCfg6MbN9lFKS0IeAg_EiPbc0JsYXkvbJeCwVQKl9JY54twHQtw4-vQc1wEw2EOB9INhMEPWkHZpXZUa9BxJXSu_iau4WV-WqsuiK7YP7nVTJknmAgzWd58vhafmdiRoLoVExG"/>
+<img alt="Avatar" class="w-8 h-8 rounded-full border-2 border-surface" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBpDUz4xlH_saMSC8R4ge6iagaUmwqCaz7k1ko-UWGhgY2TDfcqZ05M6M9j6NTIAEcmh20DNfoABuLNb69qQ46xDpArKvUrWm3Bsox6KeMnUYqchsAx-bPgbsOxY169gueolEhdBiOb_Q79ReuOW3eUm-ODPx_069iVo603HzMEiBVgmBLqgsenhPpWrYSQV_k5wnXrzokvjzITvvK1hLA2yutsFOfiw0a40uw-yXLsIpAkdfffn6VEJzW9hFtXkAeAwMGn1uIobbiK"/>
+<img alt="Avatar" class="w-8 h-8 rounded-full border-2 border-surface" src="https://lh3.googleusercontent.com/aida-public/AB6AXuA8FaGDttSRp_Hewn7j6oLPbi2ZWfDUCtZ3XQXoCqmBUQ8ZtofZco5IVhlP2U_DmLqJS4p3Kl2Cqmfy9hiaVVqnwiSXqGD_dgPUBm4wXWjSty-YCeR2EwwTMfCw6uatYw7NQmHAS0WaA4PnOqe3u7DdJrt_pfioxYdYJE3afB7O1_AyOH01l_Zmm-YZzuZrckJNlu2YyQRaSvTDGb-_s6YEjoi_AfwbXcv28vYk9cr55PVUSp6w9vYIUPBPk7Ei6_skKTubMl60agod"/>
+<div class="w-8 h-8 rounded-full bg-surface-container-highest border-2 border-surface flex items-center justify-center text-[10px] font-bold text-on-surface-variant">+5</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="md:col-span-4 lg:col-span-4 bg-surface-container-high rounded-2xl p-8 border border-outline-variant/10">
+<h3 class="font-headline text-lg font-bold mb-4">Quick Shortcuts</h3>
+<ul class="space-y-4">
+<li class="flex items-center gap-3 p-3 rounded-xl hover:bg-surface-bright transition-colors cursor-pointer group">
+<div class="w-10 h-10 rounded-lg bg-primary-container/20 flex items-center justify-center text-primary group-hover:scale-110 transition-transform">
+<span class="material-symbols-outlined" data-icon="auto_fix_high">auto_fix_high</span>
+</div>
+<div class="flex flex-col">
+<span class="text-sm font-bold">Smart Tagging</span>
+<span class="text-[11px] text-on-surface-variant">AI-powered organization</span>
+</div>
+</li>
+<li class="flex items-center gap-3 p-3 rounded-xl hover:bg-surface-bright transition-colors cursor-pointer group">
+<div class="w-10 h-10 rounded-lg bg-secondary-container/20 flex items-center justify-center text-secondary group-hover:scale-110 transition-transform">
+<span class="material-symbols-outlined" data-icon="batch_prediction">batch_prediction</span>
+</div>
+<div class="flex flex-col">
+<span class="text-sm font-bold">Bulk Actions</span>
+<span class="text-[11px] text-on-surface-variant">Move, delete or export</span>
+</div>
+</li>
+<li class="flex items-center gap-3 p-3 rounded-xl hover:bg-surface-bright transition-colors cursor-pointer group">
+<div class="w-10 h-10 rounded-lg bg-tertiary-container/20 flex items-center justify-center text-tertiary group-hover:scale-110 transition-transform">
+<span class="material-symbols-outlined" data-icon="offline_pin">offline_pin</span>
+</div>
+<div class="flex flex-col">
+<span class="text-sm font-bold">Offline Mode</span>
+<span class="text-[11px] text-on-surface-variant">Sync local directories</span>
+</div>
+</li>
+</ul>
+</div>
+</section>
+</main>
+<!-- Mobile Bottom Navigation Shell -->
+<nav class="flex lg:hidden justify-around items-center h-20 pb-safe px-4 fixed bottom-0 w-full z-50 bg-[#060e20] dark:bg-[#060e20] shadow-[0_-4px_20px_rgba(0,0,0,0.4)]">
+<a class="flex flex-col items-center justify-center text-[#a3aac4]" href="#">
+<span class="material-symbols-outlined" data-icon="home">home</span>
+<span class="text-[10px] font-medium font-inter uppercase tracking-widest mt-1">Home</span>
+</a>
+<a class="flex flex-col items-center justify-center text-[#a3aac4]" href="#">
+<span class="material-symbols-outlined" data-icon="search">search</span>
+<span class="text-[10px] font-medium font-inter uppercase tracking-widest mt-1">Search</span>
+</a>
+<a class="flex flex-col items-center justify-center text-[#c180ff] scale-110 transition-transform" href="#">
+<span class="material-symbols-outlined" data-icon="movie_filter" style="font-variation-settings: 'FILL' 1;">movie_filter</span>
+<span class="text-[10px] font-medium font-inter uppercase tracking-widest mt-1">Library</span>
+</a>
+<a class="flex flex-col items-center justify-center text-[#a3aac4]" href="#">
+<span class="material-symbols-outlined" data-icon="person">person</span>
+<span class="text-[10px] font-medium font-inter uppercase tracking-widest mt-1">Profile</span>
+</a>
+</nav>
+<!-- Contextual FAB - suppressed for dashboard/library as per rules if needed, but here it's added for 'The Curator' intent -->
+<button class="fixed right-6 bottom-24 lg:bottom-8 lg:right-10 w-14 h-14 signature-gradient text-on-primary-fixed rounded-full shadow-2xl flex items-center justify-center group z-50 transition-all active:scale-95">
+<span class="material-symbols-outlined text-2xl group-hover:rotate-90 transition-transform" data-icon="add">add</span>
+</button>
+</body></html>

@@ -1,5 +1,6 @@
 import { Queue, Worker } from 'bullmq';
 import { config } from '../config.js';
+import { redis } from './redis.js';
 
 // Connection config
 const connection = {
@@ -39,6 +40,22 @@ export const mediaRefreshQueue = new Queue('media-refresh', {
     }
 });
 
+export const compressionQueue = new Queue('compression', {
+    connection,
+    defaultJobOptions: {
+        attempts: 2, // retry once on stall/crash
+        removeOnComplete: 50,
+        removeOnFail: 100,
+    }
+});
+
+export const addToCompressionQueue = (data: CompressJobData) =>
+    compressionQueue.add('compress', data);
+
+// Map of in-flight compression jobs → AbortController, keyed by CompressJobData.jobId.
+// Used by the cancel endpoint to stop ffmpeg mid-run and break the per-file loop.
+export const activeCompressionAborts = new Map<string, AbortController>();
+
 const MEDIA_REFRESH_COOLDOWN_MS = 30 * 1000;
 let lastMediaRefreshEnqueueAt = 0;
 
@@ -64,6 +81,21 @@ export interface MediaRefreshJobData {
     requestedByUserId: number;
 }
 
+export interface CompressAssetData {
+    id: string;
+    fileName: string;
+    fileSize: string;
+    mimeType: string;
+    filePath: string; // absolute path resolved at enqueue time
+}
+
+export interface CompressJobData {
+    userId: string;
+    jobId: string; // matches CompressJob.id in the frontend
+    assets: CompressAssetData[];
+    options: { resolution: string; quality: number };
+}
+
 export function startWorkers() {
     const encodingWorker = new Worker<EncodingJobData>('encoding', async (job) => {
         console.log(`[Worker] Sarting encoding job ${job.id} for ${job.data.filePath}`);
@@ -73,8 +105,32 @@ export function startWorkers() {
         const { config } = await import('../config.js');
 
         if (job.data.type === 'hls') {
+            const progressKey = `video_progress:${job.data.assetId}`;
+            await redis.set(progressKey, JSON.stringify({ percent: 0, status: 'transcoding' }), 'EX', 3600);
+
             const hlsDir = path.default.join(path.default.dirname(config.thumbnailCachePath), 'hls', job.data.assetId);
-            await transcodeToHLS(job.data.filePath, hlsDir);
+            try {
+                await transcodeToHLS(job.data.filePath, hlsDir, {
+                    onProgress: (percent: number) => {
+                        // fire-and-forget: ffmpeg progress callback is synchronous
+                        redis.set(
+                            progressKey,
+                            JSON.stringify({ percent, status: 'transcoding' }),
+                            'EX',
+                            3600,
+                        ).catch(() => {});
+                    },
+                });
+                await redis.set(progressKey, JSON.stringify({ percent: 100, status: 'ready' }), 'EX', 3600);
+            } catch (err: any) {
+                await redis.set(
+                    progressKey,
+                    JSON.stringify({ percent: 0, status: 'error', error: err?.message ?? 'Transcoding failed' }),
+                    'EX',
+                    3600,
+                ).catch(() => {});
+                throw err;
+            }
         } else {
             await transcodeVideo(job.data.filePath, job.data.assetId);
         }
@@ -109,13 +165,163 @@ export function startWorkers() {
         concurrency: 1
     });
 
+    const compressionWorker = new Worker<CompressJobData>('compression', async (job) => {
+        console.log(`[Worker] Starting compression job ${job.id} (jobId=${job.data.jobId})`);
+        const { userId, jobId, assets, options } = job.data;
+        const queueKey = `compress_queue:${userId}`;
+
+        const abortController = new AbortController();
+        activeCompressionAborts.set(jobId, abortController);
+        const signal = abortController.signal;
+
+        // Helper: read queue from Redis, apply updater, write back (7-day TTL)
+        const updateJob = async (updater: (j: any) => any) => {
+            const raw = await redis.get(queueKey);
+            const queue: any[] = raw ? JSON.parse(raw) : [];
+            const idx = queue.findIndex((j: any) => j.id === jobId);
+            if (idx >= 0) {
+                queue[idx] = updater(queue[idx]);
+                await redis.set(queueKey, JSON.stringify(queue), 'EX', 604800);
+            }
+        };
+
+        // Skip work entirely if the user cancelled before the worker started.
+        const currentRaw = await redis.get(queueKey);
+        const currentQueue: any[] = currentRaw ? JSON.parse(currentRaw) : [];
+        const jobEntry = currentQueue.find((j: any) => j.id === jobId);
+        if (jobEntry?.status === 'cancelled') {
+            activeCompressionAborts.delete(jobId);
+            console.log(`[Worker] Skipping cancelled compression job ${jobId}`);
+            return;
+        }
+
+        await updateJob(j => ({ ...j, status: 'compressing', progress: {}, currentFileId: null }));
+
+        const pathMod = await import('node:path');
+        const fsMod = await import('node:fs');
+        const { config: cfg } = await import('../config.js');
+        const { compressImageAdvanced, compressVideoAdvanced } = await import('./thumbnail.js');
+
+        const previewDir = pathMod.default.resolve(pathMod.default.dirname(cfg.thumbnailCachePath), 'compress-preview');
+        await fsMod.promises.mkdir(previewDir, { recursive: true });
+
+        const previews: Array<{ assetId: string; originalSize: string; compressedSize: string; previewUrl: string }> = [];
+        const writtenPreviewPaths: string[] = [];
+
+        try {
+            for (const asset of assets) {
+                if (signal.aborted) break;
+                await updateJob(j => ({ ...j, currentFileId: asset.id }));
+
+                try {
+                    const ext = pathMod.default.extname(asset.filePath).toLowerCase();
+                    const previewExt = ext === '.heic' ? '.jpg' : ext;
+                    const previewFileName = `${asset.id}_preview${previewExt}`;
+                    const previewPath = pathMod.default.join(previewDir, previewFileName);
+                    const originalStats = await fsMod.promises.stat(asset.filePath);
+
+                    if (asset.mimeType.startsWith('image/')) {
+                        await compressImageAdvanced(asset.filePath, previewPath, {
+                            resolution: options.resolution,
+                            quality: options.quality,
+                        });
+                        if (signal.aborted) {
+                            await fsMod.promises.unlink(previewPath).catch(() => {});
+                            break;
+                        }
+                        await updateJob(j => ({
+                            ...j,
+                            progress: { ...j.progress, [asset.id]: { percent: 100, etaSeconds: null } },
+                        }));
+                    } else if (asset.mimeType.startsWith('video/')) {
+                        let lastSent = 0;
+                        const fileStartTime = Date.now();
+                        await compressVideoAdvanced(asset.filePath, previewPath, {
+                            resolution: options.resolution,
+                            quality: options.quality,
+                            signal,
+                            onProgress: (percent: number) => {
+                                if (percent - lastSent >= 2 || percent >= 100) {
+                                    lastSent = percent;
+                                    const elapsed = (Date.now() - fileStartTime) / 1000;
+                                    const etaSeconds = percent > 0 ? Math.round((elapsed / percent) * (100 - percent)) : null;
+                                    // fire-and-forget: onProgress callback is synchronous, can't await
+                                    updateJob(j => ({
+                                        ...j,
+                                        progress: { ...j.progress, [asset.id]: { percent, etaSeconds } },
+                                    })).catch(() => {});
+                                }
+                            },
+                        });
+                        if (signal.aborted) {
+                            await fsMod.promises.unlink(previewPath).catch(() => {});
+                            break;
+                        }
+                    } else {
+                        console.warn(`[Worker] Skipping unsupported mime type: ${asset.mimeType}`);
+                        continue;
+                    }
+
+                    const compressedStats = await fsMod.promises.stat(previewPath);
+                    const preview = {
+                        assetId: asset.id,
+                        originalSize: originalStats.size.toString(),
+                        compressedSize: compressedStats.size.toString(),
+                        previewUrl: `/compress-preview/${previewFileName}`,
+                    };
+                    previews.push(preview);
+                    writtenPreviewPaths.push(previewPath);
+                    await updateJob(j => ({ ...j, previews: [...(j.previews ?? []), preview] }));
+                } catch (err: any) {
+                    if (signal.aborted) break;
+                    console.error(`[Worker] Error compressing asset ${asset.id}: ${err.message}`);
+                    await updateJob(j => ({
+                        ...j,
+                        progress: { ...j.progress, [asset.id]: { percent: 0, etaSeconds: null } },
+                    }));
+                }
+            }
+
+            if (signal.aborted) {
+                // Remove any previews created before cancel landed so disk isn't left with orphans.
+                await Promise.all(writtenPreviewPaths.map(p => fsMod.promises.unlink(p).catch(() => {})));
+                await updateJob(j => ({ ...j, status: 'cancelled', currentFileId: null, previews: [] }));
+                console.log(`[Worker] Compression job ${jobId} cancelled`);
+                return;
+            }
+
+            await updateJob(j => ({ ...j, status: 'preview_ready', currentFileId: null }));
+            console.log(`[Worker] Finished compression job ${job.id}`);
+        } finally {
+            activeCompressionAborts.delete(jobId);
+        }
+    }, {
+        connection,
+        concurrency: 1, // one compression at a time — CPU-intensive
+    });
+
     encodingWorker.on('error', (err) => console.error('[Worker] Encoding worker error:', err));
     thumbnailWorker.on('error', (err) => console.error('[Worker] Thumbnail worker error:', err));
     mediaRefreshWorker.on('error', (err) => console.error('[Worker] Media refresh worker error:', err));
+    compressionWorker.on('error', (err) => console.error('[Worker] Compression worker error:', err));
+    compressionWorker.on('failed', async (job, err) => {
+        if (!job) return;
+        const { userId, jobId } = job.data;
+        const queueKey = `compress_queue:${userId}`;
+        const raw = await redis.get(queueKey).catch(() => null);
+        const queue: any[] = raw ? JSON.parse(raw) : [];
+        const idx = queue.findIndex((j: any) => j.id === jobId);
+        if (idx >= 0) {
+            // Don't overwrite a cancelled status with 'error' if the user just cancelled.
+            if (queue[idx].status === 'cancelled') return;
+            queue[idx] = { ...queue[idx], status: 'error', errorMessage: err.message, currentFileId: null };
+            await redis.set(queueKey, JSON.stringify(queue), 'EX', 604800).catch(() => {});
+        }
+    });
 
     console.log('Background task workers started');
 
-    return { encodingWorker, thumbnailWorker, mediaRefreshWorker };
+    return { encodingWorker, thumbnailWorker, mediaRefreshWorker, compressionWorker };
 }
 
 export const addToEncodingQueue = (data: EncodingJobData) => encodingQueue.add('transcode', data);

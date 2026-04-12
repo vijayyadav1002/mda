@@ -1,10 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "@remix-run/react";
-import { Button } from "~/components/ui/button";
-import { Input } from "~/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { createGraphQLClient, setAuthToken } from "~/lib/api";
-import { Moon, Sun } from "lucide-react";
 
 const LOGIN_MUTATION = `
   mutation Login($username: String!, $password: String!) {
@@ -44,46 +40,24 @@ export default function Login() {
   const [isFirstTime, setIsFirstTime] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [hasAdmin, setHasAdmin] = useState(true); // Default to true to hide the button initially
-  const [darkMode, setDarkMode] = useState(() => {
-    if (typeof window !== "undefined") {
-      const stored = localStorage.getItem("darkMode");
-      if (stored) return stored === "true";
-      return window.matchMedia("(prefers-color-scheme: dark)").matches;
-    }
-    return false;
-  });
+  const [hasAdmin, setHasAdmin] = useState(true);
   const navigate = useNavigate();
 
-  // Check if admin user exists on component mount
   useEffect(() => {
+    // Force dark mode on login page
+    document.documentElement.classList.add("dark");
+
     const checkAdminExists = async () => {
       try {
         const client = createGraphQLClient();
         const data: any = await client.request(HAS_ADMIN_QUERY);
         setHasAdmin(data.hasAdminUser);
-      } catch (err) {
-        console.error("Failed to check admin status:", err);
-        // On error, assume admin exists to prevent unauthorized access
+      } catch {
         setHasAdmin(true);
       }
     };
-    
     checkAdminExists();
   }, []);
-
-  const toggleDarkMode = () => {
-    const newMode = !darkMode;
-    setDarkMode(newMode);
-    if (typeof window !== "undefined") {
-      localStorage.setItem("darkMode", String(newMode));
-      if (newMode) {
-        document.documentElement.classList.add("dark");
-      } else {
-        document.documentElement.classList.remove("dark");
-      }
-    }
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -94,7 +68,6 @@ export default function Login() {
       const client = createGraphQLClient();
       const mutation = isFirstTime ? CREATE_FIRST_ADMIN_MUTATION : LOGIN_MUTATION;
       const data: any = await client.request(mutation, { username, password });
-      
       const result = isFirstTime ? data.createFirstAdmin : data.login;
       setAuthToken(result.token);
       navigate("/dashboard");
@@ -106,88 +79,106 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 via-blue-50/30 to-purple-50/30 dark:from-gray-900 dark:via-gray-900 dark:to-gray-900 p-4 transition-colors duration-200">
-      {/* Dark mode toggle */}
-      <button
-        onClick={toggleDarkMode}
-        className="fixed top-6 right-6 p-3 rounded-full bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm border border-gray-200 dark:border-gray-700 shadow-lg hover:shadow-xl transition-all duration-200 z-50"
-        aria-label="Toggle dark mode"
-      >
-        {darkMode ? (
-          <Sun className="w-5 h-5 text-yellow-500" />
-        ) : (
-          <Moon className="w-5 h-5 text-gray-700" />
-        )}
-      </button>
+    <div className="min-h-screen flex flex-col items-center justify-center relative overflow-hidden bg-[#060e20]">
+      {/* Background gradient orbs */}
+      <div className="absolute inset-0 pointer-events-none">
+        <div className="absolute top-1/4 left-1/3 w-96 h-96 rounded-full bg-brand-primary/10 blur-3xl" />
+        <div className="absolute bottom-1/4 right-1/3 w-80 h-80 rounded-full bg-brand-secondary/10 blur-3xl" />
+      </div>
 
-      <Card className="w-full max-w-md bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm border-gray-200 dark:border-gray-700 shadow-xl">
-        <CardHeader className="space-y-1">
-          <CardTitle className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 dark:from-blue-400 dark:to-purple-400 bg-clip-text text-transparent">
-            {isFirstTime ? "Create Admin Account" : "Media Dashboard"}
-          </CardTitle>
-          <p className="text-sm text-gray-600 dark:text-gray-400">
-            {isFirstTime ? "Set up your administrator account" : "Sign in to access your media library"}
+      {/* Card */}
+      <div className="relative z-10 w-full max-w-sm mx-auto px-4">
+        {/* Logo */}
+        <div className="flex flex-col items-center mb-8">
+          <div className="w-14 h-14 rounded-2xl gradient-brand flex items-center justify-center shadow-ambient mb-4">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+            </svg>
+          </div>
+          <h1 className="font-manrope text-2xl font-bold text-on-surface tracking-tight">
+            {isFirstTime ? "The Curator" : "The Curator"}
+          </h1>
+          <p className="label-meta mt-1">Media Archive Management</p>
+        </div>
+
+        {/* Glass card */}
+        <div className="glass rounded-2xl p-8 shadow-ambient border border-white/5">
+          <h2 className="font-manrope text-xl font-bold text-on-surface mb-1">
+            {isFirstTime ? "Create Account" : "Welcome Back"}
+          </h2>
+          <p className="text-on-surface-variant text-sm mb-6">
+            {isFirstTime
+              ? "Set up your administrator account to begin."
+              : "Please enter your credentials to access the vault."}
           </p>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label htmlFor="username" className="text-sm font-medium mb-1 block text-gray-700 dark:text-gray-300">
-                Username
+
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <div className="space-y-1.5">
+              <label htmlFor="username" className="label-meta">
+                Identifier
               </label>
-              <Input
+              <input
                 id="username"
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 required
-                className="dark:bg-gray-900/50 dark:border-gray-600 dark:text-white dark:placeholder-gray-500"
-                placeholder="Enter your username"
+                placeholder="Username or email"
+                className="w-full px-4 py-3 rounded-xl bg-surface-low border border-outline-variant/20 text-on-surface placeholder:text-on-surface-variant/40 text-sm outline-none transition-all duration-200 focus:border-brand-primary/80 focus:ring-2 focus:ring-brand-primary/20"
               />
             </div>
-            <div>
-              <label htmlFor="password" className="text-sm font-medium mb-1 block text-gray-700 dark:text-gray-300">
-                Password
-              </label>
-              <Input
+
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label htmlFor="password" className="label-meta">
+                  Passphrase
+                </label>
+              </div>
+              <input
                 id="password"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                className="dark:bg-gray-900/50 dark:border-gray-600 dark:text-white dark:placeholder-gray-500"
-                placeholder="Enter your password"
+                placeholder="••••••••"
+                className="w-full px-4 py-3 rounded-xl bg-surface-low border border-outline-variant/20 text-on-surface placeholder:text-on-surface-variant/40 text-sm outline-none transition-all duration-200 focus:border-brand-primary/80 focus:ring-2 focus:ring-brand-primary/20"
               />
             </div>
+
             {error && (
-              <div className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md p-3">
+              <div className="text-sm text-brand-tertiary bg-brand-tertiary/10 rounded-xl p-3">
                 {error}
               </div>
             )}
-            <Button 
-              type="submit" 
-              className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 dark:from-blue-500 dark:to-purple-500 dark:hover:from-blue-600 dark:hover:to-purple-600 text-white shadow-md hover:shadow-lg transition-all duration-200" 
+
+            <button
+              type="submit"
               disabled={loading}
+              className="w-full py-3 rounded-xl gradient-brand text-[#060e20] font-manrope font-bold text-sm tracking-wide shadow-ambient hover:opacity-90 transition-opacity duration-200 disabled:opacity-50 mt-2"
             >
-              {(() => {
-                if (loading) return "Loading...";
-                if (isFirstTime) return "Create Admin";
-                return "Login";
-              })()}
-            </Button>
+              {loading ? "Authenticating…" : isFirstTime ? "Create Account" : "Authenticate"}
+            </button>
+
             {!hasAdmin && (
-              <Button
+              <button
                 type="button"
-                variant="ghost"
-                className="w-full text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700/50"
                 onClick={() => setIsFirstTime(!isFirstTime)}
+                className="w-full py-2 text-on-surface-variant text-sm hover:text-on-surface transition-colors duration-200"
               >
-                {isFirstTime ? "Back to Login" : "First Time Setup"}
-              </Button>
+                {isFirstTime ? "Back to Login" : (
+                  <>New archivist? <span className="text-brand-primary font-medium">Request Access</span></>
+                )}
+              </button>
             )}
           </form>
-        </CardContent>
-      </Card>
+        </div>
+
+        {/* Status footer */}
+        <div className="flex items-center justify-center gap-2 mt-6">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          <span className="label-meta">System Operational</span>
+        </div>
+      </div>
     </div>
   );
 }

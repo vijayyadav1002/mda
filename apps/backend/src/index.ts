@@ -12,12 +12,16 @@ import { db } from './db/index.js';
 import { ensureAdminExists } from './services/auth.js';
 import { indexMediaLibrary } from './services/media-indexer.js';
 import { startMediaWatcher } from './services/media-watcher.js';
-import { startWorkers } from './services/queue.js';
-import { getWebCompatibleVideo, markTranscodeAccessed, startTranscodeCleanup, deleteTranscodedVideo, ensureHLS } from './services/video-transcode.js';
+import { startWorkers, addToCompressionQueue, encodingQueue, compressionQueue, activeCompressionAborts } from './services/queue.js';
+import { redis } from './services/redis.js';
+import { getWebCompatibleVideo, markTranscodeAccessed, startTranscodeCleanup, deleteTranscodedVideo, ensureHLS, checkVideoCompatibility } from './services/video-transcode.js';
 import { startCacheMaintenance } from './services/cache-maintenance.js';
 import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
+import { pipeline } from 'node:stream/promises';
+import archiver from 'archiver';
+import { indexFile } from './services/media-indexer.js';
 
 let workerHandles: ReturnType<typeof startWorkers> | null = null;
 let cacheMaintenanceTimer: ReturnType<typeof setInterval> | null = null;
@@ -81,6 +85,121 @@ await fastify.register(fastifyStatic, {
   root: hlsCachePath,
   prefix: '/hls/',
   decorateReply: false
+});
+
+// Force-download endpoint — streams original file with Content-Disposition: attachment
+fastify.get('/download/:id', async (request, reply) => {
+  const { id } = request.params as { id: string };
+
+  const result = await db.query(
+    'SELECT file_path, file_name, mime_type FROM media_assets WHERE id = $1',
+    [id]
+  );
+  if (result.rows.length === 0) {
+    return reply.code(404).send({ error: 'Asset not found' });
+  }
+
+  const { file_path: filePathRaw, file_name: fileName, mime_type: mimeType } = result.rows[0];
+  const absPath = path.resolve(filePathRaw as string);
+
+  try {
+    await fs.promises.access(absPath);
+  } catch {
+    return reply.code(404).send({ error: 'File not found on disk' });
+  }
+
+  const stat = await fs.promises.stat(absPath);
+  const safeName = encodeURIComponent(fileName as string).replace(/'/g, "%27");
+
+  reply.raw.writeHead(200, {
+    'Content-Type': mimeType as string,
+    'Content-Length': stat.size,
+    'Content-Disposition': `attachment; filename="${safeName}"; filename*=UTF-8''${safeName}`,
+    'Cache-Control': 'no-store',
+  });
+
+  const stream = fs.createReadStream(absPath);
+  stream.pipe(reply.raw);
+  await new Promise<void>((resolve, reject) => {
+    stream.on('end', resolve);
+    stream.on('error', reject);
+  });
+});
+
+// Bulk ZIP download — streams a zip of the requested asset IDs
+fastify.get('/download-zip', async (request, reply) => {
+  const query = request.query as { ids?: string; name?: string };
+  const rawIds = (query.ids ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+  if (rawIds.length === 0) {
+    return reply.code(400).send({ error: 'No ids provided' });
+  }
+
+  const numericIds = rawIds
+    .map((s) => Number.parseInt(s, 10))
+    .filter((n) => Number.isInteger(n) && n > 0);
+  if (numericIds.length === 0) {
+    return reply.code(400).send({ error: 'No valid ids provided' });
+  }
+
+  const result = await db.query(
+    'SELECT id, file_path, file_name FROM media_assets WHERE id = ANY($1::int[])',
+    [numericIds]
+  );
+  if (result.rows.length === 0) {
+    return reply.code(404).send({ error: 'No assets found' });
+  }
+
+  // Preserve the requested order and resolve duplicate filenames by prefixing.
+  const byId = new Map<number, { file_path: string; file_name: string }>();
+  for (const row of result.rows) {
+    byId.set(Number(row.id), { file_path: row.file_path as string, file_name: row.file_name as string });
+  }
+
+  const archive = archiver('zip', { zlib: { level: 0 } });
+  const zipName = (query.name && query.name.trim()) || `media-${new Date().toISOString().slice(0, 10)}.zip`;
+  const safeZipName = encodeURIComponent(zipName).replace(/'/g, '%27');
+
+  reply.raw.writeHead(200, {
+    'Content-Type': 'application/zip',
+    'Content-Disposition': `attachment; filename="${safeZipName}"; filename*=UTF-8''${safeZipName}`,
+    'Cache-Control': 'no-store',
+  });
+
+  archive.on('warning', (err) => {
+    fastify.log.warn(`zip archive warning: ${err.message}`);
+  });
+  archive.on('error', (err) => {
+    fastify.log.error(`zip archive error: ${err.message}`);
+    reply.raw.destroy(err);
+  });
+
+  archive.pipe(reply.raw);
+
+  const usedNames = new Set<string>();
+  for (const id of numericIds) {
+    const row = byId.get(id);
+    if (!row) continue;
+    const absPath = path.resolve(row.file_path);
+    try {
+      await fs.promises.access(absPath);
+    } catch {
+      fastify.log.warn(`skip missing file in zip: ${absPath}`);
+      continue;
+    }
+
+    let entryName = row.file_name;
+    if (usedNames.has(entryName)) {
+      const ext = path.extname(entryName);
+      const base = entryName.slice(0, entryName.length - ext.length);
+      let i = 1;
+      while (usedNames.has(`${base} (${i})${ext}`)) i++;
+      entryName = `${base} (${i})${ext}`;
+    }
+    usedNames.add(entryName);
+    archive.file(absPath, { name: entryName });
+  }
+
+  await archive.finalize();
 });
 
 // Web-compatible image endpoint (HEIC -> JPEG).
@@ -174,6 +293,102 @@ fastify.get('/image/:id', async (request, reply) => {
   reply.header('Content-Type', mimeType);
   reply.header('Cache-Control', 'public, max-age=86400');
   return reply.send(fs.createReadStream(absPath));
+});
+
+// Lightweight playback negotiation — does not block on transcoding
+fastify.get('/video/:id/prepare', async (request, reply) => {
+  const { id } = request.params as { id: string };
+
+  try {
+    const result = await db.query(
+      'SELECT file_path, mime_type FROM media_assets WHERE id = $1',
+      [id]
+    );
+    if (result.rows.length === 0) return reply.code(404).send({ error: 'Video not found' });
+
+    const { file_path, mime_type } = result.rows[0];
+    if (!mime_type || !mime_type.startsWith('video/')) {
+      return reply.code(400).send({ error: 'Not a video file' });
+    }
+
+    try {
+      const info = await checkVideoCompatibility(file_path);
+      if (!info.needsTranscoding) {
+        return reply.send({ type: 'mp4', url: `/video/${id}` });
+      }
+    } catch (err) {
+      fastify.log.warn({ err }, '[prepare] checkVideoCompatibility failed, falling back to HLS');
+    }
+
+    const playlistPath = path.resolve(
+      path.dirname(config.thumbnailCachePath),
+      'hls',
+      id,
+      'master.m3u8'
+    );
+    const alreadyCached = fs.existsSync(playlistPath);
+
+    if (!alreadyCached) {
+      const hlsJobId = `hls-${id}`;
+      try {
+        const existing = await encodingQueue.getJob(hlsJobId);
+        let shouldEnqueue = !existing;
+        if (existing) {
+          const state = await existing.getState().catch(() => 'unknown');
+          if (state === 'completed' || state === 'failed') {
+            await existing.remove().catch(() => {});
+            shouldEnqueue = true;
+          }
+        }
+        if (shouldEnqueue) {
+          await encodingQueue.add(
+            'transcode',
+            { filePath: file_path, assetId: id, type: 'hls' },
+            { jobId: hlsJobId }
+          );
+          await redis.set(
+            `video_progress:${id}`,
+            JSON.stringify({ percent: 0, status: 'queued' }),
+            'EX',
+            3600
+          );
+        }
+      } catch (err) {
+        fastify.log.error({ err }, '[prepare] failed to enqueue HLS job');
+      }
+    }
+
+    return reply.send({
+      type: 'hls',
+      playlistUrl: `/hls/${id}/master.m3u8`,
+      progressUrl: `/video/${id}/progress`,
+      ready: alreadyCached,
+    });
+  } catch (err) {
+    fastify.log.error({ err }, '[prepare] unexpected error');
+    return reply.code(500).send({ error: 'Prepare failed', detail: (err as Error)?.message });
+  }
+});
+
+// Transcoding progress polling endpoint
+fastify.get('/video/:id/progress', async (request, reply) => {
+  const { id } = request.params as { id: string };
+  const playlistPath = path.resolve(
+    path.dirname(config.thumbnailCachePath),
+    'hls',
+    id,
+    'master.m3u8'
+  );
+  const playlistReady = fs.existsSync(playlistPath);
+  const raw = await redis.get(`video_progress:${id}`);
+  if (!raw) {
+    if (playlistReady) {
+      return reply.send({ percent: 100, status: 'ready', playlistReady: true });
+    }
+    return reply.send({ percent: 0, status: 'unknown', playlistReady: false });
+  }
+  const parsed = JSON.parse(raw);
+  return reply.send({ ...parsed, playlistReady });
 });
 
 // On-demand video transcoding endpoint
@@ -457,6 +672,250 @@ fastify.post('/api/compress/preview', async (request, reply) => {
 
   send({ type: 'done' });
   reply.raw.end();
+});
+
+// Enqueue compression job — creates BullMQ job + initial Redis state
+fastify.post('/api/compress/enqueue', async (request, reply) => {
+  const authHeader = request.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) {
+    return reply.code(401).send({ error: 'Unauthorized' });
+  }
+  const token = authHeader.slice(7);
+  let userId: string;
+  try {
+    const decoded = fastify.jwt.verify<any>(token);
+    userId = String(decoded.id);
+    const userResult = await db.query('SELECT role FROM users WHERE id = $1', [userId]);
+    if (userResult.rows.length === 0 || !['admin', 'editor'].includes(userResult.rows[0].role)) {
+      return reply.code(403).send({ error: 'Forbidden' });
+    }
+  } catch {
+    return reply.code(401).send({ error: 'Invalid token' });
+  }
+
+  const { ids, options } = request.body as { ids: string[]; options: { resolution: string; quality: number } };
+  if (!ids?.length) return reply.code(400).send({ error: 'No asset IDs provided' });
+
+  // Resolve file paths and metadata from DB
+  const rows = await Promise.all(
+    ids.map(id =>
+      db.query('SELECT id, file_name, file_size, mime_type, file_path FROM media_assets WHERE id = $1', [id])
+        .then(r => r.rows[0] ?? null)
+    )
+  );
+  const assets = rows.filter(Boolean).map(r => ({
+    id: String(r.id),
+    fileName: r.file_name as string,
+    fileSize: String(r.file_size),
+    mimeType: r.mime_type as string,
+    filePath: r.file_path as string,
+  }));
+
+  if (assets.length === 0) return reply.code(400).send({ error: 'No valid assets found' });
+
+  const jobId = crypto.randomUUID();
+  const queueKey = `compress_queue:${userId}`;
+  const raw = await redis.get(queueKey);
+  const queue: any[] = raw ? JSON.parse(raw) : [];
+
+  // Store frontend-visible job data (no filePath)
+  const newJob = {
+    id: jobId,
+    assets: assets.map(({ filePath: _fp, ...a }) => a),
+    options,
+    status: 'pending',
+    progress: {},
+    currentFileId: null,
+    previews: [],
+    addedAt: Date.now(),
+  };
+  queue.push(newJob);
+  await redis.set(queueKey, JSON.stringify(queue), 'EX', 604800);
+
+  // Enqueue BullMQ job with full asset data (including filePath for worker)
+  await addToCompressionQueue({ userId, jobId, assets, options });
+  return reply.send({ jobId });
+});
+
+// Cancel an active or pending compression job
+fastify.post('/api/compress/cancel', async (request, reply) => {
+  const authHeader = request.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) {
+    return reply.code(401).send({ error: 'Unauthorized' });
+  }
+  const token = authHeader.slice(7);
+  let userId: string;
+  try {
+    const decoded = fastify.jwt.verify<any>(token);
+    userId = String(decoded.id);
+    const userResult = await db.query('SELECT role FROM users WHERE id = $1', [userId]);
+    if (userResult.rows.length === 0 || !['admin', 'editor'].includes(userResult.rows[0].role)) {
+      return reply.code(403).send({ error: 'Forbidden' });
+    }
+  } catch {
+    return reply.code(401).send({ error: 'Invalid token' });
+  }
+
+  const { jobId } = request.body as { jobId?: string };
+  if (!jobId) return reply.code(400).send({ error: 'jobId is required' });
+
+  const queueKey = `compress_queue:${userId}`;
+  const raw = await redis.get(queueKey);
+  const queue: any[] = raw ? JSON.parse(raw) : [];
+  const idx = queue.findIndex((j: any) => j.id === jobId);
+  if (idx < 0) return reply.code(404).send({ error: 'Job not found' });
+
+  const jobEntry = queue[idx];
+  const status = jobEntry.status as string;
+
+  // Already settled — nothing to cancel.
+  if (['done', 'error', 'cancelled', 'preview_ready', 'confirming'].includes(status)) {
+    return reply.send({ ok: true, status });
+  }
+
+  // Mark cancelled in Redis first so the worker sees it on its next tick
+  // and so the frontend reflects the state immediately.
+  queue[idx] = { ...jobEntry, status: 'cancelled', currentFileId: null, progress: {} };
+  await redis.set(queueKey, JSON.stringify(queue), 'EX', 604800);
+
+  // If a worker is currently running this job, abort it (kills ffmpeg and breaks the loop).
+  const controller = activeCompressionAborts.get(jobId);
+  if (controller) {
+    controller.abort();
+  }
+
+  // If the job is still waiting in BullMQ (not yet picked up), remove it.
+  try {
+    const waitingJobs = await compressionQueue.getJobs(['waiting', 'delayed', 'prioritized', 'paused']);
+    for (const bullJob of waitingJobs) {
+      if (bullJob?.data?.jobId === jobId) {
+        await bullJob.remove().catch((err) => {
+          fastify.log.warn(`failed to remove waiting compression job ${jobId}: ${err?.message}`);
+        });
+      }
+    }
+  } catch (err: any) {
+    fastify.log.warn(`error scanning compression queue for cancel: ${err?.message}`);
+  }
+
+  return reply.send({ ok: true, status: 'cancelled' });
+});
+
+// Get current compression queue state for authenticated user
+fastify.get('/api/queue-state', async (request, reply) => {
+  const authHeader = request.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) {
+    return reply.code(401).send({ error: 'Unauthorized' });
+  }
+  const token = authHeader.slice(7);
+  let userId: string;
+  try {
+    const decoded = fastify.jwt.verify<any>(token);
+    userId = String(decoded.id);
+    const userResult = await db.query('SELECT id FROM users WHERE id = $1', [userId]);
+    if (userResult.rows.length === 0) return reply.code(401).send({ error: 'Invalid token' });
+  } catch {
+    return reply.code(401).send({ error: 'Invalid token' });
+  }
+
+  const raw = await redis.get(`compress_queue:${userId}`);
+  return reply.send({ queue: raw ? JSON.parse(raw) : [] });
+});
+
+// Persist queue state (for dismiss / clear completed operations)
+fastify.put('/api/queue-state', async (request, reply) => {
+  const authHeader = request.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) {
+    return reply.code(401).send({ error: 'Unauthorized' });
+  }
+  const token = authHeader.slice(7);
+  let userId: string;
+  try {
+    const decoded = fastify.jwt.verify<any>(token);
+    userId = String(decoded.id);
+    const userResult = await db.query('SELECT id FROM users WHERE id = $1', [userId]);
+    if (userResult.rows.length === 0) return reply.code(401).send({ error: 'Invalid token' });
+  } catch {
+    return reply.code(401).send({ error: 'Invalid token' });
+  }
+
+  const { queue } = request.body as { queue: unknown[] };
+  await redis.set(`compress_queue:${userId}`, JSON.stringify(queue ?? []), 'EX', 604800);
+  return reply.send({ ok: true });
+});
+
+// Upload endpoint
+fastify.post('/api/upload', async (request, reply) => {
+  const authHeader = request.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) {
+    return reply.code(401).send({ error: 'Unauthorized' });
+  }
+  const token = authHeader.slice(7);
+  try {
+    const decoded = fastify.jwt.verify<any>(token);
+    const userResult = await db.query('SELECT role FROM users WHERE id = $1', [decoded.id]);
+    if (userResult.rows.length === 0 || !['admin', 'editor'].includes(userResult.rows[0].role)) {
+      return reply.code(403).send({ error: 'Forbidden' });
+    }
+  } catch {
+    return reply.code(401).send({ error: 'Invalid token' });
+  }
+
+  const { targetPath: rawTargetPath } = request.query as { targetPath?: string };
+  const rootPath = path.resolve(config.mediaLibraryPath);
+  let targetDir = rootPath;
+
+  if (rawTargetPath) {
+    const resolved = path.resolve(rawTargetPath);
+    if (resolved === rootPath || resolved.startsWith(`${rootPath}${path.sep}`)) {
+      targetDir = resolved;
+    } else {
+      return reply.code(400).send({ error: 'Invalid target path' });
+    }
+  }
+
+  try {
+    const stat = await fs.promises.stat(targetDir);
+    if (!stat.isDirectory()) {
+      return reply.code(400).send({ error: 'Target path is not a directory' });
+    }
+  } catch {
+    return reply.code(400).send({ error: 'Target directory does not exist' });
+  }
+
+  const SUPPORTED = new Set(['.jpg', '.jpeg', '.png', '.heic', '.gif', '.webp', '.bmp', '.mp4', '.mov', '.avi', '.mkv', '.webm', '.m4v']);
+  const uploaded: { fileName: string; filePath: string }[] = [];
+
+  const parts = request.parts();
+  for await (const part of parts) {
+    if (part.type !== 'file') continue;
+
+    const ext = path.extname(part.filename).toLowerCase();
+    if (!SUPPORTED.has(ext)) {
+      part.file.resume();
+      return reply.code(400).send({ error: `Unsupported file type: ${ext}` });
+    }
+
+    const safeName = path.basename(part.filename);
+    const destPath = path.join(targetDir, safeName);
+
+    await pipeline(part.file, fs.createWriteStream(destPath));
+    uploaded.push({ fileName: safeName, filePath: destPath });
+  }
+
+  if (uploaded.length === 0) {
+    return reply.code(400).send({ error: 'No file provided' });
+  }
+
+  for (const { filePath } of uploaded) {
+    try {
+      await indexFile(filePath, { queueThumbnails: true });
+    } catch (err) {
+      fastify.log.warn(`Failed to index uploaded file ${filePath}: ${err}`);
+    }
+  }
+
+  return reply.send({ success: true, files: uploaded });
 });
 
 // GraphQL

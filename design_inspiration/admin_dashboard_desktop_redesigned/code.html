@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>The Curator | Admin Dashboard</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "primary-fixed": "#9396ff",
+              "surface-variant": "#192540",
+              "on-primary-fixed": "#000000",
+              "on-secondary": "#33005b",
+              "on-tertiary": "#4b002a",
+              "on-error-container": "#ffb2b9",
+              "surface": "#060e20",
+              "on-background": "#dee5ff",
+              "secondary-fixed-dim": "#dbb4ff",
+              "on-tertiary-fixed-variant": "#740044",
+              "background": "#060e20",
+              "on-primary-fixed-variant": "#0e009d",
+              "primary-container": "#9396ff",
+              "error": "#ff6e84",
+              "tertiary-fixed": "#ff8cbc",
+              "surface-tint": "#a3a6ff",
+              "on-secondary-fixed-variant": "#7511c3",
+              "surface-dim": "#060e20",
+              "inverse-on-surface": "#4d556b",
+              "surface-container-highest": "#192540",
+              "on-error": "#490013",
+              "secondary": "#c180ff",
+              "error-dim": "#d73357",
+              "surface-container-low": "#091328",
+              "on-primary-container": "#0a0081",
+              "on-surface-variant": "#a3aac4",
+              "on-surface": "#dee5ff",
+              "error-container": "#a70138",
+              "on-secondary-container": "#e9cdff",
+              "on-tertiary-container": "#2f0018",
+              "secondary-dim": "#9c48ea",
+              "outline": "#6d758c",
+              "tertiary-container": "#fa53a4",
+              "surface-container-lowest": "#000000",
+              "tertiary": "#ff6daf",
+              "on-secondary-fixed": "#4f0089",
+              "tertiary-dim": "#ff67ad",
+              "primary-dim": "#6063ee",
+              "secondary-fixed": "#e5c6ff",
+              "tertiary-fixed-dim": "#ff73b1",
+              "surface-container": "#0f1930",
+              "surface-container-high": "#141f38",
+              "inverse-surface": "#faf8ff",
+              "outline-variant": "#40485d",
+              "inverse-primary": "#494bd7",
+              "on-tertiary-fixed": "#37001d",
+              "on-primary": "#0f00a4",
+              "surface-bright": "#1f2b49",
+              "primary-fixed-dim": "#8387ff",
+              "primary": "#a3a6ff",
+              "secondary-container": "#6f00be"
+            },
+            fontFamily: {
+              "headline": ["Manrope"],
+              "body": ["Inter"],
+              "label": ["Inter"]
+            },
+            borderRadius: {"DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem"},
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .signature-gradient {
+            background: linear-gradient(135deg, #a3a6ff 0%, #c180ff 100%);
+        }
+        .glass-panel {
+            background: rgba(31, 43, 73, 0.7);
+            backdrop-filter: blur(24px);
+        }
+        .ghost-border {
+            outline: 1px solid rgba(64, 72, 93, 0.2);
+        }
+    </style>
+</head>
+<body class="bg-background text-on-surface font-body selection:bg-secondary/30">
+<!-- SideNavBar (Authority: JSON & Design System) -->
+<nav class="h-screen w-64 fixed left-0 top-0 hidden lg:flex flex-col py-8 z-50 bg-[#091328]">
+<div class="px-6 mb-8">
+<h1 class="text-2xl font-bold tracking-tighter text-[#a3a6ff]">The Curator</h1>
+<p class="text-[10px] font-inter uppercase tracking-widest text-[#a3aac4] mt-1">Media Archive</p>
+</div>
+<div class="flex flex-col flex-1 space-y-1">
+<!-- Analytics is Active for Dashboard -->
+<a class="flex items-center gap-3 px-4 py-3 text-[#a3aac4] hover:bg-[#192540] hover:text-[#a3a6ff] transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="grid_view">grid_view</span>
+<span class="font-manrope text-sm font-medium">Library</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-[#a3aac4] hover:bg-[#192540] hover:text-[#a3a6ff] transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="folder_special">folder_special</span>
+<span class="font-manrope text-sm font-medium">Collections</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-[#a3aac4] hover:bg-[#192540] hover:text-[#a3a6ff] transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="share">share</span>
+<span class="font-manrope text-sm font-medium">Shared</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 bg-[#1f2b49] text-[#c180ff] border-l-4 border-[#c180ff] transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="insights">insights</span>
+<span class="font-manrope text-sm font-medium">Analytics</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-[#a3aac4] hover:bg-[#192540] hover:text-[#a3a6ff] transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span class="font-manrope text-sm font-medium">Settings</span>
+</a>
+</div>
+<div class="px-4 mt-auto">
+<button class="w-full signature-gradient text-on-primary-fixed font-bold py-3 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-primary/20">
+<span class="material-symbols-outlined" data-icon="upload">upload</span>
+<span>Upload Media</span>
+</button>
+</div>
+</nav>
+<!-- TopNavBar (Mobile Only per Shell Visibility Rules) -->
+<header class="fixed top-0 w-full z-40 flex lg:hidden justify-between items-center px-6 h-16 w-full bg-[#060e20]/70 backdrop-blur-xl">
+<span class="text-lg font-black tracking-widest text-[#a3a6ff]">The Curator</span>
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-[#a3aac4]" data-icon="notifications">notifications</span>
+<div class="w-8 h-8 rounded-full bg-surface-container-highest overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="Close-up portrait of a professional administrator in a minimalist office setting with blue ambient light" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBdN4qKtqW8LfgW-XqqcuxaW383SIj77xOu8YZ1WWAfyx943W9gES6YIEcBrwZU1S49leVakCwlLgyc3WLHb_xIS6gg9EzURiDoRkP1uuquSZf9chEnIsUJlnRF0MbXdY1iqv-Q2PvYZkLw1Mg7YA46LfYaE_ljKavcqx-V0CX_qwaPIfNsZhdX7LUIPk_a2N6QHX03K8caR_FVQAroS-dzrZpX7oI9tNWikALls4meSo1Q9Epki0VgN5HZ1hazxy3wHhmV3J_whHnX"/>
+</div>
+</div>
+</header>
+<!-- Main Canvas -->
+<main class="lg:ml-64 min-h-screen pt-20 lg:pt-0 p-6 lg:p-10">
+<!-- Header Section -->
+<header class="mb-10 flex flex-col md:flex-row md:items-end justify-between gap-6">
+<div>
+<h2 class="text-display-sm font-headline font-extrabold text-on-surface tracking-tight text-4xl lg:text-5xl">System Overview</h2>
+<p class="text-on-surface-variant font-body mt-2">Real-time infrastructure health and user engagement metrics.</p>
+</div>
+<div class="flex items-center gap-3">
+<div class="flex flex-col items-end">
+<span class="text-label-sm text-on-surface-variant uppercase tracking-widest text-[10px]">Server Status</span>
+<span class="text-tertiary font-bold flex items-center gap-1">
+<span class="w-2 h-2 rounded-full bg-tertiary animate-pulse"></span>
+                        Operational
+                    </span>
+</div>
+</div>
+</header>
+<!-- Bento Grid Layout for Key Metrics -->
+<div class="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-6 gap-6 mb-10">
+<!-- Storage Utilization -->
+<div class="md:col-span-2 lg:col-span-2 bg-surface-container-low p-6 rounded-xl flex flex-col justify-between group hover:bg-surface-container-high transition-all duration-300">
+<div class="flex justify-between items-start mb-8">
+<div class="p-3 bg-surface-bright rounded-lg">
+<span class="material-symbols-outlined text-primary" data-icon="database">database</span>
+</div>
+<span class="text-primary text-xs font-bold">+2.4TB / week</span>
+</div>
+<div>
+<h3 class="text-on-surface-variant text-sm font-medium mb-1">Storage Utilization</h3>
+<div class="flex items-baseline gap-2 mb-4">
+<span class="text-3xl font-headline font-bold">14.2</span>
+<span class="text-on-surface-variant text-lg">PB</span>
+</div>
+<div class="w-full h-2 bg-surface-container-highest rounded-full overflow-hidden">
+<div class="h-full signature-gradient w-[72%]"></div>
+</div>
+<div class="flex justify-between mt-2 text-[10px] text-on-surface-variant font-medium">
+<span>72% CAPACITY</span>
+<span>5.8 PB FREE</span>
+</div>
+</div>
+</div>
+<!-- Active Users (Asymmetric Highlight) -->
+<div class="md:col-span-2 lg:col-span-2 bg-surface-container-low p-6 rounded-xl group hover:bg-surface-container-high transition-all duration-300">
+<div class="flex justify-between items-start mb-8">
+<div class="p-3 bg-surface-bright rounded-lg">
+<span class="material-symbols-outlined text-secondary" data-icon="groups">groups</span>
+</div>
+<div class="flex -space-x-2">
+<img class="w-6 h-6 rounded-full border-2 border-surface-container-low" data-alt="Portrait of a young man with glasses smiling" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBdfLaXiMKCp9pjGniXLfkC-LFaYtD4kzFomX3rMFaUA6CcYD1O-dZAGyIeQ4Kxqt4YOAbSnkbHcnx8IEZaj0btakOSoVUvHfW9ztvmp10poyrQaIZZUncFpi40EeQonffIa2CosmgnSQNIQE88xCyokuVPSgylExxwy2M3RNNzcGuKthMfBjflBsf4sekpAHnQCBvmC9z-gwGSfAJyq2jw47u3Ty2AyUrA6lV1B77JwFPtXxV0rIjpdsnlSBDGl76lq-oudquaRAY6"/>
+<img class="w-6 h-6 rounded-full border-2 border-surface-container-low" data-alt="Portrait of a woman with curly hair looking confident" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDRdRGaGpL3yADjcvYM4sss4KORYOKdUY-ixEF_4zaPYFy5XKb2wcbRCp09UE6ulgqf1mg8Q9ltIqxM2ZSOKDgN8jn59zTZ3G3k5ynjAZ6j-ZEa0AxGTAx-bgmM_VcDVqDus8KlN0otNKDKCAsmlQu4ZumA-2yKsmnTi2HbjcpUWh5B-nUqZmP-1peD7AD3EWFJ8kDXcdxCAfZmeMTPQXxbT9ca92Bk33hTHOs1lpZzh0h8zuIkj0zhS1C8rGWCO5mcVDqaarvrZPlP"/>
+<div class="w-6 h-6 rounded-full bg-surface-bright flex items-center justify-center text-[8px] border-2 border-surface-container-low">+12</div>
+</div>
+</div>
+<h3 class="text-on-surface-variant text-sm font-medium mb-1">Active Curators</h3>
+<div class="flex items-baseline gap-2">
+<span class="text-3xl font-headline font-bold">1,842</span>
+<span class="text-tertiary text-xs font-bold font-body">↑ 12%</span>
+</div>
+<div class="mt-6 flex items-end gap-1 h-12">
+<div class="flex-1 bg-primary/20 h-4 rounded-t-sm"></div>
+<div class="flex-1 bg-primary/20 h-6 rounded-t-sm"></div>
+<div class="flex-1 bg-primary/40 h-8 rounded-t-sm"></div>
+<div class="flex-1 bg-primary/60 h-12 rounded-t-sm"></div>
+<div class="flex-1 bg-primary h-10 rounded-t-sm"></div>
+<div class="flex-1 bg-primary/80 h-7 rounded-t-sm"></div>
+<div class="flex-1 bg-primary h-11 rounded-t-sm"></div>
+</div>
+</div>
+<!-- Security Score (Circular visual) -->
+<div class="md:col-span-4 lg:col-span-2 bg-surface-container-low p-6 rounded-xl flex flex-col items-center justify-center group hover:bg-surface-container-high transition-all duration-300">
+<div class="relative w-32 h-32 flex items-center justify-center mb-4">
+<svg class="w-full h-full transform -rotate-90">
+<circle class="text-surface-container-highest" cx="64" cy="64" fill="transparent" r="58" stroke="currentColor" stroke-width="8"></circle>
+<circle class="text-secondary" cx="64" cy="64" fill="transparent" r="58" stroke="currentColor" stroke-dasharray="364.4" stroke-dashoffset="43.7" stroke-width="8"></circle>
+</svg>
+<div class="absolute flex flex-col items-center">
+<span class="text-3xl font-headline font-bold">88</span>
+<span class="text-[10px] text-on-surface-variant font-bold uppercase">Health</span>
+</div>
+</div>
+<h3 class="text-on-surface-variant text-sm font-medium">Security Posture</h3>
+<p class="text-[10px] text-on-surface-variant mt-1 text-center">3 redundant backups active</p>
+</div>
+</div>
+<!-- Two Column Main Content -->
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+<!-- Activity Feed -->
+<div class="lg:col-span-2 space-y-6">
+<div class="flex items-center justify-between mb-2">
+<h3 class="font-headline font-bold text-xl">Recent Activity</h3>
+<button class="text-primary text-sm font-semibold hover:underline">View All</button>
+</div>
+<div class="space-y-4">
+<!-- Activity Card 1 -->
+<div class="bg-surface-container-low p-5 rounded-xl flex items-center gap-4 group transition-all hover:bg-surface-container-high">
+<div class="w-12 h-12 rounded-lg overflow-hidden flex-shrink-0">
+<img class="w-full h-full object-cover transition-transform group-hover:scale-110" data-alt="Close-up profile of a person working on a computer at night with blue glow" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCG0OLB9V-2FbUXR5bz-fdwoBtOQNh-t6fnoXzYc_JQWRWaBDugTfcos-13rcMyQ33zx_gO4WGLFaHVDmNQMwcPSOr9wi-nb10LG0gaIyyddV-5tNk462DUgmbjgFqfKFaeynbHnbermKxpSLUo8qGfVFSRuBVnrIoXAVQSFqHx9ZRsIv1srJZMMUZHIBosGC7YucNJRSoZoBam_iGmpjSy5f2U1dxUGJ-XrZBx7bVOp9jqOFi3LN_rjjqLShnYtlqfAY31ts532j0i"/>
+</div>
+<div class="flex-1 min-w-0">
+<div class="flex justify-between items-start">
+<h4 class="text-sm font-bold truncate">Sarah Jenkins</h4>
+<span class="text-[10px] text-on-surface-variant whitespace-nowrap">2m ago</span>
+</div>
+<p class="text-sm text-on-surface-variant truncate">Uploaded 24 high-res assets to <span class="text-secondary">Project Obsidian</span></p>
+</div>
+<div class="px-3 py-1 bg-surface-container-highest rounded-full text-[10px] font-bold text-primary">MEDIA</div>
+</div>
+<!-- Activity Card 2 -->
+<div class="bg-surface-container-low p-5 rounded-xl flex items-center gap-4 group transition-all hover:bg-surface-container-high">
+<div class="w-12 h-12 rounded-lg bg-surface-bright flex items-center justify-center flex-shrink-0">
+<span class="material-symbols-outlined text-tertiary" data-icon="security">security</span>
+</div>
+<div class="flex-1 min-w-0">
+<div class="flex justify-between items-start">
+<h4 class="text-sm font-bold truncate">System Kernel</h4>
+<span class="text-[10px] text-on-surface-variant whitespace-nowrap">15m ago</span>
+</div>
+<p class="text-sm text-on-surface-variant truncate">New SSH connection established from <span class="text-tertiary">192.168.1.44</span></p>
+</div>
+<div class="px-3 py-1 bg-surface-container-highest rounded-full text-[10px] font-bold text-tertiary">AUTH</div>
+</div>
+<!-- Activity Card 3 -->
+<div class="bg-surface-container-low p-5 rounded-xl flex items-center gap-4 group transition-all hover:bg-surface-container-high">
+<div class="w-12 h-12 rounded-lg overflow-hidden flex-shrink-0">
+<img class="w-full h-full object-cover transition-transform group-hover:scale-110" data-alt="Hands typing on a mechanical keyboard with purple RGB lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuChUgjDN5W1zQRwSUHNWkEJ9bQbYlxd2TI8Ey2s9Nw5RGTU87W6jYWQKbe59q2zm3k8CSXh1Fol9rYAVrXQI0_WuEda1LFvYA3ATT-443_KxWsSTVaIJL9EbkP2QY0vxCX1scaEk7d0DKFYKe0RefEDZj9-Z4kcqfjvLN1DLw2jg1yc2RbQCcARZD21YqB1rxWk9qNvtgHQ6Oxw3-7LpXVTYm5TSqhQTYDnXuw0ostRXRCDjrgNV9ELj9odmt8s0zxQEnnCumvDmnNU"/>
+</div>
+<div class="flex-1 min-w-0">
+<div class="flex justify-between items-start">
+<h4 class="text-sm font-bold truncate">Marc Aubert</h4>
+<span class="text-[10px] text-on-surface-variant whitespace-nowrap">42m ago</span>
+</div>
+<p class="text-sm text-on-surface-variant truncate">Modified permission set for <span class="text-primary">Archival Team</span></p>
+</div>
+<div class="px-3 py-1 bg-surface-container-highest rounded-full text-[10px] font-bold text-secondary">ACCESS</div>
+</div>
+</div>
+</div>
+<!-- System Logs Sidebar -->
+<div class="lg:col-span-1">
+<div class="bg-surface-container-low rounded-xl h-full flex flex-col overflow-hidden">
+<div class="p-6 border-b border-outline-variant/20 flex items-center justify-between">
+<h3 class="font-headline font-bold text-lg">System Logs</h3>
+<span class="material-symbols-outlined text-on-surface-variant cursor-pointer hover:text-primary transition-colors" data-icon="filter_list">filter_list</span>
+</div>
+<div class="flex-1 p-6 space-y-4 font-mono text-xs overflow-y-auto max-h-[500px]">
+<div class="flex gap-3">
+<span class="text-on-surface-variant">14:22:01</span>
+<span class="text-primary">[INFO]</span>
+<span class="text-on-surface">Cache invalidated for node-04</span>
+</div>
+<div class="flex gap-3">
+<span class="text-on-surface-variant">14:21:44</span>
+<span class="text-tertiary">[WARN]</span>
+<span class="text-on-surface">Peak memory usage: 88%</span>
+</div>
+<div class="flex gap-3">
+<span class="text-on-surface-variant">14:18:32</span>
+<span class="text-primary">[INFO]</span>
+<span class="text-on-surface">Sync completed (2,441 objects)</span>
+</div>
+<div class="flex gap-3">
+<span class="text-on-surface-variant">14:15:10</span>
+<span class="text-secondary">[CRON]</span>
+<span class="text-on-surface">Database cleanup job started</span>
+</div>
+<div class="flex gap-3">
+<span class="text-on-surface-variant">14:12:05</span>
+<span class="text-primary">[INFO]</span>
+<span class="text-on-surface">New user registered: user_9932</span>
+</div>
+<div class="flex gap-3">
+<span class="text-on-surface-variant">14:05:59</span>
+<span class="text-tertiary">[WARN]</span>
+<span class="text-on-surface">API Rate limit reached: IP 104.22</span>
+</div>
+<div class="flex gap-3">
+<span class="text-on-surface-variant">14:01:22</span>
+<span class="text-primary">[INFO]</span>
+<span class="text-on-surface">Load balancer re-route successful</span>
+</div>
+</div>
+<div class="p-4 bg-surface-container-high">
+<div class="relative">
+<input class="w-full bg-surface-container-lowest border-none rounded-lg text-xs py-2 pl-3 pr-10 focus:ring-1 focus:ring-primary transition-all placeholder:text-on-surface-variant/50" placeholder="Search logs..." type="text"/>
+<span class="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-sm" data-icon="search">search</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Footer / Copyright (Subtle) -->
+<footer class="mt-20 pb-10 border-t border-outline-variant/10 pt-8 flex flex-col md:flex-row justify-between items-center gap-4">
+<p class="text-[10px] font-inter uppercase tracking-widest text-on-surface-variant">© 2024 The Curator System Administration • v4.2.0-stable</p>
+<div class="flex gap-6">
+<a class="text-[10px] font-inter uppercase tracking-widest text-on-surface-variant hover:text-primary transition-colors" href="#">Support</a>
+<a class="text-[10px] font-inter uppercase tracking-widest text-on-surface-variant hover:text-primary transition-colors" href="#">Documentation</a>
+<a class="text-[10px] font-inter uppercase tracking-widest text-on-surface-variant hover:text-primary transition-colors" href="#">Security Policy</a>
+</div>
+</footer>
+</main>
+<!-- BottomNavBar (Mobile Only per Shell Visibility Rules) -->
+<nav class="fixed bottom-0 w-full z-50 flex lg:hidden justify-around items-center h-20 pb-safe px-4 bg-[#060e20] shadow-[0_-4px_20px_rgba(0,0,0,0.4)]">
+<a class="flex flex-col items-center justify-center text-[#a3aac4]" href="#">
+<span class="material-symbols-outlined" data-icon="home">home</span>
+<span class="text-[10px] font-medium font-inter uppercase tracking-widest">Home</span>
+</a>
+<a class="flex flex-col items-center justify-center text-[#a3aac4]" href="#">
+<span class="material-symbols-outlined" data-icon="search">search</span>
+<span class="text-[10px] font-medium font-inter uppercase tracking-widest">Search</span>
+</a>
+<a class="flex flex-col items-center justify-center text-[#c180ff] scale-110 transition-transform" href="#">
+<span class="material-symbols-outlined" data-icon="movie_filter">movie_filter</span>
+<span class="text-[10px] font-medium font-inter uppercase tracking-widest">Library</span>
+</a>
+<a class="flex flex-col items-center justify-center text-[#a3aac4]" href="#">
+<span class="material-symbols-outlined" data-icon="person">person</span>
+<span class="text-[10px] font-medium font-inter uppercase tracking-widest">Profile</span>
+</a>
+</nav>
+</body></html>

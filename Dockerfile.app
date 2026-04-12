@@ -12,7 +12,7 @@ COPY apps/backend/package*.json apps/backend/
 COPY apps/web/package*.json apps/web/
 COPY packages/tsconfig/package*.json packages/tsconfig/
 
-RUN npm ci
+RUN npm install --no-package-lock
 
 COPY . .
 
