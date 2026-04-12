@@ -77,6 +77,9 @@ export const schema = `
     previewCompressAssets(ids: [ID!]!, options: CompressOptionsInput!): [CompressPreviewResult!]!
     confirmCompressReplace(ids: [ID!]!): [MediaAsset!]!
     cancelCompressPreview(ids: [ID!]!): Boolean!
+
+    createFolder(parentPath: String, name: String!): DirectoryNode!
+    deleteFolder(path: String!): Boolean!
   }
 
   input CompressOptionsInput {

@@ -9,7 +9,7 @@ import {
   Folder, FileImage, ArrowLeft, ChevronDown, ChevronRight,
   Trash2, CheckSquare, Square, Users, Key, RotateCcw,
   Menu, X, ImagePlus, ArrowUpDown, Minimize2,
-  Upload, LogOut, Download,
+  Upload, LogOut, Download, FolderPlus,
   Moon, Sun, User,
 } from "lucide-react";
 
@@ -36,6 +36,22 @@ const REFRESH_MEDIA_LIBRARY_MUTATION = `
 const GENERATE_THUMBNAILS_FOR_PATH_MUTATION = `
   mutation GenerateThumbnailsForPath($path: String) {
     generateThumbnailsForPath(path: $path)
+  }
+`;
+
+const CREATE_FOLDER_MUTATION = `
+  mutation CreateFolder($parentPath: String, $name: String!) {
+    createFolder(parentPath: $parentPath, name: $name) {
+      name
+      path
+      type
+    }
+  }
+`;
+
+const DELETE_FOLDER_MUTATION = `
+  mutation DeleteFolder($path: String!) {
+    deleteFolder(path: $path)
   }
 `;
 
@@ -158,6 +174,15 @@ export default function Dashboard() {
   const [showSortMenu, setShowSortMenu] = useState(false);
   const sortMenuRef = useRef<HTMLDivElement>(null);
   const [isCompressDialogOpen, setIsCompressDialogOpen] = useState(false);
+  const [showUploadDialog, setShowUploadDialog] = useState(false);
+  const [uploadFiles, setUploadFiles] = useState<File[]>([]);
+  const [uploadTargetPath, setUploadTargetPath] = useState('');
+  const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
+  const [isUploading, setIsUploading] = useState(false);
+  const [showNewFolderDialog, setShowNewFolderDialog] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
+  const [isCreatingFolder, setIsCreatingFolder] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const refreshInFlightRef = useRef(false);
   const thumbnailPollTimerRef = useRef<number | null>(null);
   const thumbnailPollAttemptsRef = useRef(0);
@@ -412,6 +437,107 @@ export default function Dashboard() {
     }
   };
 
+  const handleCreateFolder = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newFolderName.trim() || isCreatingFolder) return;
+    try {
+      setIsCreatingFolder(true);
+      const token = getAuthToken();
+      if (!token) return;
+      const client = createGraphQLClient(token);
+      await client.request(CREATE_FOLDER_MUTATION, { parentPath: currentPath, name: newFolderName.trim() });
+      setShowNewFolderDialog(false);
+      setNewFolderName('');
+      if (currentPath) await loadDirectoryIntoCache(currentPath);
+    } catch (err: any) {
+      alert(`Failed to create folder: ${err.message || 'Unknown error'}`);
+    } finally {
+      setIsCreatingFolder(false);
+    }
+  };
+
+  const handleDeleteFolder = async (folderPath: string, folderName: string) => {
+    const confirmed = window.confirm(
+      `Delete folder "${folderName}" and all its contents? This cannot be undone.`
+    );
+    if (!confirmed) return;
+    try {
+      const token = getAuthToken();
+      if (!token) return;
+      const client = createGraphQLClient(token);
+      await client.request(DELETE_FOLDER_MUTATION, { path: folderPath });
+      // Remove deleted folder from cache
+      setDirectoryCache((prev) => {
+        const next = { ...prev };
+        for (const key of Object.keys(next)) {
+          if (key === folderPath || key.startsWith(`${folderPath}/`)) delete next[key];
+        }
+        return next;
+      });
+      if (currentPath === folderPath) {
+        await handleBackClick();
+      } else {
+        if (currentPath) await loadDirectoryIntoCache(currentPath);
+      }
+    } catch (err: any) {
+      alert(`Failed to delete folder: ${err.message || 'Unknown error'}`);
+    }
+  };
+
+  const handleUpload = async () => {
+    if (uploadFiles.length === 0 || isUploading) return;
+    setIsUploading(true);
+    const token = getAuthToken();
+    if (!token) { setIsUploading(false); return; }
+    const target = uploadTargetPath || currentPath || rootPath || '';
+    const newProgress: Record<string, number> = {};
+    try {
+      for (const file of uploadFiles) {
+        newProgress[file.name] = 0;
+        setUploadProgress({ ...newProgress });
+        const formData = new FormData();
+        formData.append('file', file);
+        const url = `${API_URL}/api/upload?targetPath=${encodeURIComponent(target)}`;
+        await new Promise<void>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open('POST', url);
+          xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+          xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable) {
+              newProgress[file.name] = Math.round((e.loaded / e.total) * 100);
+              setUploadProgress({ ...newProgress });
+            }
+          };
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              newProgress[file.name] = 100;
+              setUploadProgress({ ...newProgress });
+              resolve();
+            } else {
+              try {
+                const err = JSON.parse(xhr.responseText);
+                reject(new Error(err.error || xhr.statusText));
+              } catch {
+                reject(new Error(xhr.statusText));
+              }
+            }
+          };
+          xhr.onerror = () => reject(new Error('Network error'));
+          xhr.send(formData);
+        });
+      }
+      setShowUploadDialog(false);
+      setUploadFiles([]);
+      setUploadProgress({});
+      if (target) await loadDirectoryIntoCache(target);
+      if (rootPath && rootPath !== target) await loadDirectoryIntoCache(rootPath);
+    } catch (err: any) {
+      alert(`Upload failed: ${err.message || 'Unknown error'}`);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
   const handleFolderClick = async (folder: DirectoryNode) => {
     if (currentPath) setFolderHistory((prev) => [...prev, currentPath]);
     setCurrentPath(folder.path);
@@ -461,6 +587,22 @@ export default function Dashboard() {
   const currentFolder = currentPath ? directoryCache[currentPath] || null : null;
   const directoryTree = rootPath ? directoryCache[rootPath] || null : null;
   const currentFolderChildren = Array.isArray(currentFolder?.children) ? currentFolder.children : [];
+
+  const allDirectories = useMemo(() => {
+    const dirs: { path: string; displayName: string }[] = [];
+    const seen = new Set<string>();
+    const traverse = (node: DirectoryNode, depth: number) => {
+      if (seen.has(node.path)) return;
+      seen.add(node.path);
+      if (node.type !== 'directory') return;
+      dirs.push({ path: node.path, displayName: node.path === rootPath ? '/ (Root)' : '\u00a0\u00a0'.repeat(depth) + node.name });
+      for (const child of node.children ?? []) {
+        if (child.type === 'directory') traverse(directoryCache[child.path] || child, depth + 1);
+      }
+    };
+    if (rootPath && directoryCache[rootPath]) traverse(directoryCache[rootPath], 0);
+    return dirs;
+  }, [directoryCache, rootPath]);
   const isCurrentFolderLoading = !!currentFolder && currentFolder.children === null;
 
   const sortedFolderChildren = useMemo(() => {
@@ -573,26 +715,38 @@ export default function Dashboard() {
 
     return (
       <div key={node.path} className="pl-4">
-        <button
-          type="button"
-          className="w-full py-2.5 flex items-center gap-3 font-medium text-foreground hover:bg-accent rounded-xl transition-all duration-150 outline-none focus:ring-2 focus:ring-brand-primary/30 text-left px-2"
-          onClick={() => void toggleFolder(node.path)}
-        >
-          {isExpanded ? (
-            <ChevronDown className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-          ) : (
-            <ChevronRight className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+        <div className="group relative flex items-center">
+          <button
+            type="button"
+            className="flex-1 py-2.5 flex items-center gap-3 font-medium text-foreground hover:bg-accent rounded-xl transition-all duration-150 outline-none focus:ring-2 focus:ring-brand-primary/30 text-left px-2"
+            onClick={() => void toggleFolder(node.path)}
+          >
+            {isExpanded ? (
+              <ChevronDown className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+            ) : (
+              <ChevronRight className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+            )}
+            <div className="w-8 h-8 gradient-brand rounded-lg flex items-center justify-center flex-shrink-0">
+              <Folder className="w-4 h-4 text-[#060e20]" />
+            </div>
+            <span className="text-sm">{node.name}</span>
+            {Array.isArray(children) && (
+              <span className="text-xs text-muted-foreground ml-auto mr-2 bg-muted px-2 py-0.5 rounded-full">
+                {children.length}
+              </span>
+            )}
+          </button>
+          {(user?.role === "admin" || user?.role === "editor") && (
+            <button
+              type="button"
+              onClick={() => void handleDeleteFolder(node.path, node.name)}
+              className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-destructive/10 rounded-lg transition-all duration-150 mr-1 flex-shrink-0"
+              title="Delete folder"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-destructive" />
+            </button>
           )}
-          <div className="w-8 h-8 gradient-brand rounded-lg flex items-center justify-center flex-shrink-0">
-            <Folder className="w-4 h-4 text-[#060e20]" />
-          </div>
-          <span className="text-sm">{node.name}</span>
-          {Array.isArray(children) && (
-            <span className="text-xs text-muted-foreground ml-auto mr-2 bg-muted px-2 py-0.5 rounded-full">
-              {children.length}
-            </span>
-          )}
-        </button>
+        </div>
         {isExpanded && children === null && (
           <div className="pl-10 py-2 text-xs text-muted-foreground">Loading…</div>
         )}
@@ -670,13 +824,16 @@ export default function Dashboard() {
           </button>
 
           {/* Upload */}
-          <button
-            type="button"
-            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl gradient-brand text-[#060e20] font-manrope font-bold text-sm shadow-ambient hover:opacity-90 transition-opacity duration-200"
-          >
-            <Upload className="w-4 h-4" />
-            Upload Media
-          </button>
+          {(user?.role === "admin" || user?.role === "editor") && (
+            <button
+              type="button"
+              onClick={() => { setUploadTargetPath(currentPath || rootPath || ''); setShowUploadDialog(true); }}
+              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl gradient-brand text-[#060e20] font-manrope font-bold text-sm shadow-ambient hover:opacity-90 transition-opacity duration-200"
+            >
+              <Upload className="w-4 h-4" />
+              Upload Media
+            </button>
+          )}
 
           {/* User row */}
           {user && (
@@ -852,6 +1009,19 @@ export default function Dashboard() {
               </>
             )}
 
+            {/* New Folder */}
+            {(user?.role === "admin" || user?.role === "editor") && !selectionMode && (
+              <button
+                type="button"
+                onClick={() => setShowNewFolderDialog(true)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
+                title="New folder"
+              >
+                <FolderPlus className="w-4 h-4" />
+                <span className="hidden md:inline">New Folder</span>
+              </button>
+            )}
+
             {/* Sort */}
             <div className="relative" ref={sortMenuRef}>
               <button
@@ -933,22 +1103,33 @@ export default function Dashboard() {
               {sortedFolderChildren.map((node) => {
                 if (node.type === "directory") {
                   return (
-                    <button
-                      key={node.path}
-                      type="button"
-                      onClick={() => void handleFolderClick(node)}
-                      className="group rounded-2xl bg-card hover:bg-accent transition-all duration-300 p-6 flex flex-col items-center justify-center gap-4 min-h-[180px] text-center"
-                    >
-                      <div className="w-16 h-16 rounded-2xl gradient-brand flex items-center justify-center shadow-ambient group-hover:scale-110 transition-transform duration-300">
-                        <Folder className="w-8 h-8 text-[#060e20]" />
-                      </div>
-                      <div>
-                        <p className="font-manrope font-semibold text-sm text-foreground truncate max-w-[120px]">
-                          {node.name}
-                        </p>
-                        <p className="label-meta mt-1">Folder</p>
-                      </div>
-                    </button>
+                    <div key={node.path} className="group relative">
+                      <button
+                        type="button"
+                        onClick={() => void handleFolderClick(node)}
+                        className="w-full rounded-2xl bg-card hover:bg-accent transition-all duration-300 p-6 flex flex-col items-center justify-center gap-4 min-h-[180px] text-center"
+                      >
+                        <div className="w-16 h-16 rounded-2xl gradient-brand flex items-center justify-center shadow-ambient group-hover:scale-110 transition-transform duration-300">
+                          <Folder className="w-8 h-8 text-[#060e20]" />
+                        </div>
+                        <div>
+                          <p className="font-manrope font-semibold text-sm text-foreground truncate max-w-[120px]">
+                            {node.name}
+                          </p>
+                          <p className="label-meta mt-1">Folder</p>
+                        </div>
+                      </button>
+                      {!selectionMode && (user?.role === "admin" || user?.role === "editor") && (
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); void handleDeleteFolder(node.path, node.name); }}
+                          className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 w-8 h-8 bg-background/80 backdrop-blur-sm rounded-xl flex items-center justify-center hover:bg-destructive/20 transition-all duration-200"
+                          title="Delete folder"
+                        >
+                          <Trash2 className="w-3.5 h-3.5 text-destructive" />
+                        </button>
+                      )}
+                    </div>
                   );
                 } else if (node.mediaAsset) {
                   const asset = node.mediaAsset;
@@ -1134,6 +1315,154 @@ export default function Dashboard() {
               </button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* New Folder Dialog */}
+      <Dialog open={showNewFolderDialog} onOpenChange={(open) => { setShowNewFolderDialog(open); if (!open) setNewFolderName(''); }}>
+        <DialogContent className="bg-card border-border/20 shadow-ambient rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="font-manrope text-foreground">New Folder</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleCreateFolder} className="space-y-4 mt-2">
+            <div className="space-y-1.5">
+              <label className="label-meta">Folder Name</label>
+              <Input
+                value={newFolderName}
+                onChange={(e) => setNewFolderName(e.target.value)}
+                placeholder="e.g. Vacation 2024"
+                required
+                autoFocus
+                className="bg-muted border-border/20 text-foreground placeholder:text-muted-foreground"
+              />
+              {currentFolder && (
+                <p className="text-xs text-muted-foreground">
+                  Will be created inside: <span className="text-foreground font-medium">{currentFolder.name}</span>
+                </p>
+              )}
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <button
+                type="button"
+                onClick={() => { setShowNewFolderDialog(false); setNewFolderName(''); }}
+                className="px-4 py-2 rounded-xl text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isCreatingFolder || !newFolderName.trim()}
+                className="px-4 py-2 rounded-xl gradient-brand text-[#060e20] font-manrope font-bold text-sm shadow-ambient hover:opacity-90 transition-opacity disabled:opacity-50"
+              >
+                {isCreatingFolder ? 'Creating…' : 'Create Folder'}
+              </button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Upload Dialog */}
+      <Dialog open={showUploadDialog} onOpenChange={(open) => { if (!isUploading) { setShowUploadDialog(open); if (!open) { setUploadFiles([]); setUploadProgress({}); } } }}>
+        <DialogContent className="bg-card border-border/20 shadow-ambient rounded-2xl max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="font-manrope text-foreground">Upload Media</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 mt-2">
+            {/* Folder selector */}
+            <div className="space-y-1.5">
+              <label className="label-meta">Upload to Folder</label>
+              <select
+                value={uploadTargetPath}
+                onChange={(e) => setUploadTargetPath(e.target.value)}
+                className="w-full bg-muted border border-border/20 rounded-xl px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-brand-primary/30"
+              >
+                {allDirectories.map((dir) => (
+                  <option key={dir.path} value={dir.path}>{dir.displayName}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Drop zone */}
+            <div>
+              <label className="label-meta mb-1.5 block">Files</label>
+              <div
+                role="button"
+                tabIndex={0}
+                className="border-2 border-dashed border-border/30 rounded-xl p-8 text-center cursor-pointer hover:border-brand-primary/50 transition-colors"
+                onClick={() => fileInputRef.current?.click()}
+                onKeyDown={(e) => e.key === 'Enter' && fileInputRef.current?.click()}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => { e.preventDefault(); setUploadFiles(Array.from(e.dataTransfer.files)); }}
+              >
+                <Upload className="w-8 h-8 text-muted-foreground/40 mx-auto mb-3" />
+                <p className="text-sm text-muted-foreground">
+                  {uploadFiles.length > 0
+                    ? `${uploadFiles.length} file(s) selected`
+                    : 'Drag & drop or click to select files'}
+                </p>
+                <p className="text-xs text-muted-foreground/60 mt-1">Images & videos · Max 1 GB per file</p>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  accept=".jpg,.jpeg,.png,.heic,.gif,.webp,.bmp,.mp4,.mov,.avi,.mkv,.webm,.m4v"
+                  className="hidden"
+                  onChange={(e) => setUploadFiles(Array.from(e.target.files || []))}
+                />
+              </div>
+            </div>
+
+            {/* File list with progress */}
+            {uploadFiles.length > 0 && (
+              <div className="space-y-2 max-h-44 overflow-y-auto pr-1">
+                {uploadFiles.map((file) => (
+                  <div key={file.name} className="flex items-center gap-3 bg-muted rounded-xl px-3 py-2">
+                    <FileImage className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-foreground truncate">{file.name}</p>
+                      {isUploading && (
+                        <div className="mt-1.5 h-1 bg-muted-foreground/20 rounded-full overflow-hidden">
+                          <div
+                            className="h-full gradient-brand rounded-full transition-all duration-300"
+                            style={{ width: `${uploadProgress[file.name] ?? 0}%` }}
+                          />
+                        </div>
+                      )}
+                    </div>
+                    <span className="text-xs text-muted-foreground flex-shrink-0">{formatBytes(file.size)}</span>
+                    {!isUploading && (
+                      <button
+                        type="button"
+                        onClick={() => setUploadFiles((prev) => prev.filter((f) => f.name !== file.name))}
+                        className="p-1 rounded-lg hover:bg-accent text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex gap-2 justify-end pt-2">
+              <button
+                type="button"
+                onClick={() => { setShowUploadDialog(false); setUploadFiles([]); setUploadProgress({}); }}
+                disabled={isUploading}
+                className="px-4 py-2 rounded-xl text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-all disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleUpload}
+                disabled={uploadFiles.length === 0 || isUploading}
+                className="px-4 py-2 rounded-xl gradient-brand text-[#060e20] font-manrope font-bold text-sm shadow-ambient hover:opacity-90 transition-opacity disabled:opacity-50"
+              >
+                {isUploading ? 'Uploading…' : `Upload${uploadFiles.length > 0 ? ` (${uploadFiles.length})` : ''}`}
+              </button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 

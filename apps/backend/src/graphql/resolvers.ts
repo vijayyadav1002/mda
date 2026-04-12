@@ -895,6 +895,88 @@ export const resolvers = {
       }
 
       return true;
+    },
+
+    createFolder: async (
+      _: any,
+      args: { parentPath?: string | null; name: string },
+      context: GraphQLContext
+    ) => {
+      if (!context.user || !['admin', 'editor'].includes(context.user.role)) {
+        throw new Error('Admin or Editor access required');
+      }
+
+      if (!args.name || /[/\\]/.test(args.name) || args.name.startsWith('.')) {
+        throw new Error('Invalid folder name');
+      }
+
+      const parentPath = resolveLibraryPath(args.parentPath ?? null);
+      const newFolderPath = path.join(parentPath, args.name);
+
+      // Ensure new path is still within library
+      const rootPath = path.resolve(config.mediaLibraryPath);
+      if (newFolderPath !== rootPath && !newFolderPath.startsWith(`${rootPath}${path.sep}`)) {
+        throw new Error('Invalid directory path');
+      }
+
+      await fs.mkdir(newFolderPath);
+
+      await logAudit(context.user.id, 'CREATE_FOLDER', 'directory', undefined, {
+        path: newFolderPath
+      });
+
+      return {
+        name: args.name,
+        path: newFolderPath,
+        type: 'directory',
+        children: []
+      };
+    },
+
+    deleteFolder: async (
+      _: any,
+      args: { path: string },
+      context: GraphQLContext
+    ) => {
+      if (!context.user || !['admin', 'editor'].includes(context.user.role)) {
+        throw new Error('Admin or Editor access required');
+      }
+
+      const targetPath = resolveLibraryPath(args.path);
+      const rootPath = path.resolve(config.mediaLibraryPath);
+
+      if (targetPath === rootPath) {
+        throw new Error('Cannot delete the root library folder');
+      }
+
+      // Find all media assets within this folder
+      const assetsResult = await db.query(
+        'SELECT * FROM media_assets WHERE file_path LIKE $1',
+        [`${targetPath}${path.sep}%`]
+      );
+
+      // Clean up caches for each asset
+      for (const asset of assetsResult.rows) {
+        await cleanupDeletedAssetCaches(asset, { removeTranscoded: true }).catch(() => {});
+      }
+
+      // Remove assets from database
+      if (assetsResult.rows.length > 0) {
+        await db.query(
+          'DELETE FROM media_assets WHERE file_path LIKE $1',
+          [`${targetPath}${path.sep}%`]
+        );
+      }
+
+      // Delete folder from filesystem
+      await fs.rm(targetPath, { recursive: true, force: true });
+
+      await logAudit(context.user.id, 'DELETE_FOLDER', 'directory', undefined, {
+        path: targetPath,
+        assetsDeleted: assetsResult.rows.length
+      });
+
+      return true;
     }
   }
 };
