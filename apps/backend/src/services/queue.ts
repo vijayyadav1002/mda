@@ -101,8 +101,32 @@ export function startWorkers() {
         const { config } = await import('../config.js');
 
         if (job.data.type === 'hls') {
+            const progressKey = `video_progress:${job.data.assetId}`;
+            await redis.set(progressKey, JSON.stringify({ percent: 0, status: 'transcoding' }), 'EX', 3600);
+
             const hlsDir = path.default.join(path.default.dirname(config.thumbnailCachePath), 'hls', job.data.assetId);
-            await transcodeToHLS(job.data.filePath, hlsDir);
+            try {
+                await transcodeToHLS(job.data.filePath, hlsDir, {
+                    onProgress: (percent: number) => {
+                        // fire-and-forget: ffmpeg progress callback is synchronous
+                        redis.set(
+                            progressKey,
+                            JSON.stringify({ percent, status: 'transcoding' }),
+                            'EX',
+                            3600,
+                        ).catch(() => {});
+                    },
+                });
+                await redis.set(progressKey, JSON.stringify({ percent: 100, status: 'ready' }), 'EX', 3600);
+            } catch (err: any) {
+                await redis.set(
+                    progressKey,
+                    JSON.stringify({ percent: 0, status: 'error', error: err?.message ?? 'Transcoding failed' }),
+                    'EX',
+                    3600,
+                ).catch(() => {});
+                throw err;
+            }
         } else {
             await transcodeVideo(job.data.filePath, job.data.assetId);
         }

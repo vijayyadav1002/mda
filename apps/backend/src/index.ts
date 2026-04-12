@@ -12,9 +12,9 @@ import { db } from './db/index.js';
 import { ensureAdminExists } from './services/auth.js';
 import { indexMediaLibrary } from './services/media-indexer.js';
 import { startMediaWatcher } from './services/media-watcher.js';
-import { startWorkers, addToCompressionQueue } from './services/queue.js';
+import { startWorkers, addToCompressionQueue, encodingQueue } from './services/queue.js';
 import { redis } from './services/redis.js';
-import { getWebCompatibleVideo, markTranscodeAccessed, startTranscodeCleanup, deleteTranscodedVideo, ensureHLS } from './services/video-transcode.js';
+import { getWebCompatibleVideo, markTranscodeAccessed, startTranscodeCleanup, deleteTranscodedVideo, ensureHLS, checkVideoCompatibility } from './services/video-transcode.js';
 import { startCacheMaintenance } from './services/cache-maintenance.js';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -216,6 +216,102 @@ fastify.get('/image/:id', async (request, reply) => {
   reply.header('Content-Type', mimeType);
   reply.header('Cache-Control', 'public, max-age=86400');
   return reply.send(fs.createReadStream(absPath));
+});
+
+// Lightweight playback negotiation — does not block on transcoding
+fastify.get('/video/:id/prepare', async (request, reply) => {
+  const { id } = request.params as { id: string };
+
+  try {
+    const result = await db.query(
+      'SELECT file_path, mime_type FROM media_assets WHERE id = $1',
+      [id]
+    );
+    if (result.rows.length === 0) return reply.code(404).send({ error: 'Video not found' });
+
+    const { file_path, mime_type } = result.rows[0];
+    if (!mime_type || !mime_type.startsWith('video/')) {
+      return reply.code(400).send({ error: 'Not a video file' });
+    }
+
+    try {
+      const info = await checkVideoCompatibility(file_path);
+      if (!info.needsTranscoding) {
+        return reply.send({ type: 'mp4', url: `/video/${id}` });
+      }
+    } catch (err) {
+      fastify.log.warn({ err }, '[prepare] checkVideoCompatibility failed, falling back to HLS');
+    }
+
+    const playlistPath = path.resolve(
+      path.dirname(config.thumbnailCachePath),
+      'hls',
+      id,
+      'master.m3u8'
+    );
+    const alreadyCached = fs.existsSync(playlistPath);
+
+    if (!alreadyCached) {
+      const hlsJobId = `hls-${id}`;
+      try {
+        const existing = await encodingQueue.getJob(hlsJobId);
+        let shouldEnqueue = !existing;
+        if (existing) {
+          const state = await existing.getState().catch(() => 'unknown');
+          if (state === 'completed' || state === 'failed') {
+            await existing.remove().catch(() => {});
+            shouldEnqueue = true;
+          }
+        }
+        if (shouldEnqueue) {
+          await encodingQueue.add(
+            'transcode',
+            { filePath: file_path, assetId: id, type: 'hls' },
+            { jobId: hlsJobId }
+          );
+          await redis.set(
+            `video_progress:${id}`,
+            JSON.stringify({ percent: 0, status: 'queued' }),
+            'EX',
+            3600
+          );
+        }
+      } catch (err) {
+        fastify.log.error({ err }, '[prepare] failed to enqueue HLS job');
+      }
+    }
+
+    return reply.send({
+      type: 'hls',
+      playlistUrl: `/hls/${id}/master.m3u8`,
+      progressUrl: `/video/${id}/progress`,
+      ready: alreadyCached,
+    });
+  } catch (err) {
+    fastify.log.error({ err }, '[prepare] unexpected error');
+    return reply.code(500).send({ error: 'Prepare failed', detail: (err as Error)?.message });
+  }
+});
+
+// Transcoding progress polling endpoint
+fastify.get('/video/:id/progress', async (request, reply) => {
+  const { id } = request.params as { id: string };
+  const playlistPath = path.resolve(
+    path.dirname(config.thumbnailCachePath),
+    'hls',
+    id,
+    'master.m3u8'
+  );
+  const playlistReady = fs.existsSync(playlistPath);
+  const raw = await redis.get(`video_progress:${id}`);
+  if (!raw) {
+    if (playlistReady) {
+      return reply.send({ percent: 100, status: 'ready', playlistReady: true });
+    }
+    return reply.send({ percent: 0, status: 'unknown', playlistReady: false });
+  }
+  const parsed = JSON.parse(raw);
+  return reply.send({ ...parsed, playlistReady });
 });
 
 // On-demand video transcoding endpoint

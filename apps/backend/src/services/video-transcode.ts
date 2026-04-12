@@ -237,10 +237,38 @@ export async function deleteTranscodedVideo(videoPath: string, assetId: string):
   }
 }
 
-export async function transcodeToHLS(videoPath: string, outputDir: string): Promise<string> {
+function parseTimemarkToSeconds(timemark: string): number {
+  // FFmpeg timemark format: "HH:MM:SS.ms"
+  const parts = timemark.split(':');
+  if (parts.length !== 3) return 0;
+  const hours = Number.parseFloat(parts[0]) || 0;
+  const minutes = Number.parseFloat(parts[1]) || 0;
+  const seconds = Number.parseFloat(parts[2]) || 0;
+  return hours * 3600 + minutes * 60 + seconds;
+}
+
+async function probeDurationSeconds(videoPath: string): Promise<number> {
+  return new Promise((resolve) => {
+    ffmpeg.ffprobe(videoPath, (err, metadata) => {
+      if (err || !metadata?.format?.duration) {
+        resolve(0);
+        return;
+      }
+      resolve(Number(metadata.format.duration) || 0);
+    });
+  });
+}
+
+export async function transcodeToHLS(
+  videoPath: string,
+  outputDir: string,
+  opts?: { onProgress?: (percent: number) => void }
+): Promise<string> {
   // Ensure output directory exists
   await fs.mkdir(outputDir, { recursive: true });
   const playlistPath = path.join(outputDir, 'master.m3u8');
+
+  const duration = await probeDurationSeconds(videoPath);
 
   return new Promise((resolve, reject) => {
     ffmpeg(videoPath)
@@ -248,11 +276,22 @@ export async function transcodeToHLS(videoPath: string, outputDir: string): Prom
         '-profile:v baseline',
         '-level 3.0',
         '-start_number 0',
-        '-hls_time 6',
+        '-hls_time 4',
         '-hls_list_size 0',
         '-f hls'
       ])
       .output(playlistPath)
+      .on('progress', (progress) => {
+        if (!opts?.onProgress) return;
+        let percent = 0;
+        if (duration > 0 && progress.timemark) {
+          const elapsed = parseTimemarkToSeconds(progress.timemark);
+          percent = Math.min(99, Math.max(0, Math.round((elapsed / duration) * 100)));
+        } else if (typeof progress.percent === 'number' && !Number.isNaN(progress.percent)) {
+          percent = Math.min(99, Math.max(0, Math.round(progress.percent)));
+        }
+        opts.onProgress(percent);
+      })
       .on('end', () => resolve(playlistPath))
       .on('error', (err) => reject(err))
       .run();

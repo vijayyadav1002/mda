@@ -1,5 +1,16 @@
 import { Download, File, Maximize2, Minimize2, X, ListTodo } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import Hls from "hls.js";
+
+type VideoSource =
+  | { kind: "mp4"; url: string }
+  | { kind: "hls"; playlistUrl: string; progressUrl: string; ready: boolean };
+
+interface TranscodeProgress {
+  percent: number;
+  status: string;
+  playlistReady?: boolean;
+}
 
 interface MediaAsset {
   id: string;
@@ -51,6 +62,13 @@ export function MediaAssetViewer({
   const [imageDimensions, setImageDimensions] = useState({ width: 0, height: 0 });
   const [currentVideoId, setCurrentVideoId] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [videoSource, setVideoSource] = useState<VideoSource | null>(null);
+  const [transcodeProgress, setTranscodeProgress] = useState<TranscodeProgress | null>(null);
+  const [hlsReloadKey, setHlsReloadKey] = useState(0);
+  const videoSourceKindRef = useRef<VideoSource["kind"] | null>(null);
+  const splitVideoRef = useRef<HTMLVideoElement | null>(null);
+  const fullscreenVideoRef = useRef<HTMLVideoElement | null>(null);
+  const hlsRef = useRef<Hls | null>(null);
 
   useEffect(() => {
     if (!isOpen) {
@@ -65,9 +83,130 @@ export function MediaAssetViewer({
     }
   }, [isOpen, asset]);
 
+  // Negotiate playback (mp4 fast path vs. HLS progressive) when a video opens
+  useEffect(() => {
+    if (!isOpen || !asset || !asset.mimeType.startsWith("video/")) {
+      setVideoSource(null);
+      setTranscodeProgress(null);
+      setHlsReloadKey(0);
+      return;
+    }
+    let cancelled = false;
+    fetch(`${apiUrl}/video/${asset.id}/prepare`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled) return;
+        if (data.type === "mp4") {
+          setVideoSource({ kind: "mp4", url: `${apiUrl}${data.url}` });
+        } else if (data.type === "hls") {
+          setVideoSource({
+            kind: "hls",
+            playlistUrl: `${apiUrl}${data.playlistUrl}`,
+            progressUrl: `${apiUrl}${data.progressUrl}`,
+            ready: Boolean(data.ready),
+          });
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, asset?.id, apiUrl]);
+
+  // Wait for the HLS playlist to exist before attaching hls.js — avoids fatal 404 on first load
+  const canLoadHls = Boolean(
+    videoSource?.kind === "hls" && (videoSource.ready || transcodeProgress?.playlistReady)
+  );
+
+  // Attach source to the active <video> element
+  useEffect(() => {
+    const video = isFullscreen ? fullscreenVideoRef.current : splitVideoRef.current;
+    if (!video || !videoSource) return;
+
+    videoSourceKindRef.current = videoSource.kind;
+
+    if (videoSource.kind === "mp4") {
+      video.src = videoSource.url;
+      return;
+    }
+
+    // HLS — don't attach until we know the playlist is on disk
+    if (!canLoadHls) return;
+
+    if (video.canPlayType("application/vnd.apple.mpegurl")) {
+      video.src = videoSource.playlistUrl;
+      return;
+    }
+    if (Hls.isSupported()) {
+      const hls = new Hls();
+      hls.loadSource(videoSource.playlistUrl);
+      hls.attachMedia(video);
+      hls.on(Hls.Events.ERROR, (_e, data) => {
+        if (!data.fatal) return;
+        if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+          hls.startLoad();
+        } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+          hls.recoverMediaError();
+        }
+      });
+      hlsRef.current = hls;
+      return () => {
+        hls.destroy();
+        if (hlsRef.current === hls) hlsRef.current = null;
+      };
+    }
+  }, [videoSource, isFullscreen, canLoadHls, hlsReloadKey]);
+
+  // Poll transcoding progress while the HLS job runs
+  useEffect(() => {
+    if (videoSource?.kind !== "hls" || videoSource.ready) {
+      setTranscodeProgress(null);
+      return;
+    }
+    let active = true;
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+    const tick = () => {
+      fetch(videoSource.progressUrl)
+        .then((r) => r.json())
+        .then((p: TranscodeProgress) => {
+          if (!active) return;
+          setTranscodeProgress(p);
+          if (p.status === "ready") {
+            // Force the hls.js instance to tear down and re-attach against the now-finalized
+            // VOD playlist. Without this, a player that attached during transcoding stays stuck
+            // in live mode and the play button does nothing.
+            setHlsReloadKey((k) => k + 1);
+          }
+          if (p.status === "ready" || p.status === "error") {
+            if (intervalId) clearInterval(intervalId);
+            intervalId = null;
+          }
+        })
+        .catch(() => {});
+    };
+    tick();
+    intervalId = setInterval(tick, 2000);
+    return () => {
+      active = false;
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [videoSource]);
+
+  // Clean up hls.js on dialog close
+  useEffect(() => {
+    if (!isOpen) {
+      hlsRef.current?.destroy();
+      hlsRef.current = null;
+    }
+  }, [isOpen]);
+
   useEffect(() => {
     if (!isOpen && currentVideoId) {
-      fetch(`${apiUrl}/video/${currentVideoId}/cleanup`, { method: "DELETE" }).catch(() => {});
+      // Only clean up transient MP4 transcode cache; keep HLS segments for fast re-open.
+      if (videoSourceKindRef.current === "mp4") {
+        fetch(`${apiUrl}/video/${currentVideoId}/cleanup`, { method: "DELETE" }).catch(() => {});
+      }
+      videoSourceKindRef.current = null;
       setCurrentVideoId(null);
     }
   }, [isOpen, currentVideoId, apiUrl]);
@@ -128,10 +267,33 @@ export function MediaAssetViewer({
           </button>
         )}
         {isVideo && (
-          <video controls autoPlay className="max-w-full max-h-[calc(100vh-120px)] object-contain" preload="metadata">
-            <source src={`${apiUrl}/video/${asset.id}`} type="video/mp4" />
-            <track kind="captions" />
-          </video>
+          <div className="relative flex items-center justify-center">
+            <video
+              ref={fullscreenVideoRef}
+              controls
+              autoPlay
+              className="max-w-full max-h-[calc(100vh-120px)] object-contain"
+              preload="metadata"
+            >
+              <track kind="captions" />
+            </video>
+            {transcodeProgress && transcodeProgress.status !== "ready" && transcodeProgress.status !== "unknown" && (
+              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center bg-black/50 backdrop-blur-sm text-white">
+                <p className="font-manrope font-semibold mb-3">
+                  {transcodeProgress.status === "queued" ? "Preparing video…" : "Transcoding for playback"}
+                </p>
+                <div className="w-64 h-2 bg-white/20 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-emerald-400 transition-[width] duration-500"
+                    style={{ width: `${Math.max(2, Math.round(transcodeProgress.percent))}%` }}
+                  />
+                </div>
+                <p className="text-xs text-white/70 mt-2">
+                  {Math.round(transcodeProgress.percent)}% — playback will start automatically when ready
+                </p>
+              </div>
+            )}
+          </div>
         )}
 
         <div className="absolute bottom-4 left-4 right-4 max-w-3xl mx-auto bg-black/50 backdrop-blur-md text-white p-4 rounded-2xl">
@@ -170,14 +332,32 @@ export function MediaAssetViewer({
             />
           )}
           {isVideo && (
-            <video
-              controls
-              className="w-full h-full object-contain max-h-[40vh] md:max-h-[90vh]"
-              preload="metadata"
-            >
-              <source src={`${apiUrl}/video/${asset.id}`} type="video/mp4" />
-              <track kind="captions" />
-            </video>
+            <div className="relative w-full h-full flex items-center justify-center">
+              <video
+                ref={splitVideoRef}
+                controls
+                className="w-full h-full object-contain max-h-[40vh] md:max-h-[90vh]"
+                preload="metadata"
+              >
+                <track kind="captions" />
+              </video>
+              {transcodeProgress && transcodeProgress.status !== "ready" && transcodeProgress.status !== "unknown" && (
+                <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center bg-black/50 backdrop-blur-sm text-white">
+                  <p className="font-manrope font-semibold mb-3">
+                    {transcodeProgress.status === "queued" ? "Preparing video…" : "Transcoding for playback"}
+                  </p>
+                  <div className="w-64 h-2 bg-white/20 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-emerald-400 transition-[width] duration-500"
+                      style={{ width: `${Math.max(2, Math.round(transcodeProgress.percent))}%` }}
+                    />
+                  </div>
+                  <p className="text-xs text-white/70 mt-2">
+                    {Math.round(transcodeProgress.percent)}% — playback will start automatically when ready
+                  </p>
+                </div>
+              )}
+            </div>
           )}
           {!isImage && !isVideo && (
             <div className="flex flex-col items-center justify-center gap-4 text-muted-foreground">
