@@ -54,6 +54,7 @@ export const schema = `
     mediaAssets(limit: Int, offset: Int, mimeType: String): [MediaAsset!]!
     mediaAsset(id: ID!): MediaAsset
     directoryTree: DirectoryNode!
+    directoryNode(path: String): DirectoryNode!
     auditLogs(limit: Int, offset: Int): [AuditLog!]!
     hasAdminUser: Boolean!
   }
@@ -72,5 +73,24 @@ export const schema = `
     deleteMediaAsset(id: ID!): Boolean!
     compressMediaAsset(id: ID!, quality: Int, overwrite: Boolean): MediaAsset!
     refreshMediaLibrary: String!
+    generateThumbnailsForPath(path: String): Int!
+    previewCompressAssets(ids: [ID!]!, options: CompressOptionsInput!): [CompressPreviewResult!]!
+    confirmCompressReplace(ids: [ID!]!): [MediaAsset!]!
+    cancelCompressPreview(ids: [ID!]!): Boolean!
+
+    createFolder(parentPath: String, name: String!): DirectoryNode!
+    deleteFolder(path: String!): Boolean!
+  }
+
+  input CompressOptionsInput {
+    resolution: String
+    quality: Int
+  }
+
+  type CompressPreviewResult {
+    assetId: ID!
+    originalSize: String!
+    compressedSize: String!
+    previewUrl: String!
   }
 `;

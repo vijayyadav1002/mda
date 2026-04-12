@@ -3,58 +3,120 @@
 @tailwind utilities;
 
 @layer base {
+  /* Light mode — Indigo Gallery */
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    --background: 230 60% 99%;
+    --foreground: 213 67% 12%;
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 213 67% 12%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
+    --popover-foreground: 213 67% 12%;
+    --primary: 246 73% 49%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 225 100% 97%;
+    --secondary-foreground: 213 67% 12%;
+    --muted: 225 100% 95%;
+    --muted-foreground: 220 13% 55%;
+    --accent: 220 80% 92%;
+    --accent-foreground: 213 67% 12%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 246 23% 80%;
+    --input: 225 100% 95%;
+    --ring: 246 73% 49%;
     --radius: 0.5rem;
   }
 
+  /* Dark mode — Nocturnal Curator */
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
+    --background: 220 72% 8%;
+    --foreground: 220 50% 93%;
+    --card: 220 65% 10%;
+    --card-foreground: 220 50% 93%;
+    --popover: 220 50% 20%;
+    --popover-foreground: 220 50% 93%;
+    --primary: 238 100% 82%;
+    --primary-foreground: 220 72% 8%;
+    --secondary: 280 100% 75%;
+    --secondary-foreground: 220 72% 8%;
+    --muted: 220 62% 14%;
+    --muted-foreground: 225 22% 70%;
+    --accent: 220 55% 18%;
+    --accent-foreground: 220 50% 93%;
+    --destructive: 330 100% 71%;
+    --destructive-foreground: 220 72% 8%;
+    --border: 220 20% 30%;
+    --input: 220 65% 10%;
+    --ring: 238 100% 82%;
   }
 }
 
 @layer base {
   * {
-    border-color: hsl(var(--border));
+    border-color: hsl(var(--border) / 0.2);
   }
   body {
     background-color: hsl(var(--background));
     color: hsl(var(--foreground));
+    font-family: 'Inter', sans-serif;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+  h1, h2, h3, h4 {
+    font-family: 'Manrope', sans-serif;
+    letter-spacing: -0.02em;
+  }
+}
+
+@layer utilities {
+  /* Brand gradient — used for primary CTAs */
+  .gradient-brand {
+    background: linear-gradient(135deg, hsl(246 80% 62%), hsl(280 80% 62%));
+  }
+  .dark .gradient-brand {
+    background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--secondary)));
+  }
+  .gradient-brand-text {
+    background: linear-gradient(135deg, hsl(246 80% 52%), hsl(280 80% 52%));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .dark .gradient-brand-text {
+    background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--secondary)));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  /* Glassmorphism */
+  .glass {
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    background-color: hsl(var(--popover) / 0.7);
+  }
+  /* Metadata label style */
+  .label-meta {
+    font-size: 0.75rem;
+    font-weight: 500;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: hsl(var(--muted-foreground));
+  }
+  /* Ambient shadow for floating elements */
+  .shadow-ambient {
+    box-shadow: 0 12px 32px hsl(220 72% 4% / 0.4);
+  }
+  /* Active nav accent bar */
+  .nav-active {
+    position: relative;
+  }
+  .nav-active::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--secondary)));
+    border-radius: 0 2px 2px 0;
   }
 }

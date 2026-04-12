@@ -1,9 +1,30 @@
 import { GraphQLClient } from 'graphql-request';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+const explicitApiUrl = import.meta.env.VITE_API_URL?.trim();
+
+export function getApiUrl() {
+  if (explicitApiUrl) {
+    return explicitApiUrl.replace(/\/$/, '');
+  }
+
+  if (typeof window !== 'undefined') {
+    if (import.meta.env.DEV) {
+      return `${window.location.protocol}//${window.location.hostname}:4000`;
+    }
+    // In production:
+    // - direct web on :3000 should call backend on :4000
+    // - HTTPS reverse proxy should use same-origin paths
+    if (window.location.port === '3000') {
+      return `${window.location.protocol}//${window.location.hostname}:4000`;
+    }
+    return '';
+  }
+
+  return import.meta.env.DEV ? 'http://localhost:4000' : '';
+}
 
 export function createGraphQLClient(token?: string) {
-  return new GraphQLClient(`${API_URL}/graphql`, {
+  return new GraphQLClient(`${getApiUrl()}/graphql`, {
     headers: token
       ? {
           authorization: `Bearer ${token}`,

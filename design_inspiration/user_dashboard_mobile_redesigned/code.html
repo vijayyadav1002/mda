@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Manrope:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary-fixed": "#9396ff",
+                        "surface-variant": "#192540",
+                        "on-primary-fixed": "#000000",
+                        "on-secondary": "#33005b",
+                        "on-tertiary": "#4b002a",
+                        "on-error-container": "#ffb2b9",
+                        "surface": "#060e20",
+                        "on-background": "#dee5ff",
+                        "secondary-fixed-dim": "#dbb4ff",
+                        "on-tertiary-fixed-variant": "#740044",
+                        "background": "#060e20",
+                        "on-primary-fixed-variant": "#0e009d",
+                        "primary-container": "#9396ff",
+                        "error": "#ff6e84",
+                        "tertiary-fixed": "#ff8cbc",
+                        "surface-tint": "#a3a6ff",
+                        "on-secondary-fixed-variant": "#7511c3",
+                        "surface-dim": "#060e20",
+                        "inverse-on-surface": "#4d556b",
+                        "surface-container-highest": "#192540",
+                        "on-error": "#490013",
+                        "secondary": "#c180ff",
+                        "error-dim": "#d73357",
+                        "surface-container-low": "#091328",
+                        "on-primary-container": "#0a0081",
+                        "on-surface-variant": "#a3aac4",
+                        "on-surface": "#dee5ff",
+                        "error-container": "#a70138",
+                        "on-secondary-container": "#e9cdff",
+                        "on-tertiary-container": "#2f0018",
+                        "secondary-dim": "#9c48ea",
+                        "outline": "#6d758c",
+                        "tertiary-container": "#fa53a4",
+                        "surface-container-lowest": "#000000",
+                        "tertiary": "#ff6daf",
+                        "on-secondary-fixed": "#4f0089",
+                        "tertiary-dim": "#ff67ad",
+                        "primary-dim": "#6063ee",
+                        "secondary-fixed": "#e5c6ff",
+                        "tertiary-fixed-dim": "#ff73b1",
+                        "surface-container": "#0f1930",
+                        "surface-container-high": "#141f38",
+                        "inverse-surface": "#faf8ff",
+                        "outline-variant": "#40485d",
+                        "inverse-primary": "#494bd7",
+                        "on-tertiary-fixed": "#37001d",
+                        "on-primary": "#0f00a4",
+                        "surface-bright": "#1f2b49",
+                        "primary-fixed-dim": "#8387ff",
+                        "primary": "#a3a6ff",
+                        "secondary-container": "#6f00be"
+                    },
+                    fontFamily: {
+                        "headline": ["Manrope"],
+                        "body": ["Inter"],
+                        "label": ["Inter"]
+                    },
+                    borderRadius: {"DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem"},
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .signature-gradient {
+            background: linear-gradient(135deg, #a3a6ff 0%, #c180ff 100%);
+        }
+        .glass-panel {
+            background: rgba(31, 43, 73, 0.7);
+            backdrop-filter: blur(24px);
+        }
+        .hide-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .hide-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-surface text-on-surface font-body selection:bg-secondary/30">
+<!-- TopNavBar -->
+<header class="fixed top-0 w-full z-40 bg-[#060e20]/70 backdrop-blur-xl flex lg:hidden justify-between items-center px-6 h-16 w-full">
+<div class="flex items-center gap-3">
+<span class="text-lg font-black tracking-widest text-[#a3a6ff] font-headline">The Curator</span>
+</div>
+<div class="flex items-center gap-4">
+<button class="text-[#a3aac4] hover:text-[#c180ff] transition-opacity duration-300">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<div class="w-8 h-8 rounded-full overflow-hidden bg-surface-container-highest border border-outline-variant/20">
+<img alt="User Avatar" class="w-full h-full object-cover" data-alt="close-up portrait of a professional man with a friendly expression against a soft studio background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBPx1aJCLOHuqf2E5zcBYf2CY6v0TzKp1yzTM5RjsZqlxzqCJh_qELv5UrWoI1ssA4DtWy1H3uxU0olC0a1zwkK_hqU-7M8rr4kdeIhc6FZNzjI2DJMVol2XGKmlFHKYucI05ZGN1u2pp-yYR_lzMt-74uTV11EveEgrsFK_K1euBrpPJr0Aez-MCiHVRSkyRET2eyP-37JT-N8GLj-_xuB3ToXAvgYAnMdqaHkqkziZZ8qQtfN15NkucDFeu3gxjosz-A_SHkd2V2D"/>
+</div>
+</div>
+</header>
+<!-- SideNavBar (Hidden on Mobile) -->
+<nav class="hidden lg:flex flex-col py-8 z-50 h-screen w-64 fixed left-0 top-0 bg-[#091328]">
+<div class="px-8 mb-8">
+<h1 class="text-2xl font-bold tracking-tighter text-[#a3a6ff] font-headline">The Curator</h1>
+</div>
+<div class="flex-1 flex flex-col">
+<a class="flex items-center gap-3 px-4 py-3 bg-[#1f2b49] text-[#c180ff] border-l-4 border-[#c180ff] transition-all font-manrope text-sm font-medium" href="#">
+<span class="material-symbols-outlined">grid_view</span>
+                Library
+            </a>
+<a class="flex items-center gap-3 px-4 py-3 text-[#a3aac4] hover:bg-[#192540] hover:text-[#a3a6ff] transition-all font-manrope text-sm font-medium" href="#">
+<span class="material-symbols-outlined">folder_special</span>
+                Collections
+            </a>
+<a class="flex items-center gap-3 px-4 py-3 text-[#a3aac4] hover:bg-[#192540] hover:text-[#a3a6ff] transition-all font-manrope text-sm font-medium" href="#">
+<span class="material-symbols-outlined">share</span>
+                Shared
+            </a>
+<a class="flex items-center gap-3 px-4 py-3 text-[#a3aac4] hover:bg-[#192540] hover:text-[#a3a6ff] transition-all font-manrope text-sm font-medium" href="#">
+<span class="material-symbols-outlined">insights</span>
+                Analytics
+            </a>
+<a class="flex items-center gap-3 px-4 py-3 text-[#a3aac4] hover:bg-[#192540] hover:text-[#a3a6ff] transition-all font-manrope text-sm font-medium" href="#">
+<span class="material-symbols-outlined">settings</span>
+                Settings
+            </a>
+</div>
+</nav>
+<!-- Main Content Area -->
+<main class="pt-20 pb-24 px-6 min-h-screen max-w-md mx-auto">
+<!-- Search Bar (Mobile Inline) -->
+<div class="relative mb-8">
+<div class="absolute inset-y-0 left-4 flex items-center pointer-events-none">
+<span class="material-symbols-outlined text-on-surface-variant text-sm">search</span>
+</div>
+<input class="w-full bg-surface-container-lowest border border-outline-variant/20 rounded-xl py-3 pl-12 pr-4 text-on-surface focus:outline-none focus:border-primary transition-all placeholder:text-on-surface-variant/50 text-sm" placeholder="Search archive..." type="text"/>
+</div>
+<!-- Hero: New Project Card -->
+<section class="mb-10">
+<div class="relative group cursor-pointer overflow-hidden rounded-xl signature-gradient p-[1px]">
+<div class="bg-surface-container-low rounded-xl p-6 relative overflow-hidden h-48 flex flex-col justify-between">
+<!-- Background Decor -->
+<div class="absolute -right-4 -top-4 w-32 h-32 signature-gradient rounded-full blur-3xl opacity-20"></div>
+<div>
+<h2 class="font-headline text-2xl font-extrabold text-on-surface tracking-tight leading-tight">Create New<br/>Archive</h2>
+<p class="text-on-surface-variant text-xs mt-2 font-medium">Start curating your next project</p>
+</div>
+<button class="signature-gradient w-fit px-6 py-2.5 rounded-full flex items-center gap-2 shadow-lg shadow-primary/20">
+<span class="text-on-primary-fixed font-bold text-sm font-headline">New Project</span>
+<span class="material-symbols-outlined text-on-primary-fixed text-lg">add_circle</span>
+</button>
+</div>
+</div>
+</section>
+<!-- Collections Section (Horizontal Scroll) -->
+<section class="mb-10">
+<div class="flex justify-between items-end mb-4">
+<h3 class="font-headline text-lg font-bold text-on-surface">Collections</h3>
+<span class="text-primary text-xs font-semibold">View All</span>
+</div>
+<div class="flex gap-4 overflow-x-auto hide-scrollbar -mx-6 px-6 pb-2">
+<div class="flex-none w-36">
+<div class="aspect-square bg-surface-container-high rounded-xl mb-3 overflow-hidden group">
+<img alt="Collection 1" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" data-alt="abstract architectural shot of a modern museum interior with clean lines and soft shadows" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBg1RO-cMbOTdm0NLjReWKgjKeEmbslyVkh9UWmHf_ZvZuzDhqtIll--Z1-snkd78CkBim0CXXP27IXIygv7FizwS3TGgdUvoRF-oieWmg-4SyonOWkYN13VkUnuieSwZ1S36hf2ihI5e_HCrG40ZDImrMvy49EbNlQcx1B3DaxaVmR170OUogbPYibZoGRHT72ntl-Em3HBicZADJUYvqZe0mjLSHqGv6YB2e-gNo8OpBlh8Qwvd0-CH4lC_-X7vI4CPRM6HhpITV7"/>
+</div>
+<p class="text-sm font-semibold truncate px-1">Noir Cinematics</p>
+<p class="text-[10px] text-on-surface-variant px-1">128 items</p>
+</div>
+<div class="flex-none w-36">
+<div class="aspect-square bg-surface-container-high rounded-xl mb-3 overflow-hidden group">
+<img alt="Collection 2" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" data-alt="vibrant neon lights reflected in a rainy street puddle at night with deep purple and blue tones" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBIE1Jd5EjmTkJ-BpF9IdZttZ8qGo-aI_gFImPfDtxBissaXnriAq-F9YDGbwNszUUbwB9ERxDzwVJSie0wpRaVnSYyNveTafNVIGWr7RW8Rz2jgZlm8wiZrZe3iV9I_0PkqEZ1-solG2m6Ow9lBBA8G-Koxpd9g4-h-gila5vvYeRlHfsdWHgZPBoYfTGsVnYztXZK3p_XLd_QvHVu7sENagxOO9l5R53d33q3sCFwTypul8-ZSL1URpJC4u8R3hXXbKB6k4gbAdi8"/>
+</div>
+<p class="text-sm font-semibold truncate px-1">Neon Pulse</p>
+<p class="text-[10px] text-on-surface-variant px-1">45 items</p>
+</div>
+<div class="flex-none w-36">
+<div class="aspect-square bg-surface-container-high rounded-xl mb-3 overflow-hidden group">
+<img alt="Collection 3" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" data-alt="tranquil landscape of a misty mountain lake at dawn with ethereal soft lighting and reflection" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBuRbsA14CrZe4RUnR_cisqAz1Pwh2PBoE_A0xi25Ku7K--hFvDVSd3Z0YaoawIhk0gu60dJFYCabxpLnEcdvCvOAhHejVT6qAOZFK0XcRv0bWq45S3LhS3WEWZEAszGGTr5CM_iDQQgiAxitQxukMtGh-bKtXS_CB1nccYR64jiU5WtIkraw5-KQdD1NFr2ATPLaid_EH8X8eEwpOR_14ZjYcCS-Di1COted1KwYdB0Ir99U8IkHHNoicb-1BCNaLzhUxXqXtUkzZc"/>
+</div>
+<p class="text-sm font-semibold truncate px-1">Nature Study</p>
+<p class="text-[10px] text-on-surface-variant px-1">82 items</p>
+</div>
+</div>
+</section>
+<!-- Recent Media List -->
+<section class="mb-10">
+<div class="flex justify-between items-end mb-6">
+<h3 class="font-headline text-lg font-bold text-on-surface">Recent Media</h3>
+<span class="text-on-surface-variant text-xs font-medium">Filter</span>
+</div>
+<div class="space-y-4">
+<!-- Media Card 1 -->
+<div class="bg-surface-container-low p-4 rounded-xl flex items-center gap-4 group cursor-pointer hover:bg-surface-container-highest transition-all">
+<div class="w-16 h-16 rounded-lg overflow-hidden flex-none">
+<img alt="Media item" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" data-alt="extreme close-up of a high-end camera lens showing detailed glass reflections and complex mechanical housing" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBhR5CxksQ63qahMH2R75OBlJXv-OaO0hFBpoAC6PQRCSW-yYWlEZSRdN7iYencQZV8BFfvFyzlqAMx0u8y4NA3ftUqGjcZk2JLmJnxkDcus3l3fkIp_VzjQEzU0Ffl-G8jkmfcC9TZO5s0O9mlnHOzdjnbi4KMnzbCYXMpbaX4WwuVynb9TqdvIkXyaEYMSX_H0vZrcvNDG09v8f_0iEmNGeQ7pbLSlCoQkIhdnyrCSIAdqdiN1eA5L9IG_brfoiqdqcaT9T5xox0T"/>
+</div>
+<div class="flex-1 min-w-0">
+<h4 class="text-sm font-bold truncate text-on-surface">Archive_001_Final.mov</h4>
+<div class="flex items-center gap-2 mt-1">
+<span class="text-[10px] px-2 py-0.5 bg-surface-container-highest rounded-full text-primary font-medium">Video</span>
+<span class="text-[10px] text-on-surface-variant">2.4 GB</span>
+</div>
+</div>
+<button class="text-on-surface-variant">
+<span class="material-symbols-outlined text-lg">more_vert</span>
+</button>
+</div>
+<!-- Media Card 2 -->
+<div class="bg-surface-container-low p-4 rounded-xl flex items-center gap-4 group cursor-pointer hover:bg-surface-container-highest transition-all">
+<div class="w-16 h-16 rounded-lg overflow-hidden flex-none">
+<img alt="Media item" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" data-alt="vintage aesthetic of high-quality electronics with soft focus and warm retro lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDOEaiH1EqoNU7F5axz6ZgxY5JZ10Nzdl9fBA4lGDAxCsc-wFJMZoWcOFSRXuxmxMTf827IxgAxaXdTVhhWyu00opmzIgsjGmABB2bAUw-P4Sosz46yr1uC8-4GcU5ckA_nS7BUKAX-wJcsfbpVH9JA8tikxysZ1BjLfBNTapE9szPr69HjI_OOpzBA-H0QNC6J8I7ehVrfgujpyAg6Cn8L4dA9PjQDXIP9E-szv_oPXLDnSiiUa-AT9xxcbtytE33XEhuiOW55a4o9"/>
+</div>
+<div class="flex-1 min-w-0">
+<h4 class="text-sm font-bold truncate text-on-surface">Production_Notes_V2.pdf</h4>
+<div class="flex items-center gap-2 mt-1">
+<span class="text-[10px] px-2 py-0.5 bg-surface-container-highest rounded-full text-secondary font-medium">Document</span>
+<span class="text-[10px] text-on-surface-variant">12 MB</span>
+</div>
+</div>
+<button class="text-on-surface-variant">
+<span class="material-symbols-outlined text-lg">more_vert</span>
+</button>
+</div>
+<!-- Media Card 3 -->
+<div class="bg-surface-container-low p-4 rounded-xl flex items-center gap-4 group cursor-pointer hover:bg-surface-container-highest transition-all">
+<div class="w-16 h-16 rounded-lg overflow-hidden flex-none">
+<img alt="Media item" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" data-alt="wide shot of a futuristic urban skyline with glowing purple lights and heavy atmospheric haze" src="https://lh3.googleusercontent.com/aida-public/AB6AXuD3-4qpVCcojwRe8zueqKCbuGPo9fPHKsj754b_eKxc425h5b1DLlkPePfMa947IziYlE19T5Fd9j_oi6oEGadmgdPtxtTY3F3G__vYrOuGYq6oWmpQorXaQLdCrtZI8J_uXgQvz4xjopbK9LEGOis8UaPAMV998hI1zPfHYszj9gSVOXf7oFQKL2GLJ4xK4HpcnevI-POG-45RfdX91TEYD7f-Av3CHSAdShydtn7HNgaoeS6oUOFL_jHSO5f_NRU62PEZrt3sPkzT"/>
+</div>
+<div class="flex-1 min-w-0">
+<h4 class="text-sm font-bold truncate text-on-surface">Concept_Layout_04.jpg</h4>
+<div class="flex items-center gap-2 mt-1">
+<span class="text-[10px] px-2 py-0.5 bg-surface-container-highest rounded-full text-tertiary font-medium">Image</span>
+<span class="text-[10px] text-on-surface-variant">4.8 MB</span>
+</div>
+</div>
+<button class="text-on-surface-variant">
+<span class="material-symbols-outlined text-lg">more_vert</span>
+</button>
+</div>
+</div>
+</section>
+</main>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 w-full z-50 lg:hidden h-20 bg-[#060e20] flex justify-around items-center pb-safe px-4 shadow-[0_-4px_20px_rgba(0,0,0,0.4)]">
+<a class="flex flex-col items-center justify-center text-[#c180ff] scale-110 transition-transform" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">home</span>
+<span class="text-[10px] font-medium font-inter uppercase tracking-widest mt-1">Home</span>
+</a>
+<a class="flex flex-col items-center justify-center text-[#a3aac4] transition-all active:scale-95" href="#">
+<span class="material-symbols-outlined">search</span>
+<span class="text-[10px] font-medium font-inter uppercase tracking-widest mt-1">Search</span>
+</a>
+<a class="flex flex-col items-center justify-center text-[#a3aac4] transition-all active:scale-95" href="#">
+<span class="material-symbols-outlined">movie_filter</span>
+<span class="text-[10px] font-medium font-inter uppercase tracking-widest mt-1">Library</span>
+</a>
+<a class="flex flex-col items-center justify-center text-[#a3aac4] transition-all active:scale-95" href="#">
+<span class="material-symbols-outlined">person</span>
+<span class="text-[10px] font-medium font-inter uppercase tracking-widest mt-1">Profile</span>
+</a>
+</nav>
+</body></html>

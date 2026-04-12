@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Logout | The Curated Gallery</title>
+<!-- Google Fonts: Manrope -->
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@200;300;400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "surface-container-highest": "#d5e3fc",
+              "primary-container": "#4f46e5",
+              "surface-bright": "#f8f9ff",
+              "on-primary-container": "#dad7ff",
+              "on-secondary-fixed-variant": "#413f82",
+              "on-secondary-container": "#454386",
+              "on-tertiary-fixed": "#351000",
+              "tertiary-fixed": "#ffdbcc",
+              "on-tertiary": "#ffffff",
+              "on-secondary": "#ffffff",
+              "outline-variant": "#c7c4d8",
+              "tertiary-container": "#a44100",
+              "surface-container": "#e6eeff",
+              "background": "#f8f9ff",
+              "primary": "#3525cd",
+              "on-surface": "#0d1c2e",
+              "on-primary-fixed": "#0f0069",
+              "on-background": "#0d1c2e",
+              "on-tertiary-container": "#ffd2be",
+              "primary-fixed-dim": "#c3c0ff",
+              "tertiary": "#7e3000",
+              "on-error": "#ffffff",
+              "error": "#ba1a1a",
+              "on-primary": "#ffffff",
+              "surface-dim": "#ccdbf3",
+              "inverse-surface": "#233144",
+              "primary-fixed": "#e2dfff",
+              "tertiary-fixed-dim": "#ffb695",
+              "outline": "#777587",
+              "on-secondary-fixed": "#140f54",
+              "surface-container-high": "#dce9ff",
+              "on-primary-fixed-variant": "#3323cc",
+              "inverse-primary": "#c3c0ff",
+              "secondary": "#58579b",
+              "surface-tint": "#4d44e3",
+              "on-error-container": "#93000a",
+              "secondary-container": "#b6b4ff",
+              "surface-container-low": "#eff4ff",
+              "surface-container-lowest": "#ffffff",
+              "error-container": "#ffdad6",
+              "secondary-fixed": "#e2dfff",
+              "on-tertiary-fixed-variant": "#7b2f00",
+              "on-surface-variant": "#464555",
+              "surface": "#f8f9ff",
+              "secondary-fixed-dim": "#c3c0ff",
+              "surface-variant": "#d5e3fc",
+              "inverse-on-surface": "#eaf1ff"
+            },
+            fontFamily: {
+              "headline": ["Manrope", "sans-serif"],
+              "body": ["Manrope", "sans-serif"],
+              "label": ["Manrope", "sans-serif"]
+            },
+            borderRadius: {"DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem"},
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24;
+        }
+        .indigo-gradient {
+            background: linear-gradient(135deg, #4f46e5 0%, #3525cd 100%);
+        }
+    </style>
+</head>
+<body class="bg-background font-body text-on-surface min-h-screen flex items-center justify-center p-6 selection:bg-primary-container selection:text-white">
+<!-- Suppression of Shell: This is a transactional screen, so TopNavBar, SideNavBar, and BottomNavBar are omitted. -->
+<main class="w-full max-w-lg relative">
+<!-- Tonal Layering: Surface-Container-Lowest card on Surface background -->
+<div class="bg-surface-container-lowest rounded-xl p-8 md:p-12 text-center shadow-sm flex flex-col items-center">
+<!-- Subtle Iconography -->
+<div class="mb-8 w-16 h-16 rounded-full bg-surface-container-low flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-4xl" data-icon="logout">logout</span>
+</div>
+<!-- Header Typography: Editorial Headline -->
+<h1 class="font-headline text-3xl font-extrabold tracking-tighter text-on-surface mb-3 leading-tight">
+                Securely signing out?
+            </h1>
+<!-- Body Content: Clear messaging about unsaved changes -->
+<p class="text-on-surface-variant font-medium text-base mb-10 max-w-sm mx-auto leading-relaxed">
+                Before you leave, please ensure all your gallery edits are saved. You will need to sign in again to access your media library.
+            </p>
+<!-- Buttons & Actions -->
+<div class="flex flex-col sm:flex-row-reverse gap-4 w-full">
+<!-- Primary Action: Confirm Logout -->
+<button class="flex-1 indigo-gradient text-white font-bold py-4 px-6 rounded-lg shadow-lg shadow-indigo-500/20 active:scale-95 transition-all duration-200 text-sm tracking-wide">
+                    Confirm Logout
+                </button>
+<!-- Secondary Action: Return to Dashboard -->
+<button class="flex-1 bg-surface-container-high text-primary font-bold py-4 px-6 rounded-lg hover:bg-surface-container-highest active:scale-95 transition-all duration-200 text-sm tracking-wide">
+                    Return to Dashboard
+                </button>
+</div>
+<!-- Metadata Label: Editorial/Archival Style -->
+<div class="mt-12 pt-8 border-t border-outline-variant/20 w-full">
+<span class="font-label text-[10px] uppercase tracking-[0.2em] text-outline font-bold">
+                    The Curated Gallery • Session Security
+                </span>
+</div>
+</div>
+<!-- Background Aesthetic Element: Soft gradient glass circle for depth -->
+<div class="absolute -z-10 -top-12 -right-12 w-48 h-48 bg-indigo-200/20 rounded-full blur-3xl"></div>
+<div class="absolute -z-10 -bottom-12 -left-12 w-64 h-64 bg-slate-200/30 rounded-full blur-3xl"></div>
+</main>
+<!-- Visual Background Flourish (Gallery Aesthetic) -->
+<div class="fixed inset-0 -z-20 overflow-hidden pointer-events-none">
+<div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[140%] h-[140%] opacity-[0.03]">
+<img alt="abstract" class="w-full h-full object-cover grayscale" data-alt="minimalist abstract background with subtle shadows and geometric shapes in soft grey tones for a professional gallery aesthetic" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBlKzZAfufuu5SfUcng_xz80NewAsTDMF4pqDrH2cmv6js7Wa_iBvi-_9IyYOwie57qr_GX2kAIrx8WYKxQAw1wJ9HYIlP4IozpDRFm4E16VQStjSfoJqYd1oTMlA7t6iBuYqad-h29i_vO5qndaaHTJNmhoWL_-L7_lLec9hm7Q6BXtmVyzQ_VsBUlMISVbW5dN8i4m2rSiw13b4RHpSp3HATX0rQB09E3kwXp7Bv0-Yp95DJ_YmNVw2DWkDz5hxe5Q5clr8Lw_2Gn"/>
+</div>
+</div>
+</body></html>

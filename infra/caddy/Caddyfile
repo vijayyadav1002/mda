@@ -1,0 +1,9 @@
+{$MDA_HOSTNAME:localhost} {
+	tls internal
+	encode zstd gzip
+
+	@backend path /graphql /graphiql* /health /health/* /video* /image/* /media/* /thumbnails/* /hls/* /transcoded/*
+	reverse_proxy @backend app:4000
+
+	reverse_proxy app:3000
+}

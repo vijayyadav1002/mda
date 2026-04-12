@@ -1,0 +1,24 @@
+version: "3.8"
+
+services:
+  playwright:
+    image: mcr.microsoft.com/playwright:v1.38.0-focal
+    container_name: mda_playwright
+    working_dir: /work
+    volumes:
+      - ./:/work:cached
+      - /dev/shm:/dev/shm
+    environment:
+      - CI=true
+    depends_on:
+      - app
+    # The entrypoint installs dependencies and Playwright browsers, then keeps the container alive.
+    entrypoint: ["bash", "-lc", "npm ci --silent && npx playwright install --with-deps && tail -f /dev/null"]
+    # Expose common Playwright debug port if needed (not required for normal test runs)
+    ports:
+      - "9323:9323"
+    restart: unless-stopped
+
+# Usage:
+# docker compose -f .github/mcp-servers/docker-compose.playwright.yml up --build -d
+# docker compose -f .github/mcp-servers/docker-compose.playwright.yml exec playwright npx playwright test apps/web/tests/my.spec.ts

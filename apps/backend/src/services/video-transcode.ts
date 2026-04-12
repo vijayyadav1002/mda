@@ -31,7 +31,7 @@ export function startTranscodeCleanup() {
   setInterval(async () => {
     await cleanupInactiveTranscodes();
   }, CLEANUP_INTERVAL);
-  
+
   console.log('Transcode cleanup service started');
 }
 
@@ -90,7 +90,7 @@ export async function checkVideoCompatibility(videoPath: string): Promise<VideoI
       const container = path.extname(videoPath).toLowerCase();
       const codec = videoStream?.codec_name || 'unknown';
 
-      const needsTranscoding = 
+      const needsTranscoding =
         !WEB_COMPATIBLE_CODECS.has(codec.toLowerCase()) ||
         !WEB_COMPATIBLE_CONTAINERS.has(container);
 
@@ -123,13 +123,13 @@ export async function transcodeVideo(videoPath: string, assetId: string): Promis
   try {
     await fs.access(transcodedPath);
     console.log(`Using cached transcoded video: ${transcodedPath}`);
-    
+
     // Update access time
     activeTranscodes.set(transcodedPath, {
       startTime: Date.now(),
       lastAccessed: Date.now()
     });
-    
+
     return transcodedPath;
   } catch {
     // Not cached, need to transcode
@@ -139,7 +139,7 @@ export async function transcodeVideo(videoPath: string, assetId: string): Promis
 
   return new Promise((resolve, reject) => {
     const startTime = Date.now();
-    
+
     ffmpeg(videoPath)
       .outputOptions([
         '-c:v libx264',        // H.264 video codec
@@ -161,13 +161,13 @@ export async function transcodeVideo(videoPath: string, assetId: string): Promis
       })
       .on('end', () => {
         console.log(`✓ Transcoding complete: ${transcodedPath}`);
-        
+
         // Track this transcode
         activeTranscodes.set(transcodedPath, {
           startTime,
           lastAccessed: Date.now()
         });
-        
+
         resolve(transcodedPath);
       })
       .on('error', (err) => {
@@ -184,7 +184,7 @@ export async function transcodeVideo(videoPath: string, assetId: string): Promis
 export async function getWebCompatibleVideo(videoPath: string, assetId: string): Promise<string> {
   try {
     const info = await checkVideoCompatibility(videoPath);
-    
+
     if (!info.needsTranscoding) {
       console.log(`Video is web-compatible: ${path.basename(videoPath)}`);
       return videoPath;
@@ -205,7 +205,7 @@ export async function getWebCompatibleVideo(videoPath: string, assetId: string):
 export async function deleteTranscodedVideo(videoPath: string, assetId: string): Promise<void> {
   try {
     console.log(`[deleteTranscodedVideo] Called for asset ${assetId}, video path: ${videoPath}`);
-    
+
     // Generate the same cache key used during transcoding
     const stats = await fs.stat(videoPath);
     const cacheKey = crypto
@@ -220,13 +220,13 @@ export async function deleteTranscodedVideo(videoPath: string, assetId: string):
     try {
       await fs.access(transcodedPath);
       console.log(`[deleteTranscodedVideo] File exists, deleting...`);
-      
+
       // Delete the file
       await fs.unlink(transcodedPath);
-      
+
       // Remove from tracking
       activeTranscodes.delete(transcodedPath);
-      
+
       console.log(`✓ Deleted transcoded video: ${path.basename(transcodedPath)}`);
     } catch (accessError) {
       // File doesn't exist or was already deleted - this is expected if video was web-compatible
@@ -234,5 +234,92 @@ export async function deleteTranscodedVideo(videoPath: string, assetId: string):
     }
   } catch (error) {
     console.error(`[deleteTranscodedVideo] Error for asset ${assetId}:`, error);
+  }
+}
+
+function parseTimemarkToSeconds(timemark: string): number {
+  // FFmpeg timemark format: "HH:MM:SS.ms"
+  const parts = timemark.split(':');
+  if (parts.length !== 3) return 0;
+  const hours = Number.parseFloat(parts[0]) || 0;
+  const minutes = Number.parseFloat(parts[1]) || 0;
+  const seconds = Number.parseFloat(parts[2]) || 0;
+  return hours * 3600 + minutes * 60 + seconds;
+}
+
+async function probeDurationSeconds(videoPath: string): Promise<number> {
+  return new Promise((resolve) => {
+    ffmpeg.ffprobe(videoPath, (err, metadata) => {
+      if (err || !metadata?.format?.duration) {
+        resolve(0);
+        return;
+      }
+      resolve(Number(metadata.format.duration) || 0);
+    });
+  });
+}
+
+export async function transcodeToHLS(
+  videoPath: string,
+  outputDir: string,
+  opts?: { onProgress?: (percent: number) => void }
+): Promise<string> {
+  // Ensure output directory exists
+  await fs.mkdir(outputDir, { recursive: true });
+  const playlistPath = path.join(outputDir, 'master.m3u8');
+
+  const duration = await probeDurationSeconds(videoPath);
+
+  return new Promise((resolve, reject) => {
+    ffmpeg(videoPath)
+      .outputOptions([
+        '-profile:v baseline',
+        '-level 3.0',
+        '-start_number 0',
+        '-hls_time 4',
+        '-hls_list_size 0',
+        '-f hls'
+      ])
+      .output(playlistPath)
+      .on('progress', (progress) => {
+        if (!opts?.onProgress) return;
+        let percent = 0;
+        if (duration > 0 && progress.timemark) {
+          const elapsed = parseTimemarkToSeconds(progress.timemark);
+          percent = Math.min(99, Math.max(0, Math.round((elapsed / duration) * 100)));
+        } else if (typeof progress.percent === 'number' && !Number.isNaN(progress.percent)) {
+          percent = Math.min(99, Math.max(0, Math.round(progress.percent)));
+        }
+        opts.onProgress(percent);
+      })
+      .on('end', () => resolve(playlistPath))
+      .on('error', (err) => reject(err))
+      .run();
+  });
+}
+
+export async function ensureHLS(filePath: string, assetId: string): Promise<string> {
+  const hlsDir = path.join(path.dirname(config.thumbnailCachePath), 'hls', assetId);
+  const playlistPath = path.join(hlsDir, 'master.m3u8');
+
+  try {
+    await fs.access(playlistPath);
+    return playlistPath;
+  } catch {
+    console.log(`HLS not found for ${assetId}, triggering generation`);
+    // Dynamic import to avoid circular dependency if queue imports this
+    const { addToEncodingQueue } = await import('./queue.js');
+    await addToEncodingQueue({ filePath, assetId, type: 'hls' });
+
+    // Poll for creation (max 10s)
+    const start = Date.now();
+    while (Date.now() - start < 10000) {
+      await new Promise(r => setTimeout(r, 1000));
+      try {
+        await fs.access(playlistPath);
+        return playlistPath;
+      } catch { }
+    }
+    throw new Error('Video processing started. Please try again in moments.');
   }
 }
