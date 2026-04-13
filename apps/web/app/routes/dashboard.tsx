@@ -46,10 +46,6 @@ const GENERATE_THUMBNAILS_FOR_ASSETS_MUTATION = `
   }
 `;
 
-// When a folder holds more than this many media files we skip the bulk
-// "queue every file in this folder" auto-call and instead rely on a viewport
-// IntersectionObserver to request thumbnails only for cards near the screen.
-const LAZY_THUMBNAIL_FOLDER_THRESHOLD = 60;
 // Pre-fetch thumbnails slightly before the card scrolls into view for a
 // smoother experience on fast scrolls.
 const LAZY_THUMBNAIL_ROOT_MARGIN = "300px";
@@ -228,9 +224,8 @@ export default function Dashboard() {
   const thumbnailPollTimerRef = useRef<number | null>(null);
   const thumbnailPollAttemptsRef = useRef(0);
   const thumbnailPollInFlightRef = useRef(false);
-  const thumbnailQueueCooldownRef = useRef<Record<string, number>>({});
-  // Viewport-based dynamic thumbnail loading state. For large folders we only
-  // queue thumbnails for media whose card is (near) visible on screen.
+  // Viewport-based dynamic thumbnail loading state. Thumbnails are only
+  // queued for media whose card is (near) visible on screen.
   const thumbnailObserverRef = useRef<IntersectionObserver | null>(null);
   const observedThumbnailNodesRef = useRef<Map<Element, string>>(new Map());
   const pendingThumbnailIdsRef = useRef<Set<string>>(new Set());
@@ -407,29 +402,10 @@ export default function Dashboard() {
     }
   };
 
-  useEffect(() => {
-    if (!currentPath) return;
-    const folder = directoryCache[currentPath];
-    // Wait until the directory's children have been fetched before deciding
-    // whether to bulk-queue or rely on viewport-based dynamic loading.
-    if (!folder || folder.children === null || folder.children === undefined) return;
-    const mediaFileCount = (folder.children ?? []).filter(
-      (node) => node.type === "file" && !!node.mediaAsset
-    ).length;
-    // For large folders, skip the bulk auto-queue entirely. The
-    // IntersectionObserver below requests thumbnails only for cards near the
-    // viewport, so users scrolling through thousands of files only trigger
-    // thumbnail generation for what they actually see.
-    if (mediaFileCount > LAZY_THUMBNAIL_FOLDER_THRESHOLD) return;
-
-    const now = Date.now();
-    const lastQueuedAt = thumbnailQueueCooldownRef.current[currentPath] ?? 0;
-    if (now - lastQueuedAt < 60_000) return;
-    thumbnailQueueCooldownRef.current[currentPath] = now;
-    void generateThumbnailsForPath(currentPath, { silent: true }).catch((err) => {
-      console.error("Failed to auto-queue thumbnails:", err);
-    });
-  }, [currentPath, directoryCache]);
+  // Thumbnails are always requested on demand as cards enter the viewport
+  // (see IntersectionObserver + registerLazyThumbnailCard below). No folder
+  // is bulk-queued up front — that used to generate thumbnails for files the
+  // user never actually scrolled to.
 
   // Flush any pending viewport-collected asset IDs to the backend in a single
   // batched GraphQL mutation. Failures clear the "already requested" marker
