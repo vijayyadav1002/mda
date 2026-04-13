@@ -40,6 +40,23 @@ const GENERATE_THUMBNAILS_FOR_PATH_MUTATION = `
   }
 `;
 
+const GENERATE_THUMBNAILS_FOR_ASSETS_MUTATION = `
+  mutation GenerateThumbnailsForAssets($ids: [ID!]!) {
+    generateThumbnailsForAssets(ids: $ids)
+  }
+`;
+
+// When a folder holds more than this many media files we skip the bulk
+// "queue every file in this folder" auto-call and instead rely on a viewport
+// IntersectionObserver to request thumbnails only for cards near the screen.
+const LAZY_THUMBNAIL_FOLDER_THRESHOLD = 60;
+// Pre-fetch thumbnails slightly before the card scrolls into view for a
+// smoother experience on fast scrolls.
+const LAZY_THUMBNAIL_ROOT_MARGIN = "300px";
+// Debounce batching window: group viewport hits inside this window into a
+// single GraphQL mutation so a single scroll doesn't fire N requests.
+const LAZY_THUMBNAIL_FLUSH_MS = 250;
+
 const CONFIRM_COMPRESS_MUTATION = `
   mutation ConfirmCompressReplace($ids: [ID!]!) {
     confirmCompressReplace(ids: $ids) { id fileName fileSize }
@@ -212,6 +229,13 @@ export default function Dashboard() {
   const thumbnailPollAttemptsRef = useRef(0);
   const thumbnailPollInFlightRef = useRef(false);
   const thumbnailQueueCooldownRef = useRef<Record<string, number>>({});
+  // Viewport-based dynamic thumbnail loading state. For large folders we only
+  // queue thumbnails for media whose card is (near) visible on screen.
+  const thumbnailObserverRef = useRef<IntersectionObserver | null>(null);
+  const observedThumbnailNodesRef = useRef<Map<Element, string>>(new Map());
+  const pendingThumbnailIdsRef = useRef<Set<string>>(new Set());
+  const requestedThumbnailIdsRef = useRef<Set<string>>(new Set());
+  const flushThumbnailTimerRef = useRef<number | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -385,6 +409,19 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!currentPath) return;
+    const folder = directoryCache[currentPath];
+    // Wait until the directory's children have been fetched before deciding
+    // whether to bulk-queue or rely on viewport-based dynamic loading.
+    if (!folder || folder.children === null || folder.children === undefined) return;
+    const mediaFileCount = (folder.children ?? []).filter(
+      (node) => node.type === "file" && !!node.mediaAsset
+    ).length;
+    // For large folders, skip the bulk auto-queue entirely. The
+    // IntersectionObserver below requests thumbnails only for cards near the
+    // viewport, so users scrolling through thousands of files only trigger
+    // thumbnail generation for what they actually see.
+    if (mediaFileCount > LAZY_THUMBNAIL_FOLDER_THRESHOLD) return;
+
     const now = Date.now();
     const lastQueuedAt = thumbnailQueueCooldownRef.current[currentPath] ?? 0;
     if (now - lastQueuedAt < 60_000) return;
@@ -392,7 +429,105 @@ export default function Dashboard() {
     void generateThumbnailsForPath(currentPath, { silent: true }).catch((err) => {
       console.error("Failed to auto-queue thumbnails:", err);
     });
+  }, [currentPath, directoryCache]);
+
+  // Flush any pending viewport-collected asset IDs to the backend in a single
+  // batched GraphQL mutation. Failures clear the "already requested" marker
+  // so the next scroll can retry.
+  const flushPendingThumbnailRequests = useCallback(async () => {
+    flushThumbnailTimerRef.current = null;
+    const ids = Array.from(pendingThumbnailIdsRef.current);
+    pendingThumbnailIdsRef.current.clear();
+    if (ids.length === 0) return;
+    const token = getAuthToken();
+    if (!token) return;
+    try {
+      const client = createGraphQLClient(token);
+      await client.request(GENERATE_THUMBNAILS_FOR_ASSETS_MUTATION, { ids });
+    } catch (err) {
+      console.error("Failed to queue on-demand thumbnails:", err);
+      for (const id of ids) requestedThumbnailIdsRef.current.delete(id);
+    }
+  }, []);
+
+  // Lazily create one shared IntersectionObserver the first time a card's ref
+  // callback runs. This must exist before refs fire, so we can't defer it to
+  // useEffect (refs run earlier in the commit phase than effects).
+  const getThumbnailObserver = useCallback((): IntersectionObserver | null => {
+    if (thumbnailObserverRef.current) return thumbnailObserverRef.current;
+    if (typeof window === "undefined" || typeof IntersectionObserver === "undefined") return null;
+    const observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        const assetId = observedThumbnailNodesRef.current.get(entry.target);
+        if (!assetId) continue;
+        observer.unobserve(entry.target);
+        observedThumbnailNodesRef.current.delete(entry.target);
+        if (requestedThumbnailIdsRef.current.has(assetId)) continue;
+        requestedThumbnailIdsRef.current.add(assetId);
+        pendingThumbnailIdsRef.current.add(assetId);
+      }
+      if (pendingThumbnailIdsRef.current.size > 0 && flushThumbnailTimerRef.current == null) {
+        flushThumbnailTimerRef.current = window.setTimeout(
+          flushPendingThumbnailRequests,
+          LAZY_THUMBNAIL_FLUSH_MS,
+        );
+      }
+    }, { rootMargin: LAZY_THUMBNAIL_ROOT_MARGIN });
+    thumbnailObserverRef.current = observer;
+    return observer;
+  }, [flushPendingThumbnailRequests]);
+
+  // Tear down the observer when the Dashboard unmounts.
+  useEffect(() => {
+    return () => {
+      const observer = thumbnailObserverRef.current;
+      if (observer) {
+        observer.disconnect();
+        thumbnailObserverRef.current = null;
+      }
+      observedThumbnailNodesRef.current.clear();
+      if (flushThumbnailTimerRef.current != null) {
+        window.clearTimeout(flushThumbnailTimerRef.current);
+        flushThumbnailTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  // When the user navigates to a different folder, forget which thumbnails we
+  // have already asked for so the new folder can request its own assets.
+  useEffect(() => {
+    requestedThumbnailIdsRef.current.clear();
+    pendingThumbnailIdsRef.current.clear();
+    const observer = thumbnailObserverRef.current;
+    if (observer) {
+      for (const el of observedThumbnailNodesRef.current.keys()) {
+        observer.unobserve(el);
+      }
+    }
+    observedThumbnailNodesRef.current.clear();
+    if (flushThumbnailTimerRef.current != null) {
+      window.clearTimeout(flushThumbnailTimerRef.current);
+      flushThumbnailTimerRef.current = null;
+    }
   }, [currentPath]);
+
+  // Ref callback attached to the thumbnail <div> of each card that is
+  // currently missing a thumbnail. Registering an element starts observing it;
+  // when the element unmounts React invokes the callback with null, at which
+  // point we unobserve the previous node for that asset id.
+  const registerLazyThumbnailCard = useCallback(
+    (assetId: string) => (element: HTMLDivElement | null) => {
+      if (!element) return;
+      const observer = getThumbnailObserver();
+      if (!observer) return;
+      if (requestedThumbnailIdsRef.current.has(assetId)) return;
+      if (observedThumbnailNodesRef.current.has(element)) return;
+      observedThumbnailNodesRef.current.set(element, assetId);
+      observer.observe(element);
+    },
+    [getThumbnailObserver],
+  );
 
   const handleAssetClick = (asset: MediaAsset) => {
     if (selectionMode) {
@@ -1416,12 +1551,17 @@ export default function Dashboard() {
 
                       {/* Thumbnail — 4:5 portrait */}
                       {/* overflow-hidden is on the inner div so the download button isn't clipped */}
-                      <div className="aspect-[4/5] bg-muted relative">
+                      <div
+                        className="aspect-[4/5] bg-muted relative"
+                        ref={asset.thumbnailUrl ? undefined : registerLazyThumbnailCard(asset.id)}
+                      >
                         <div className="absolute inset-0 overflow-hidden">
                           {asset.thumbnailUrl ? (
                             <img
                               src={`${API_URL}${asset.thumbnailUrl}`}
                               alt={asset.fileName}
+                              loading="lazy"
+                              decoding="async"
                               className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                             />
                           ) : (
