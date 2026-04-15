@@ -1,0 +1,85 @@
+graph TB
+    subgraph Client["Browser"]
+        UI[Remix UI<br/>React 18 + Tailwind + shadcn]
+    end
+
+    subgraph Proxy["Edge"]
+        Caddy[Caddy<br/>HTTPS reverse proxy]
+    end
+
+    subgraph Web["apps/web — Remix + Vite :3000"]
+        Routes[Routes<br/>dashboard · login · users]
+        ApiClient[graphql-request client<br/>app/lib/api.ts]
+        AuthCtx[Auth token store<br/>getAuthToken]
+        Routes --> ApiClient
+        Routes --> AuthCtx
+    end
+
+    subgraph Backend["apps/backend — Fastify :4000 (ESM)"]
+        Entry[index.ts<br/>Fastify Server Entry]
+        Start[start bootstrap<br/>index.ts:953]
+        GQL[Mercurius GraphQL<br/>schema.ts + resolvers.ts]
+        Ctx[GraphQL Context<br/>JWT verify]
+
+        subgraph Services["src/services"]
+            Auth[auth<br/>bcrypt + JWT]
+            Indexer[media-indexer]
+            Watcher[media-watcher<br/>chokidar]
+            Thumb[thumbnail<br/>sharp · libheif · ffmpeg]
+            Trans[video-transcode<br/>HLS]
+            Queue[queue<br/>BullMQ workers]
+            Cache[cache-maintenance<br/>LRU eviction]
+            Audit[audit log]
+        end
+
+        Entry --> GQL
+        Entry --> Ctx
+        GQL --> Ctx
+        Start --> Auth
+        Start --> Indexer
+        Start --> Watcher
+        Start --> Trans
+        Start --> Cache
+        Start --> Queue
+        Start --> Entry
+    end
+
+    subgraph Infra["Docker Compose"]
+        PG[(PostgreSQL 16)]
+        Redis[(Redis)]
+        FS[/media-files<br/>mounted at /data/media/]
+        CacheDir[/cache<br/>thumbnails + HLS/]
+    end
+
+    UI -->|HTTPS| Caddy
+    Caddy --> Routes
+    ApiClient -->|GraphQL over HTTP<br/>JWT in header| GQL
+
+    Ctx --> Auth
+    GQL --> Indexer
+    GQL --> Thumb
+    GQL --> Trans
+    GQL --> Queue
+
+    Auth --> PG
+    Indexer --> PG
+    Indexer --> FS
+    Watcher --> FS
+    Watcher --> Indexer
+    Thumb --> FS
+    Thumb --> CacheDir
+    Trans --> FS
+    Trans --> CacheDir
+    Queue --> Redis
+    Queue --> Thumb
+    Queue --> Trans
+    Cache --> CacheDir
+    Cache --> PG
+    Audit --> PG
+
+    classDef svc fill:#1e3a5f,stroke:#4a90e2,color:#fff
+    classDef store fill:#2d4a2d,stroke:#5cb85c,color:#fff
+    classDef edge fill:#4a2d4a,stroke:#b85cb8,color:#fff
+    class Auth,Indexer,Watcher,Thumb,Trans,Queue,Cache,Audit svc
+    class PG,Redis,FS,CacheDir store
+    class Caddy edge
