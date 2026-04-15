@@ -1,0 +1,7 @@
+node_modules/
+.turbo/
+media-files/
+cache/
+public/
+dist/
+build/
