@@ -2,7 +2,7 @@ import { db } from '../db/index.js';
 import { hashPassword, verifyPassword } from '../services/auth.js';
 import { logAudit } from '../services/audit.js';
 import { compressImage, compressVideo, compressImageAdvanced, compressVideoAdvanced } from '../services/thumbnail.js';
-import { enqueueMediaRefresh } from '../services/queue.js';
+import { enqueueMediaRefresh, addToThumbnailQueue } from '../services/queue.js';
 import { cleanupDeletedAssetCaches } from '../services/media-cleanup.js';
 import { indexFile } from '../services/media-indexer.js';
 import type { GraphQLContext } from './context.js';
@@ -723,6 +723,67 @@ export const resolvers = {
         // Delay before next batch to throttle job production (except on last batch)
         if (i + BATCH_SIZE < mediaFiles.length) {
           await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS));
+        }
+      }
+
+      return queuedCount;
+    },
+
+    generateThumbnailsForAssets: async (_: any, args: { ids: string[] }, context: GraphQLContext) => {
+      if (!context.user) throw new Error('Unauthorized');
+
+      const numericIds = Array.from(
+        new Set(
+          (args.ids ?? [])
+            .map((raw) => Number.parseInt(String(raw), 10))
+            .filter((n) => Number.isInteger(n) && n > 0)
+        )
+      );
+      if (numericIds.length === 0) return 0;
+
+      // Cap the number of ids we consider per call so a malicious or buggy
+      // client cannot ask us to re-queue the entire library in one request.
+      const MAX_IDS_PER_CALL = 200;
+      const boundedIds = numericIds.slice(0, MAX_IDS_PER_CALL);
+
+      // Fetch asset rows for the requested ids. Only queue thumbnails for assets
+      // that are currently missing a usable thumbnail file on disk so repeated
+      // viewport requests don't re-queue the same work.
+      const result = await db.query(
+        'SELECT id, file_path, thumbnail_path, mime_type FROM media_assets WHERE id = ANY($1::int[])',
+        [boundedIds]
+      );
+
+      let queuedCount = 0;
+      for (const row of result.rows) {
+        const thumbPath = row.thumbnail_path as string | null;
+        let hasUsableThumbnail = false;
+        if (thumbPath) {
+          try {
+            const thumbStat = await fs.stat(thumbPath);
+            hasUsableThumbnail = thumbStat.size > 0;
+          } catch {
+            hasUsableThumbnail = false;
+          }
+        }
+        if (hasUsableThumbnail) continue;
+
+        const filePath = row.file_path as string;
+        const ext = path.extname(filePath).toLowerCase();
+        if (!SUPPORTED_FORMATS.has(ext)) continue;
+
+        const mimeType = (row.mime_type as string | null) ?? '';
+        const isVideo = mimeType.startsWith('video/') || SUPPORTED_VIDEO_FORMATS.includes(ext);
+
+        try {
+          await addToThumbnailQueue({
+            filePath,
+            assetId: String(row.id),
+            mediaType: isVideo ? 'video' : 'image'
+          });
+          queuedCount += 1;
+        } catch (error) {
+          console.warn(`[GenerateThumbnailsForAssets] Failed to queue ${path.basename(filePath)}: ${error instanceof Error ? error.message : String(error)}`);
         }
       }
 
