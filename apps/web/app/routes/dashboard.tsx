@@ -1234,6 +1234,36 @@ export default function Dashboard() {
               <div className="pt-4 space-y-2">
                 <button
                   type="button"
+                  onClick={() => { handleRefreshMediaLibrary(); setMobileMenuOpen(false); }}
+                  disabled={isRefreshing}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-muted-foreground hover:bg-accent hover:text-foreground transition-all disabled:opacity-50"
+                >
+                  <RotateCcw className={`w-4 h-4 ${isRefreshing ? "animate-spin" : ""}`} />
+                  {isRefreshing ? "Refreshing…" : "Refresh Library"}
+                </button>
+                {(user?.role === "admin" || user?.role === "editor") && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => { handleGenerateThumbnails(); setMobileMenuOpen(false); }}
+                      disabled={isGeneratingThumbnails || !currentPath}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-muted-foreground hover:bg-accent hover:text-foreground transition-all disabled:opacity-40"
+                    >
+                      <ImagePlus className="w-4 h-4" />
+                      {isGeneratingThumbnails ? "Queuing…" : "Generate Thumbnails"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setUploadTargetPath(currentPath || rootPath || ''); setShowUploadDialog(true); setMobileMenuOpen(false); }}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl gradient-brand text-[#060e20] font-manrope font-bold text-sm shadow-ambient hover:opacity-90 transition-opacity"
+                    >
+                      <Upload className="w-4 h-4" />
+                      Upload Media
+                    </button>
+                  </>
+                )}
+                <button
+                  type="button"
                   onClick={() => { setDarkMode(!darkMode); setMobileMenuOpen(false); }}
                   className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-muted-foreground hover:bg-accent hover:text-foreground transition-all"
                 >
