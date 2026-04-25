@@ -51,11 +51,27 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Tags table (global, shared, normalized to lowercase)
+CREATE TABLE IF NOT EXISTS tags (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(64) UNIQUE NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Junction table linking media assets to tags
+CREATE TABLE IF NOT EXISTS media_asset_tags (
+  media_asset_id INTEGER REFERENCES media_assets(id) ON DELETE CASCADE,
+  tag_id INTEGER REFERENCES tags(id) ON DELETE CASCADE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (media_asset_id, tag_id)
+);
+
 -- Create indexes
 CREATE INDEX IF NOT EXISTS idx_media_assets_file_path ON media_assets(file_path);
 CREATE INDEX IF NOT EXISTS idx_media_assets_mime_type ON media_assets(mime_type);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs(user_id);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at);
+CREATE INDEX IF NOT EXISTS idx_media_asset_tags_tag ON media_asset_tags(tag_id);
 `;
 
 export async function migrate() {
