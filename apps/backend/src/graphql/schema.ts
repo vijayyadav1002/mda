@@ -22,6 +22,14 @@ export const schema = `
     indexedAt: String!
     createdAt: String!
     updatedAt: String!
+    tags: [Tag!]!
+  }
+
+  type Tag {
+    id: ID!
+    name: String!
+    createdAt: String!
+    assetCount: Int!
   }
 
   type AuditLog {
@@ -57,6 +65,8 @@ export const schema = `
     directoryNode(path: String): DirectoryNode!
     auditLogs(limit: Int, offset: Int): [AuditLog!]!
     hasAdminUser: Boolean!
+    tags: [Tag!]!
+    mediaAssetsByTag(tagName: String!, limit: Int, offset: Int): [MediaAsset!]!
   }
 
   type Mutation {
@@ -81,6 +91,10 @@ export const schema = `
 
     createFolder(parentPath: String, name: String!): DirectoryNode!
     deleteFolder(path: String!): Boolean!
+
+    applyTagsToAssets(assetIds: [ID!]!, tagNames: [String!]!): [MediaAsset!]!
+    removeTagFromAsset(assetId: ID!, tagName: String!): MediaAsset!
+    deleteTag(name: String!): Boolean!
   }
 
   input CompressOptionsInput {
