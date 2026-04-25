@@ -94,6 +94,7 @@ export const schema = `
 
     applyTagsToAssets(assetIds: [ID!]!, tagNames: [String!]!): [MediaAsset!]!
     removeTagFromAsset(assetId: ID!, tagName: String!): MediaAsset!
+    renameTag(oldName: String!, newName: String!): Tag!
     deleteTag(name: String!): Boolean!
   }
 

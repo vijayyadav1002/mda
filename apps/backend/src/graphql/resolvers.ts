@@ -14,7 +14,8 @@ import {
   getTagByName,
   getTagsForAssets,
   getAssetsByTagName,
-  deleteTagByName
+  deleteTagByName,
+  renameTag as renameTagService
 } from '../services/tags.js';
 import type { GraphQLContext } from './context.js';
 import fs from 'fs/promises';
@@ -1177,6 +1178,21 @@ export const resolvers = {
       }
 
       return removed;
+    },
+
+    renameTag: async (_: any, args: { oldName: string; newName: string }, context: GraphQLContext) => {
+      if (!context.user || !['admin', 'editor'].includes(context.user.role)) {
+        throw new Error('Admin or Editor access required');
+      }
+
+      const updated = await renameTagService(args.oldName, args.newName);
+
+      await logAudit(context.user.id, 'RENAME_TAG', 'tag', updated.id, {
+        oldName: normalizeTagName(args.oldName),
+        newName: updated.name
+      });
+
+      return mapTagRow({ ...updated, asset_count: 0 });
     }
   }
 };
