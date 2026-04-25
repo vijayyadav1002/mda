@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { useNavigate } from "@remix-run/react";
+import { useNavigate, useSearchParams } from "@remix-run/react";
 import { createGraphQLClient, getApiUrl, getAuthToken, clearAuthToken } from "~/lib/api";
 import { Input } from "~/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "~/components/ui/dialog";
@@ -300,6 +300,16 @@ export default function Dashboard() {
   const requestedThumbnailIdsRef = useRef<Set<string>>(new Set());
   const flushThumbnailTimerRef = useRef<number | null>(null);
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  useEffect(() => {
+    if (searchParams.get("queue") === "open") {
+      setShowQueuePanel(true);
+      const next = new URLSearchParams(searchParams);
+      next.delete("queue");
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
