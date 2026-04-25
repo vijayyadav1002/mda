@@ -6,12 +6,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "~/components/u
 import { MediaAssetViewer } from "~/components/MediaAssetViewer";
 import { CompressDialog } from "~/components/CompressDialog";
 import { CompressQueuePanel, type CompressJob } from "~/components/CompressQueuePanel";
+import { TagDialog, type TagSuggestion } from "~/components/TagDialog";
 import {
   Folder, FileImage, ArrowLeft, ChevronDown, ChevronRight,
   Trash2, CheckSquare, Square, Users, Key, RotateCcw,
   Menu, X, ImagePlus, ArrowUpDown, Minimize2,
   Upload, LogOut, Download, FolderPlus, ListTodo,
-  Moon, Sun, User,
+  Moon, Sun, User, Tag as TagIcon,
 } from "lucide-react";
 
 const API_URL = getApiUrl();
@@ -91,6 +92,7 @@ const DIRECTORY_NODE_QUERY = `
     thumbnailUrl
     transcodedUrl
     createdAt
+    tags { id name }
   }
 
   fragment DirNode on DirectoryNode {
@@ -112,6 +114,42 @@ const DIRECTORY_NODE_QUERY = `
   }
 `;
 
+const LIST_TAGS_QUERY = `
+  query ListTags {
+    tags { id name assetCount }
+  }
+`;
+
+const MEDIA_ASSETS_BY_TAG_QUERY = `
+  query MediaAssetsByTag($tagName: String!, $limit: Int, $offset: Int) {
+    mediaAssetsByTag(tagName: $tagName, limit: $limit, offset: $offset) {
+      id
+      fileName
+      filePath
+      mimeType
+      fileSize
+      thumbnailUrl
+      transcodedUrl
+      createdAt
+      tags { id name }
+    }
+  }
+`;
+
+const APPLY_TAGS_MUTATION = `
+  mutation ApplyTagsToAssets($assetIds: [ID!]!, $tagNames: [String!]!) {
+    applyTagsToAssets(assetIds: $assetIds, tagNames: $tagNames) {
+      id
+      tags { id name }
+    }
+  }
+`;
+
+interface TagSummary {
+  id: string;
+  name: string;
+}
+
 interface MediaAsset {
   id: string;
   fileName: string;
@@ -120,6 +158,7 @@ interface MediaAsset {
   fileSize: string;
   thumbnailUrl: string | null;
   createdAt: string;
+  tags?: TagSummary[];
 }
 
 interface DirectoryNode {
@@ -208,6 +247,14 @@ export default function Dashboard() {
   const sortMenuRef = useRef<HTMLDivElement>(null);
   const [isCompressDialogOpen, setIsCompressDialogOpen] = useState(false);
   const [compressDialogAssets, setCompressDialogAssets] = useState<MediaAsset[]>([]);
+  const [isTagDialogOpen, setIsTagDialogOpen] = useState(false);
+  const [tagDialogAssets, setTagDialogAssets] = useState<MediaAsset[]>([]);
+  const [tagSuggestions, setTagSuggestions] = useState<TagSuggestion[]>([]);
+  const [showTagFilterMenu, setShowTagFilterMenu] = useState(false);
+  const [activeTagFilter, setActiveTagFilter] = useState<string | null>(null);
+  const [tagFilterAssets, setTagFilterAssets] = useState<MediaAsset[]>([]);
+  const [tagFilterLoading, setTagFilterLoading] = useState(false);
+  const tagFilterMenuRef = useRef<HTMLDivElement>(null);
   const [compressQueue, setCompressQueue] = useState<CompressJob[]>([]);
   const [showQueuePanel, setShowQueuePanel] = useState(false);
   const compressQueueRef = useRef<CompressJob[]>([]);
@@ -252,6 +299,7 @@ export default function Dashboard() {
     }
     loadData();
     loadUser();
+    refreshTagSuggestions();
   }, []);
 
   const loadUser = async () => {
@@ -319,6 +367,65 @@ export default function Dashboard() {
       setLoading(false);
     }
   };
+
+  const refreshTagSuggestions = useCallback(async () => {
+    const token = getAuthToken();
+    if (!token) return;
+    try {
+      const client = createGraphQLClient(token);
+      const data: any = await client.request(LIST_TAGS_QUERY);
+      const tags: TagSuggestion[] = (data?.tags ?? []).map((t: any) => ({
+        id: String(t.id),
+        name: t.name,
+        assetCount: t.assetCount ?? 0,
+      }));
+      setTagSuggestions(tags);
+    } catch (err) {
+      console.error("Failed to load tags:", err);
+    }
+  }, []);
+
+  const loadTagFilterAssets = useCallback(async (tagName: string) => {
+    const token = getAuthToken();
+    if (!token) return;
+    setTagFilterLoading(true);
+    try {
+      const client = createGraphQLClient(token);
+      const data: any = await client.request(MEDIA_ASSETS_BY_TAG_QUERY, {
+        tagName,
+        limit: 500,
+        offset: 0,
+      });
+      setTagFilterAssets((data?.mediaAssetsByTag ?? []) as MediaAsset[]);
+    } catch (err: any) {
+      console.error("Failed to load tag filter:", err);
+      setTagFilterAssets([]);
+    } finally {
+      setTagFilterLoading(false);
+    }
+  }, []);
+
+  const applyTagFilter = useCallback(async (tagName: string) => {
+    setActiveTagFilter(tagName);
+    setShowTagFilterMenu(false);
+    await loadTagFilterAssets(tagName);
+  }, [loadTagFilterAssets]);
+
+  const clearTagFilter = useCallback(() => {
+    setActiveTagFilter(null);
+    setTagFilterAssets([]);
+  }, []);
+
+  const applyTagsToAssets = useCallback(async (assetIds: string[], tagNames: string[]) => {
+    const token = getAuthToken();
+    if (!token) throw new Error("Not authenticated");
+    const client = createGraphQLClient(token);
+    await client.request(APPLY_TAGS_MUTATION, { assetIds, tagNames });
+    await refreshTagSuggestions();
+    if (currentPath) await loadDirectoryIntoCache(currentPath);
+    if (rootPath && rootPath !== currentPath) await loadDirectoryIntoCache(rootPath);
+    if (activeTagFilter) await loadTagFilterAssets(activeTagFilter);
+  }, [activeTagFilter, currentPath, loadTagFilterAssets, refreshTagSuggestions, rootPath]);
 
   const handleLogout = () => {
     clearAuthToken();
@@ -914,10 +1021,21 @@ export default function Dashboard() {
   }, [directoryCache, rootPath]);
   const isCurrentFolderLoading = !!currentFolder && currentFolder.children === null;
 
+  const tagFilterNodes = useMemo<DirectoryNode[]>(() => {
+    return tagFilterAssets.map((asset) => ({
+      name: asset.fileName,
+      path: asset.filePath,
+      type: "file",
+      children: null,
+      mediaAsset: asset,
+    }));
+  }, [tagFilterAssets]);
+
   const sortedFolderChildren = useMemo(() => {
-    if (sortOption === "default") return currentFolderChildren;
-    const folders = currentFolderChildren.filter((n) => n.type === "directory");
-    const files = currentFolderChildren.filter((n) => n.type !== "directory");
+    const baseChildren = activeTagFilter ? tagFilterNodes : currentFolderChildren;
+    if (sortOption === "default") return baseChildren;
+    const folders = baseChildren.filter((n) => n.type === "directory");
+    const files = baseChildren.filter((n) => n.type !== "directory");
     const sorted = [...files].sort((a, b) => {
       if (sortOption === "size-asc" || sortOption === "size-desc") {
         const sizeA = a.mediaAsset ? parseInt(a.mediaAsset.fileSize) || 0 : 0;
@@ -929,7 +1047,7 @@ export default function Dashboard() {
       return sortOption === "date-asc" ? dateA - dateB : dateB - dateA;
     });
     return [...folders, ...sorted];
-  }, [currentFolderChildren, sortOption]);
+  }, [activeTagFilter, currentFolderChildren, sortOption, tagFilterNodes]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -940,6 +1058,16 @@ export default function Dashboard() {
     if (showSortMenu) document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [showSortMenu]);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (tagFilterMenuRef.current && !tagFilterMenuRef.current.contains(e.target as Node)) {
+        setShowTagFilterMenu(false);
+      }
+    };
+    if (showTagFilterMenu) document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showTagFilterMenu]);
 
   useEffect(() => {
     if (!currentPath) return;
@@ -1075,10 +1203,16 @@ export default function Dashboard() {
   };
 
   const isAtRoot = currentPath === rootPath;
-  const heroTitle = !isAtRoot && currentFolder ? currentFolder.name : "Your Collection";
-  const heroSubtitle = !isAtRoot
-    ? `${folderHistory.length + 1} level${folderHistory.length > 0 ? "s" : ""} deep`
-    : "Organized precision for your creative assets and digital artifacts.";
+  const heroTitle = activeTagFilter
+    ? `#${activeTagFilter}`
+    : !isAtRoot && currentFolder
+      ? currentFolder.name
+      : "Your Collection";
+  const heroSubtitle = activeTagFilter
+    ? `${tagFilterAssets.length} tagged file${tagFilterAssets.length === 1 ? "" : "s"} across your library`
+    : !isAtRoot
+      ? `${folderHistory.length + 1} level${folderHistory.length > 0 ? "s" : ""} deep`
+      : "Organized precision for your creative assets and digital artifacts.";
 
   if (loading) {
     return (
@@ -1292,7 +1426,16 @@ export default function Dashboard() {
         {/* Toolbar */}
         <div className="md:sticky md:top-0 z-10 bg-background/80 backdrop-blur-sm px-4 md:px-10 py-3 flex items-center justify-between gap-2 md:gap-4">
           <div className="flex items-center gap-3 min-w-0">
-            {folderHistory.length > 0 && (
+            {activeTagFilter && (
+              <button
+                type="button"
+                onClick={clearTagFilter}
+                className="flex items-center gap-1.5 text-sm text-brand-primary hover:opacity-80 transition-opacity"
+              >
+                <ArrowLeft className="w-4 h-4" /> Exit tag filter
+              </button>
+            )}
+            {!activeTagFilter && folderHistory.length > 0 && (
               <button
                 type="button"
                 onClick={() => void handleBackClick()}
@@ -1301,7 +1444,7 @@ export default function Dashboard() {
                 <ArrowLeft className="w-4 h-4" /> Back
               </button>
             )}
-            {!isAtRoot && currentFolder && (
+            {!activeTagFilter && !isAtRoot && currentFolder && (
               <span className="text-xs text-muted-foreground bg-muted px-3 py-1 rounded-full truncate max-w-[200px]">
                 {currentFolder.name}
               </span>
@@ -1374,6 +1517,23 @@ export default function Dashboard() {
                     </button>
                     <button
                       type="button"
+                      onClick={() => {
+                        const pool: MediaAsset[] = activeTagFilter
+                          ? tagFilterAssets
+                          : sortedFolderChildren
+                              .filter((n) => n.type === "file" && n.mediaAsset)
+                              .map((n) => n.mediaAsset!);
+                        setTagDialogAssets(pool.filter((a) => selectedAssetIds.has(a.id)));
+                        setIsTagDialogOpen(true);
+                      }}
+                      className="flex items-center gap-1 px-2.5 py-2 rounded-xl text-sm text-brand-primary hover:bg-accent transition-all"
+                    >
+                      <TagIcon className="w-4 h-4" />
+                      <span className="hidden sm:inline">Tag</span>
+                      <span className="text-xs">({selectedAssetIds.size})</span>
+                    </button>
+                    <button
+                      type="button"
                       onClick={handleDeleteSelected}
                       className="flex items-center gap-1 px-2.5 py-2 rounded-xl text-sm text-destructive hover:bg-destructive/10 transition-all"
                     >
@@ -1398,6 +1558,71 @@ export default function Dashboard() {
                 <span className="hidden md:inline">New Folder</span>
               </button>
             )}
+
+            {/* Tag filter */}
+            <div className="relative" ref={tagFilterMenuRef}>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!showTagFilterMenu) refreshTagSuggestions();
+                  setShowTagFilterMenu((p) => !p);
+                }}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm transition-all ${
+                  activeTagFilter
+                    ? "text-brand-primary bg-brand-primary/10"
+                    : "text-muted-foreground hover:text-foreground hover:bg-accent"
+                }`}
+                title={activeTagFilter ? `Filtered by #${activeTagFilter}` : "Filter by tag"}
+              >
+                <TagIcon className="w-4 h-4" />
+                <span className="hidden sm:inline">
+                  {activeTagFilter ? `#${activeTagFilter}` : "Tags"}
+                </span>
+                {activeTagFilter && (
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    onClick={(e) => { e.stopPropagation(); clearTagFilter(); }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        clearTagFilter();
+                      }
+                    }}
+                    className="ml-1 hover:bg-brand-primary/20 rounded-full p-0.5 cursor-pointer"
+                    aria-label="Clear tag filter"
+                  >
+                    <X className="w-3 h-3" />
+                  </span>
+                )}
+              </button>
+              {showTagFilterMenu && (
+                <div className="absolute right-0 top-full mt-1 w-56 bg-card border border-border/20 rounded-xl shadow-ambient z-50 py-1 overflow-hidden max-h-80 overflow-y-auto">
+                  {tagSuggestions.length === 0 ? (
+                    <p className="px-4 py-3 text-xs text-muted-foreground">
+                      No tags yet. Select files and apply a tag to start.
+                    </p>
+                  ) : (
+                    tagSuggestions.map((tag) => (
+                      <button
+                        key={tag.id}
+                        type="button"
+                        onClick={() => void applyTagFilter(tag.name)}
+                        className={`w-full flex items-center justify-between px-4 py-2 text-sm transition-colors ${
+                          activeTagFilter === tag.name
+                            ? "text-brand-primary font-medium bg-accent"
+                            : "text-muted-foreground hover:text-foreground hover:bg-accent"
+                        }`}
+                      >
+                        <span>#{tag.name}</span>
+                        <span className="text-xs">{tag.assetCount}</span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
 
             {/* Sort */}
             <div className="relative" ref={sortMenuRef}>
@@ -1477,7 +1702,7 @@ export default function Dashboard() {
             <div className="text-right flex-shrink-0">
               <p className="label-meta">Total Items</p>
               <p className="font-manrope text-2xl font-bold text-foreground">
-                {currentFolderChildren.length}
+                {activeTagFilter ? tagFilterAssets.length : currentFolderChildren.length}
               </p>
             </div>
           </div>
@@ -1604,6 +1829,27 @@ export default function Dashboard() {
                         <p className="label-meta mt-1">
                           {formatBytes(asset.fileSize)} · {formatDate(asset.createdAt)}
                         </p>
+                        {asset.tags && asset.tags.length > 0 && (
+                          <div className="mt-2 flex flex-wrap gap-1">
+                            {asset.tags.map((tag) => (
+                              <button
+                                key={tag.id}
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  void applyTagFilter(tag.name);
+                                }}
+                                className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium transition-colors ${
+                                  activeTagFilter === tag.name
+                                    ? "bg-brand-primary text-[#060e20]"
+                                    : "bg-brand-primary/10 text-brand-primary hover:bg-brand-primary/20"
+                                }`}
+                              >
+                                #{tag.name}
+                              </button>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
                   );
@@ -1612,15 +1858,22 @@ export default function Dashboard() {
               })}
 
               {/* Empty states */}
-              {isCurrentFolderLoading && (
+              {(activeTagFilter ? tagFilterLoading : isCurrentFolderLoading) && (
                 <div className="col-span-full flex flex-col items-center justify-center py-24 text-muted-foreground">
                   <div className="w-10 h-10 rounded-2xl gradient-brand flex items-center justify-center mx-auto mb-4 animate-pulse">
                     <Folder className="w-5 h-5 text-[#060e20]" />
                   </div>
-                  <p className="text-sm">Loading folder…</p>
+                  <p className="text-sm">{activeTagFilter ? "Loading tagged files…" : "Loading folder…"}</p>
                 </div>
               )}
-              {!isCurrentFolderLoading && sortedFolderChildren.length === 0 && (
+              {activeTagFilter && !tagFilterLoading && sortedFolderChildren.length === 0 && (
+                <div className="col-span-full flex flex-col items-center justify-center py-24 text-muted-foreground">
+                  <TagIcon className="w-16 h-16 opacity-20 mb-4" />
+                  <p className="font-manrope font-semibold text-foreground">No files with #{activeTagFilter}</p>
+                  <p className="text-sm mt-1">Apply this tag to media files to see them here.</p>
+                </div>
+              )}
+              {!activeTagFilter && !isCurrentFolderLoading && sortedFolderChildren.length === 0 && (
                 <div className="col-span-full flex flex-col items-center justify-center py-24 text-muted-foreground">
                   <Folder className="w-16 h-16 opacity-20 mb-4" />
                   <p className="font-manrope font-semibold text-foreground">This folder is empty</p>
@@ -1666,6 +1919,19 @@ export default function Dashboard() {
         onAddToQueue={(options) => {
           addToCompressQueue(compressDialogAssets, options);
           setIsCompressDialogOpen(false);
+          setSelectionMode(false);
+          setSelectedAssetIds(new Set());
+        }}
+      />
+
+      <TagDialog
+        isOpen={isTagDialogOpen}
+        onClose={() => setIsTagDialogOpen(false)}
+        selectedAssets={tagDialogAssets}
+        suggestions={tagSuggestions}
+        onApply={async (tagNames) => {
+          await applyTagsToAssets(tagDialogAssets.map((a) => a.id), tagNames);
+          setIsTagDialogOpen(false);
           setSelectionMode(false);
           setSelectedAssetIds(new Set());
         }}
