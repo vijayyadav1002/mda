@@ -12,7 +12,7 @@ import {
   Trash2, CheckSquare, Square, Users, Key, RotateCcw,
   Menu, X, ImagePlus, ArrowUpDown, Minimize2,
   Upload, LogOut, Download, FolderPlus, ListTodo,
-  Moon, Sun, User, Tag as TagIcon,
+  Moon, Sun, User, Tag as TagIcon, Pencil,
 } from "lucide-react";
 
 const API_URL = getApiUrl();
@@ -142,6 +142,27 @@ const APPLY_TAGS_MUTATION = `
       id
       tags { id name }
     }
+  }
+`;
+
+const REMOVE_TAG_MUTATION = `
+  mutation RemoveTagFromAsset($assetId: ID!, $tagName: String!) {
+    removeTagFromAsset(assetId: $assetId, tagName: $tagName) {
+      id
+      tags { id name }
+    }
+  }
+`;
+
+const RENAME_TAG_MUTATION = `
+  mutation RenameTag($oldName: String!, $newName: String!) {
+    renameTag(oldName: $oldName, newName: $newName) { id name }
+  }
+`;
+
+const DELETE_TAG_MUTATION = `
+  mutation DeleteTag($name: String!) {
+    deleteTag(name: $name)
   }
 `;
 
@@ -426,6 +447,64 @@ export default function Dashboard() {
     if (rootPath && rootPath !== currentPath) await loadDirectoryIntoCache(rootPath);
     if (activeTagFilter) await loadTagFilterAssets(activeTagFilter);
   }, [activeTagFilter, currentPath, loadTagFilterAssets, refreshTagSuggestions, rootPath]);
+
+  const removeTagFromAsset = useCallback(async (assetId: string, tagName: string) => {
+    const token = getAuthToken();
+    if (!token) return;
+    try {
+      const client = createGraphQLClient(token);
+      await client.request(REMOVE_TAG_MUTATION, { assetId, tagName });
+      await refreshTagSuggestions();
+      if (currentPath) await loadDirectoryIntoCache(currentPath);
+      if (activeTagFilter) await loadTagFilterAssets(activeTagFilter);
+    } catch (err: any) {
+      console.error("Failed to remove tag:", err);
+      alert(`Failed to remove tag: ${err.message || "Unknown error"}`);
+    }
+  }, [activeTagFilter, currentPath, loadTagFilterAssets, refreshTagSuggestions]);
+
+  const handleRenameTag = useCallback(async (oldName: string) => {
+    const input = window.prompt(`Rename #${oldName} to:`, oldName);
+    if (input == null) return;
+    const newName = input.trim().replace(/^#/, "").toLowerCase();
+    if (!newName || newName === oldName) return;
+    const token = getAuthToken();
+    if (!token) return;
+    try {
+      const client = createGraphQLClient(token);
+      await client.request(RENAME_TAG_MUTATION, { oldName, newName });
+      await refreshTagSuggestions();
+      if (currentPath) await loadDirectoryIntoCache(currentPath);
+      if (activeTagFilter === oldName) {
+        setActiveTagFilter(newName);
+        await loadTagFilterAssets(newName);
+      } else if (activeTagFilter) {
+        await loadTagFilterAssets(activeTagFilter);
+      }
+    } catch (err: any) {
+      console.error("Failed to rename tag:", err);
+      alert(`Failed to rename tag: ${err.message || "Unknown error"}`);
+    }
+  }, [activeTagFilter, currentPath, loadTagFilterAssets, refreshTagSuggestions]);
+
+  const handleDeleteTag = useCallback(async (name: string) => {
+    if (!window.confirm(`Delete #${name} from every file in the library? This cannot be undone.`)) return;
+    const token = getAuthToken();
+    if (!token) return;
+    try {
+      const client = createGraphQLClient(token);
+      await client.request(DELETE_TAG_MUTATION, { name });
+      await refreshTagSuggestions();
+      if (currentPath) await loadDirectoryIntoCache(currentPath);
+      if (activeTagFilter === name) {
+        setActiveTagFilter(null);
+        setTagFilterAssets([]);
+      }
+    } catch (err: any) {
+      console.error("Failed to delete tag:", err);
+      alert(`Failed to delete tag: ${err.message || "Unknown error"}`);
+    }
+  }, [activeTagFilter, currentPath, refreshTagSuggestions]);
 
   const handleLogout = () => {
     clearAuthToken();
@@ -1598,27 +1677,58 @@ export default function Dashboard() {
                 )}
               </button>
               {showTagFilterMenu && (
-                <div className="absolute right-0 top-full mt-1 w-56 bg-card border border-border/20 rounded-xl shadow-ambient z-50 py-1 overflow-hidden max-h-80 overflow-y-auto">
+                <div className="absolute right-0 top-full mt-1 w-64 bg-card border border-border/20 rounded-xl shadow-ambient z-50 py-1 overflow-hidden max-h-80 overflow-y-auto">
                   {tagSuggestions.length === 0 ? (
                     <p className="px-4 py-3 text-xs text-muted-foreground">
                       No tags yet. Select files and apply a tag to start.
                     </p>
                   ) : (
-                    tagSuggestions.map((tag) => (
-                      <button
-                        key={tag.id}
-                        type="button"
-                        onClick={() => void applyTagFilter(tag.name)}
-                        className={`w-full flex items-center justify-between px-4 py-2 text-sm transition-colors ${
-                          activeTagFilter === tag.name
-                            ? "text-brand-primary font-medium bg-accent"
-                            : "text-muted-foreground hover:text-foreground hover:bg-accent"
-                        }`}
-                      >
-                        <span>#{tag.name}</span>
-                        <span className="text-xs">{tag.assetCount}</span>
-                      </button>
-                    ))
+                    tagSuggestions.map((tag) => {
+                      const canEdit = user?.role === "admin" || user?.role === "editor";
+                      return (
+                        <div
+                          key={tag.id}
+                          className={`group flex items-center px-2 transition-colors ${
+                            activeTagFilter === tag.name ? "bg-accent" : "hover:bg-accent"
+                          }`}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => void applyTagFilter(tag.name)}
+                            className={`flex-1 flex items-center justify-between px-2 py-2 text-sm text-left ${
+                              activeTagFilter === tag.name
+                                ? "text-brand-primary font-medium"
+                                : "text-muted-foreground group-hover:text-foreground"
+                            }`}
+                          >
+                            <span>#{tag.name}</span>
+                            <span className="text-xs">{tag.assetCount}</span>
+                          </button>
+                          {canEdit && (
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); void handleRenameTag(tag.name); }}
+                              className="p-1.5 rounded-lg text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-foreground hover:bg-background transition-all"
+                              title={`Rename #${tag.name}`}
+                              aria-label={`Rename ${tag.name}`}
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          {user?.role === "admin" && (
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); void handleDeleteTag(tag.name); }}
+                              className="p-1.5 rounded-lg text-destructive opacity-0 group-hover:opacity-100 hover:bg-destructive/10 transition-all"
+                              title={`Delete #${tag.name}`}
+                              aria-label={`Delete ${tag.name}`}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })
                   )}
                 </div>
               )}
@@ -1832,21 +1942,43 @@ export default function Dashboard() {
                         {asset.tags && asset.tags.length > 0 && (
                           <div className="mt-2 flex flex-wrap gap-1">
                             {asset.tags.map((tag) => (
-                              <button
+                              <span
                                 key={tag.id}
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  void applyTagFilter(tag.name);
-                                }}
-                                className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium transition-colors ${
+                                className={`inline-flex items-center rounded-full pl-1.5 text-[10px] font-medium transition-colors ${
                                   activeTagFilter === tag.name
                                     ? "bg-brand-primary text-[#060e20]"
                                     : "bg-brand-primary/10 text-brand-primary hover:bg-brand-primary/20"
                                 }`}
                               >
-                                #{tag.name}
-                              </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    void applyTagFilter(tag.name);
+                                  }}
+                                  className="py-0.5 pr-1"
+                                  title={`Filter by #${tag.name}`}
+                                >
+                                  #{tag.name}
+                                </button>
+                                {!selectionMode && (user?.role === "admin" || user?.role === "editor") && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      void removeTagFromAsset(asset.id, tag.name);
+                                    }}
+                                    className="px-1 py-0.5 rounded-r-full hover:bg-brand-primary/30 transition-colors"
+                                    title={`Remove #${tag.name} from this file`}
+                                    aria-label={`Remove ${tag.name}`}
+                                  >
+                                    <X className="w-2.5 h-2.5" />
+                                  </button>
+                                )}
+                                {(selectionMode || (user?.role !== "admin" && user?.role !== "editor")) && (
+                                  <span className="pr-1.5" />
+                                )}
+                              </span>
                             ))}
                           </div>
                         )}

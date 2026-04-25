@@ -133,3 +133,26 @@ export async function deleteTagByName(name: string): Promise<boolean> {
   const result = await db.query('DELETE FROM tags WHERE name = $1', [normalized]);
   return (result.rowCount ?? 0) > 0;
 }
+
+export async function renameTag(oldName: string, newName: string): Promise<TagRow> {
+  const oldNormalized = normalizeTagName(oldName);
+  const newNormalized = normalizeTagName(newName);
+
+  if (oldNormalized === newNormalized) {
+    const existing = await getTagByName(oldNormalized);
+    if (!existing) throw new Error('Tag not found');
+    return existing;
+  }
+
+  const conflict = await db.query('SELECT id FROM tags WHERE name = $1', [newNormalized]);
+  if (conflict.rows.length > 0) {
+    throw new Error(`A tag named "${newNormalized}" already exists`);
+  }
+
+  const result = await db.query(
+    'UPDATE tags SET name = $1 WHERE name = $2 RETURNING *',
+    [newNormalized, oldNormalized]
+  );
+  if (result.rows.length === 0) throw new Error('Tag not found');
+  return result.rows[0];
+}
