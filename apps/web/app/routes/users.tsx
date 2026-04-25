@@ -1,11 +1,12 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "@remix-run/react";
 import { createGraphQLClient, getAuthToken, clearAuthToken } from "~/lib/api";
+import { useActiveQueueCount } from "~/lib/useActiveQueueCount";
 import { Input } from "~/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "~/components/ui/dialog";
 import {
   UserPlus, Trash2, Edit, Key, ArrowLeft,
-  Users, Folder,
+  Users, Folder, ListTodo,
   LogOut, User, Moon, Sun,
 } from "lucide-react";
 
@@ -76,11 +77,13 @@ function SidebarNavItem({
   label,
   active,
   onClick,
+  badge,
 }: {
   icon: React.ElementType;
   label: string;
   active?: boolean;
   onClick?: () => void;
+  badge?: number;
 }) {
   return (
     <button
@@ -94,6 +97,11 @@ function SidebarNavItem({
     >
       <Icon className="w-4 h-4 flex-shrink-0" />
       {label}
+      {badge != null && badge > 0 && (
+        <span className="ml-auto w-5 h-5 gradient-brand rounded-full flex items-center justify-center text-[10px] font-bold text-[#060e20]">
+          {badge > 9 ? "9+" : badge}
+        </span>
+      )}
     </button>
   );
 }
@@ -131,6 +139,7 @@ export default function UsersPage() {
     return true;
   });
   const navigate = useNavigate();
+  const activeQueueCount = useActiveQueueCount();
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -276,6 +285,12 @@ export default function UsersPage() {
 
         <nav className="flex-1 px-3 space-y-0.5">
           <SidebarNavItem icon={Folder} label="Collections" onClick={() => navigate("/dashboard")} />
+          <SidebarNavItem
+            icon={ListTodo}
+            label="Queue"
+            onClick={() => navigate("/dashboard?queue=open")}
+            badge={activeQueueCount || undefined}
+          />
           <SidebarNavItem icon={Users} label="Users" active />
         </nav>
 
