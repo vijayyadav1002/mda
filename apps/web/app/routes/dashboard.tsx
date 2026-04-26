@@ -276,6 +276,8 @@ export default function Dashboard() {
   const [tagFilterAssets, setTagFilterAssets] = useState<MediaAsset[]>([]);
   const [tagFilterLoading, setTagFilterLoading] = useState(false);
   const tagFilterMenuRef = useRef<HTMLDivElement>(null);
+  const tagFilterTriggerRef = useRef<HTMLButtonElement>(null);
+  const [tagFilterMenuRight, setTagFilterMenuRight] = useState<number>(0);
   const [compressQueue, setCompressQueue] = useState<CompressJob[]>([]);
   const [showQueuePanel, setShowQueuePanel] = useState(false);
   const compressQueueRef = useRef<CompressJob[]>([]);
@@ -1651,10 +1653,21 @@ export default function Dashboard() {
             {/* Tag filter */}
             <div className="relative" ref={tagFilterMenuRef}>
               <button
+                ref={tagFilterTriggerRef}
                 type="button"
                 onClick={() => {
-                  if (!showTagFilterMenu) refreshTagSuggestions();
-                  setShowTagFilterMenu((p) => !p);
+                  const next = !showTagFilterMenu;
+                  if (next) {
+                    refreshTagSuggestions();
+                    const rect = tagFilterTriggerRef.current?.getBoundingClientRect();
+                    if (rect) {
+                      const menuWidth = Math.min(256, window.innerWidth - 16);
+                      const minRight = rect.right - window.innerWidth + 8;
+                      const maxRight = rect.right - menuWidth - 8;
+                      setTagFilterMenuRight(Math.max(minRight, Math.min(0, maxRight)));
+                    }
+                  }
+                  setShowTagFilterMenu(next);
                 }}
                 className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm transition-all ${
                   activeTagFilter
@@ -1687,7 +1700,10 @@ export default function Dashboard() {
                 )}
               </button>
               {showTagFilterMenu && (
-                <div className="absolute right-0 top-full mt-1 w-64 bg-card border border-border/20 rounded-xl shadow-ambient z-50 py-1 overflow-hidden max-h-80 overflow-y-auto">
+                <div
+                  className="absolute top-full mt-1 w-64 max-w-[calc(100vw-1rem)] bg-card border border-border/20 rounded-xl shadow-ambient z-50 py-1 max-h-80 overflow-y-auto"
+                  style={{ right: tagFilterMenuRight }}
+                >
                   {tagSuggestions.length === 0 ? (
                     <p className="px-4 py-3 text-xs text-muted-foreground">
                       No tags yet. Select files and apply a tag to start.
@@ -2051,6 +2067,13 @@ export default function Dashboard() {
             setCompressDialogAssets([selectedAsset]);
             setIsCompressDialogOpen(true);
           }
+        }}
+        onRemoveTag={async (tagName) => {
+          if (!selectedAsset) return;
+          await removeTagFromAsset(selectedAsset.id, tagName);
+          setSelectedAsset((prev) =>
+            prev ? { ...prev, tags: (prev.tags ?? []).filter((t) => t.name !== tagName) } : prev
+          );
         }}
       />
 

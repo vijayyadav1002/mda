@@ -12,6 +12,11 @@ interface TranscodeProgress {
   playlistReady?: boolean;
 }
 
+interface AssetTag {
+  id: string;
+  name: string;
+}
+
 interface MediaAsset {
   id: string;
   fileName: string;
@@ -21,6 +26,7 @@ interface MediaAsset {
   thumbnailUrl: string | null;
   transcodedUrl?: string;
   createdAt: string;
+  tags?: AssetTag[];
 }
 
 interface MediaAssetViewerProps {
@@ -30,6 +36,7 @@ interface MediaAssetViewerProps {
   readonly apiUrl: string;
   readonly userRole?: string;
   readonly onCompress?: () => void;
+  readonly onRemoveTag?: (tagName: string) => void | Promise<void>;
 }
 
 function formatFileSize(bytes: string) {
@@ -58,7 +65,10 @@ export function MediaAssetViewer({
   apiUrl,
   userRole,
   onCompress,
+  onRemoveTag,
 }: Readonly<MediaAssetViewerProps>) {
+  const canEditTags = userRole === "admin" || userRole === "editor";
+  const [removingTag, setRemovingTag] = useState<string | null>(null);
   const [imageDimensions, setImageDimensions] = useState({ width: 0, height: 0 });
   const [currentVideoId, setCurrentVideoId] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -486,6 +496,41 @@ export function MediaAssetViewer({
                   </span>
                 ))}
             </div>
+
+            {(asset.tags && asset.tags.length > 0) && (
+              <>
+                <p className="label-meta mt-5 mb-3">Tags</p>
+                <div className="flex flex-wrap gap-2">
+                  {asset.tags.map((tag) => (
+                    <span
+                      key={tag.id}
+                      className="inline-flex items-center gap-1 rounded-full bg-brand-primary/10 text-brand-primary text-xs font-medium pl-3 pr-1 py-1"
+                    >
+                      <span>#{tag.name}</span>
+                      {canEditTags && onRemoveTag && (
+                        <button
+                          type="button"
+                          disabled={removingTag === tag.name}
+                          onClick={async () => {
+                            setRemovingTag(tag.name);
+                            try {
+                              await onRemoveTag(tag.name);
+                            } finally {
+                              setRemovingTag(null);
+                            }
+                          }}
+                          className="p-1 rounded-full hover:bg-brand-primary/20 transition-colors disabled:opacity-50"
+                          aria-label={`Remove ${tag.name}`}
+                          title={`Remove #${tag.name}`}
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      )}
+                    </span>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
 
           {/* Spacer */}
