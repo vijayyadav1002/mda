@@ -4,6 +4,7 @@ import { logAudit } from '../services/audit.js';
 import { compressImage, compressVideo, compressImageAdvanced, compressVideoAdvanced } from '../services/thumbnail.js';
 import { enqueueMediaRefresh, addToThumbnailQueue } from '../services/queue.js';
 import { cleanupDeletedAssetCaches } from '../services/media-cleanup.js';
+import { getCacheStats, clearCacheByType } from '../services/cache-maintenance.js';
 import { indexFile } from '../services/media-indexer.js';
 import {
   normalizeTagName,
@@ -306,6 +307,13 @@ export const resolvers = {
       const offset = args.offset || 0;
       const rows = await getAssetsByTagName(args.tagName, limit, offset);
       return rows.map(mapMediaAssetRow);
+    },
+
+    cacheStats: async (_: any, __: any, context: GraphQLContext) => {
+      if (!context.user || context.user.role !== 'admin') {
+        throw new Error('Admin access required');
+      }
+      return getCacheStats();
     }
   },
 
@@ -1193,6 +1201,16 @@ export const resolvers = {
       });
 
       return mapTagRow({ ...updated, asset_count: 0 });
+    },
+
+    clearCache: async (_: any, args: { type: string }, context: GraphQLContext) => {
+      if (!context.user || context.user.role !== 'admin') {
+        throw new Error('Admin access required');
+      }
+      const allowed = ['thumbnails', 'previews', 'hls', 'transcoded', 'all'];
+      if (!allowed.includes(args.type)) throw new Error(`Unknown cache type: ${args.type}`);
+      await clearCacheByType(args.type as 'thumbnails' | 'previews' | 'hls' | 'transcoded' | 'all');
+      return getCacheStats();
     }
   }
 };

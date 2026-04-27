@@ -12,7 +12,7 @@ import {
   Trash2, CheckSquare, Square, Users, Key, RotateCcw,
   Menu, X, ImagePlus, ArrowUpDown, Minimize2,
   Upload, LogOut, Download, FolderPlus, ListTodo,
-  Moon, Sun, User, Tag as TagIcon, Pencil,
+  Moon, Sun, User, Tag as TagIcon, Pencil, HardDrive,
 } from "lucide-react";
 
 const API_URL = getApiUrl();
@@ -166,6 +166,30 @@ const DELETE_TAG_MUTATION = `
   }
 `;
 
+const CACHE_STATS_QUERY = `
+  query CacheStats {
+    cacheStats {
+      totalBytes
+      thumbnails { label bytes fileCount maxBytes }
+      previews   { label bytes fileCount maxBytes }
+      hls        { label bytes fileCount maxBytes }
+      transcoded { label bytes fileCount maxBytes }
+    }
+  }
+`;
+
+const CLEAR_CACHE_MUTATION = `
+  mutation ClearCache($type: String!) {
+    clearCache(type: $type) {
+      totalBytes
+      thumbnails { label bytes fileCount maxBytes }
+      previews   { label bytes fileCount maxBytes }
+      hls        { label bytes fileCount maxBytes }
+      transcoded { label bytes fileCount maxBytes }
+    }
+  }
+`;
+
 interface TagSummary {
   id: string;
   name: string;
@@ -190,10 +214,26 @@ interface DirectoryNode {
   mediaAsset?: MediaAsset;
 }
 
+interface CacheTypeStats {
+  label: string;
+  bytes: number;
+  fileCount: number;
+  maxBytes: number;
+}
+
+interface CacheStats {
+  thumbnails: CacheTypeStats;
+  previews: CacheTypeStats;
+  hls: CacheTypeStats;
+  transcoded: CacheTypeStats;
+  totalBytes: number;
+}
+
 function formatBytes(bytes: string | number) {
   const n = typeof bytes === "string" ? parseInt(bytes) : bytes;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
-  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
+  return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`;
 }
 
 function formatDate(iso: string) {
@@ -289,6 +329,8 @@ export default function Dashboard() {
   const [showNewFolderDialog, setShowNewFolderDialog] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
+  const [cacheStats, setCacheStats] = useState<CacheStats | null>(null);
+  const [showCachePanel, setShowCachePanel] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const refreshInFlightRef = useRef(false);
   const thumbnailPollTimerRef = useRef<number | null>(null);
@@ -742,6 +784,24 @@ export default function Dashboard() {
     window.location.href = url;
   };
 
+  const handleClearCache = async (type: string) => {
+    if (!window.confirm(`Clear ${type === "all" ? "all caches" : `${type} cache`}? This cannot be undone.`)) return;
+    try {
+      const token = getAuthToken();
+      if (!token) return;
+      const client = createGraphQLClient(token);
+      const data = await client.request<{ clearCache: CacheStats }>(CLEAR_CACHE_MUTATION, { type });
+      setCacheStats(data.clearCache);
+      // Flush stale directory state so thumbnailUrl/transcodedUrl reflect the nulled DB rows
+      setDirectoryCache({});
+      if (rootPath) await loadDirectoryIntoCache(rootPath);
+      if (currentPath && currentPath !== rootPath) await loadDirectoryIntoCache(currentPath);
+    } catch (err) {
+      console.error("Failed to clear cache:", err);
+      alert("Failed to clear cache. Please try again.");
+    }
+  };
+
   const handleDeleteSelected = async () => {
     if (selectedAssetIds.size === 0) return;
     const confirmDelete = window.confirm(
@@ -1160,6 +1220,23 @@ export default function Dashboard() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [showTagFilterMenu]);
 
+  const fetchCacheStats = useCallback(async () => {
+    const token = getAuthToken();
+    if (!token) return;
+    try {
+      const client = createGraphQLClient(token);
+      const data = await client.request<{ cacheStats: CacheStats }>(CACHE_STATS_QUERY);
+      setCacheStats(data.cacheStats);
+    } catch { /* non-critical */ }
+  }, []);
+
+  useEffect(() => {
+    if (user?.role !== "admin") return;
+    void fetchCacheStats();
+    const id = window.setInterval(fetchCacheStats, 10_000);
+    return () => window.clearInterval(id);
+  }, [user?.role, fetchCacheStats]);
+
   useEffect(() => {
     if (!currentPath) return;
     const hasMissingThumbnails = currentFolderChildren.some(
@@ -1359,6 +1436,55 @@ export default function Dashboard() {
 
         {/* Bottom */}
         <div className="px-3 pb-6 space-y-3">
+          {/* Cache stats (admin only) */}
+          {user?.role === "admin" && cacheStats && (
+            <div className="rounded-xl border border-border/20 overflow-hidden">
+              <button
+                type="button"
+                onClick={() => { setShowCachePanel((p) => { if (!p) void fetchCacheStats(); return !p; }); }}
+                className="w-full flex items-center justify-between px-3 py-2.5 text-sm text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-all"
+              >
+                <span className="flex items-center gap-2">
+                  <HardDrive className="w-4 h-4 flex-shrink-0" />
+                  Cache
+                </span>
+                <span className="flex items-center gap-1.5 min-w-0">
+                  <span className="font-mono text-xs truncate">{formatBytes(cacheStats.totalBytes)}</span>
+                  <ChevronDown className={`w-3.5 h-3.5 flex-shrink-0 transition-transform duration-200 ${showCachePanel ? "rotate-180" : ""}`} />
+                </span>
+              </button>
+              {showCachePanel && (
+                <div className="px-3 pb-3 pt-2 space-y-2 border-t border-border/20">
+                  {(["thumbnails", "previews", "hls", "transcoded"] as const).map((key) => {
+                    const s = cacheStats[key];
+                    return (
+                      <div key={key} className="flex items-center justify-between gap-2 text-xs">
+                        <span className="text-muted-foreground truncate">{s.label}</span>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <span className="font-mono text-foreground">{formatBytes(s.bytes)}</span>
+                          <button
+                            type="button"
+                            onClick={() => void handleClearCache(key)}
+                            className="text-destructive hover:underline"
+                          >
+                            Clear
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <button
+                    type="button"
+                    onClick={() => void handleClearCache("all")}
+                    className="w-full text-xs text-destructive border border-destructive/40 rounded-lg py-1.5 hover:bg-destructive/10 transition-colors"
+                  >
+                    Clear All
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Refresh button */}
           <button
             type="button"
@@ -1502,6 +1628,53 @@ export default function Dashboard() {
                 >
                   <Key className="w-4 h-4" /> Change Password
                 </button>
+                {user?.role === "admin" && cacheStats && (
+                  <div className="rounded-xl border border-border/20 overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => { setShowCachePanel((p) => { if (!p) void fetchCacheStats(); return !p; }); }}
+                      className="w-full flex items-center justify-between px-3 py-2.5 text-sm text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-all"
+                    >
+                      <span className="flex items-center gap-2">
+                        <HardDrive className="w-4 h-4 flex-shrink-0" />
+                        Cache
+                      </span>
+                      <span className="flex items-center gap-1.5 min-w-0">
+                        <span className="font-mono text-xs truncate">{formatBytes(cacheStats.totalBytes)}</span>
+                        <ChevronDown className={`w-3.5 h-3.5 flex-shrink-0 transition-transform duration-200 ${showCachePanel ? "rotate-180" : ""}`} />
+                      </span>
+                    </button>
+                    {showCachePanel && (
+                      <div className="px-3 pb-3 pt-2 space-y-2 border-t border-border/20">
+                        {(["thumbnails", "previews", "hls", "transcoded"] as const).map((key) => {
+                          const s = cacheStats[key];
+                          return (
+                            <div key={key} className="flex items-center justify-between gap-2 text-xs">
+                              <span className="text-muted-foreground truncate">{s.label}</span>
+                              <div className="flex items-center gap-2 flex-shrink-0">
+                                <span className="font-mono text-foreground">{formatBytes(s.bytes)}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => void handleClearCache(key)}
+                                  className="text-destructive hover:underline"
+                                >
+                                  Clear
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                        <button
+                          type="button"
+                          onClick={() => void handleClearCache("all")}
+                          className="w-full text-xs text-destructive border border-destructive/40 rounded-lg py-1.5 hover:bg-destructive/10 transition-colors"
+                        >
+                          Clear All
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
                 <button
                   type="button"
                   onClick={() => { setShowLogoutConfirm(true); setMobileMenuOpen(false); }}

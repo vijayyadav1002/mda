@@ -67,6 +67,7 @@ export const schema = `
     hasAdminUser: Boolean!
     tags: [Tag!]!
     mediaAssetsByTag(tagName: String!, limit: Int, offset: Int): [MediaAsset!]!
+    cacheStats: CacheStats!
   }
 
   type Mutation {
@@ -96,6 +97,7 @@ export const schema = `
     removeTagFromAsset(assetId: ID!, tagName: String!): MediaAsset!
     renameTag(oldName: String!, newName: String!): Tag!
     deleteTag(name: String!): Boolean!
+    clearCache(type: String!): CacheStats!
   }
 
   input CompressOptionsInput {
@@ -108,5 +110,20 @@ export const schema = `
     originalSize: String!
     compressedSize: String!
     previewUrl: String!
+  }
+
+  type CacheTypeStats {
+    label: String!
+    bytes: Float!
+    fileCount: Int!
+    maxBytes: Float!
+  }
+
+  type CacheStats {
+    thumbnails: CacheTypeStats!
+    previews: CacheTypeStats!
+    hls: CacheTypeStats!
+    transcoded: CacheTypeStats!
+    totalBytes: Float!
   }
 `;
