@@ -54,6 +54,7 @@ export const schema = `
     type: String!
     children: [DirectoryNode!]
     mediaAsset: MediaAsset
+    size: Float
   }
 
   type Query {

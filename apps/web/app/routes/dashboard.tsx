@@ -99,6 +99,7 @@ const DIRECTORY_NODE_QUERY = `
     name
     path
     type
+    size
     mediaAsset {
       ...FileInfo
     }
@@ -212,6 +213,7 @@ interface DirectoryNode {
   type: "file" | "directory";
   children?: DirectoryNode[] | null;
   mediaAsset?: MediaAsset;
+  size?: number | null;
 }
 
 interface CacheTypeStats {
@@ -1340,11 +1342,18 @@ export default function Dashboard() {
               <Folder className="w-4 h-4 text-[#060e20]" />
             </div>
             <span className="text-sm">{node.name}</span>
-            {Array.isArray(children) && (
-              <span className="text-xs text-muted-foreground ml-auto mr-2 bg-muted px-2 py-0.5 rounded-full">
-                {children.length}
-              </span>
-            )}
+            <span className="flex items-center gap-1.5 ml-auto mr-2 flex-shrink-0">
+              {node.size != null && node.size > 0 && (
+                <span className="text-xs text-muted-foreground font-mono">
+                  {formatBytes(node.size)}
+                </span>
+              )}
+              {Array.isArray(children) && (
+                <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
+                  {children.length}
+                </span>
+              )}
+            </span>
           </button>
           {(user?.role === "admin" || user?.role === "editor") && (
             <button
@@ -1371,6 +1380,7 @@ export default function Dashboard() {
   };
 
   const isAtRoot = currentPath === rootPath;
+  const rootSize = rootPath ? (directoryCache[rootPath]?.size ?? null) : null;
   const heroTitle = activeTagFilter
     ? `#${activeTagFilter}`
     : !isAtRoot && currentFolder
@@ -1436,6 +1446,15 @@ export default function Dashboard() {
 
         {/* Bottom */}
         <div className="px-3 pb-6 space-y-3">
+          {rootSize != null && rootSize > 0 && (
+            <div className="flex items-center justify-between px-3 py-2 rounded-xl border border-border/20 text-xs text-muted-foreground">
+              <span className="flex items-center gap-1.5">
+                <HardDrive className="w-3.5 h-3.5 flex-shrink-0" />
+                Media Total
+              </span>
+              <span className="font-mono">{formatBytes(rootSize)}</span>
+            </div>
+          )}
           {/* Cache stats (admin only) */}
           {user?.role === "admin" && cacheStats && (
             <div className="rounded-xl border border-border/20 overflow-hidden">
@@ -1628,6 +1647,15 @@ export default function Dashboard() {
                 >
                   <Key className="w-4 h-4" /> Change Password
                 </button>
+                {rootSize != null && rootSize > 0 && (
+                  <div className="flex items-center justify-between px-3 py-2 rounded-xl border border-border/20 text-xs text-muted-foreground">
+                    <span className="flex items-center gap-1.5">
+                      <HardDrive className="w-3.5 h-3.5 flex-shrink-0" />
+                      Media Total
+                    </span>
+                    <span className="font-mono">{formatBytes(rootSize)}</span>
+                  </div>
+                )}
                 {user?.role === "admin" && cacheStats && (
                   <div className="rounded-xl border border-border/20 overflow-hidden">
                     <button
@@ -2037,7 +2065,9 @@ export default function Dashboard() {
                           <p className="font-manrope font-semibold text-sm text-foreground truncate max-w-[120px]">
                             {node.name}
                           </p>
-                          <p className="label-meta mt-1">Folder</p>
+                          <p className="label-meta mt-1">
+                            {node.size != null && node.size > 0 ? formatBytes(node.size) : "Folder"}
+                          </p>
                         </div>
                       </button>
                       {!selectionMode && (user?.role === "admin" || user?.role === "editor") && (
