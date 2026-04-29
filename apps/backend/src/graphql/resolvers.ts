@@ -4,6 +4,7 @@ import { logAudit } from '../services/audit.js';
 import { compressImage, compressVideo, compressImageAdvanced, compressVideoAdvanced } from '../services/thumbnail.js';
 import { enqueueMediaRefresh, addToThumbnailQueue } from '../services/queue.js';
 import { cleanupDeletedAssetCaches } from '../services/media-cleanup.js';
+import { getCacheStats, clearCacheByType } from '../services/cache-maintenance.js';
 import { indexFile } from '../services/media-indexer.js';
 import {
   normalizeTagName,
@@ -101,6 +102,15 @@ const listMediaFilesInDirectory = async (dirPath: string): Promise<string[]> => 
   return mediaFiles;
 };
 
+const getDirectorySizeFromDB = async (dirPath: string): Promise<number> => {
+  const sep = dirPath.endsWith('/') ? '' : '/';
+  const result = await db.query(
+    `SELECT COALESCE(SUM(file_size), 0)::bigint AS total FROM media_assets WHERE file_path LIKE $1`,
+    [`${dirPath}${sep}%`]
+  );
+  return Number(result.rows[0].total);
+};
+
 const buildDirectoryNode = async (dirPath: string): Promise<any> => {
   const stats = await fs.stat(dirPath);
   if (!stats.isDirectory()) {
@@ -133,40 +143,33 @@ const buildDirectoryNode = async (dirPath: string): Promise<any> => {
     }
   }
 
-  const children = entries
-    .map((entry) => {
-      const childPath = path.join(dirPath, entry.name);
+  const children = (
+    await Promise.all(
+      entries.map(async (entry) => {
+        const childPath = path.join(dirPath, entry.name);
 
-      if (entry.isDirectory()) {
-        return {
-          name: entry.name,
-          path: childPath,
-          type: 'directory',
-          children: null,
-          mediaAsset: null
-        };
-      }
+        if (entry.isDirectory()) {
+          const size = await getDirectorySizeFromDB(childPath);
+          return { name: entry.name, path: childPath, type: 'directory', children: null, mediaAsset: null, size };
+        }
 
-      if (entry.isFile()) {
-        const row = assetsByPath.get(childPath);
-        return {
-          name: entry.name,
-          path: childPath,
-          type: 'file',
-          children: null,
-          mediaAsset: row ? mapMediaAssetRow(row) : null
-        };
-      }
+        if (entry.isFile()) {
+          const row = assetsByPath.get(childPath);
+          return { name: entry.name, path: childPath, type: 'file', children: null, mediaAsset: row ? mapMediaAssetRow(row) : null, size: null };
+        }
 
-      return null;
-    })
-    .filter(Boolean);
+        return null;
+      })
+    )
+  ).filter(Boolean);
 
+  const rootSize = await getDirectorySizeFromDB(dirPath);
   return {
     name: path.basename(dirPath) || dirPath,
     path: dirPath,
     type: 'directory',
-    children
+    children,
+    size: rootSize
   };
 };
 
@@ -306,6 +309,13 @@ export const resolvers = {
       const offset = args.offset || 0;
       const rows = await getAssetsByTagName(args.tagName, limit, offset);
       return rows.map(mapMediaAssetRow);
+    },
+
+    cacheStats: async (_: any, __: any, context: GraphQLContext) => {
+      if (!context.user || context.user.role !== 'admin') {
+        throw new Error('Admin access required');
+      }
+      return getCacheStats();
     }
   },
 
@@ -1193,6 +1203,16 @@ export const resolvers = {
       });
 
       return mapTagRow({ ...updated, asset_count: 0 });
+    },
+
+    clearCache: async (_: any, args: { type: string }, context: GraphQLContext) => {
+      if (!context.user || context.user.role !== 'admin') {
+        throw new Error('Admin access required');
+      }
+      const allowed = ['thumbnails', 'previews', 'hls', 'transcoded', 'all'];
+      if (!allowed.includes(args.type)) throw new Error(`Unknown cache type: ${args.type}`);
+      await clearCacheByType(args.type as 'thumbnails' | 'previews' | 'hls' | 'transcoded' | 'all');
+      return getCacheStats();
     }
   }
 };

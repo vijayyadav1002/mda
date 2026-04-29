@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { useNavigate } from "@remix-run/react";
+import { useNavigate, useSearchParams } from "@remix-run/react";
 import { createGraphQLClient, getApiUrl, getAuthToken, clearAuthToken } from "~/lib/api";
 import { Input } from "~/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "~/components/ui/dialog";
@@ -12,7 +12,7 @@ import {
   Trash2, CheckSquare, Square, Users, Key, RotateCcw,
   Menu, X, ImagePlus, ArrowUpDown, Minimize2,
   Upload, LogOut, Download, FolderPlus, ListTodo,
-  Moon, Sun, User, Tag as TagIcon, Pencil,
+  Moon, Sun, User, Tag as TagIcon, Pencil, HardDrive,
 } from "lucide-react";
 
 const API_URL = getApiUrl();
@@ -99,6 +99,7 @@ const DIRECTORY_NODE_QUERY = `
     name
     path
     type
+    size
     mediaAsset {
       ...FileInfo
     }
@@ -166,6 +167,30 @@ const DELETE_TAG_MUTATION = `
   }
 `;
 
+const CACHE_STATS_QUERY = `
+  query CacheStats {
+    cacheStats {
+      totalBytes
+      thumbnails { label bytes fileCount maxBytes }
+      previews   { label bytes fileCount maxBytes }
+      hls        { label bytes fileCount maxBytes }
+      transcoded { label bytes fileCount maxBytes }
+    }
+  }
+`;
+
+const CLEAR_CACHE_MUTATION = `
+  mutation ClearCache($type: String!) {
+    clearCache(type: $type) {
+      totalBytes
+      thumbnails { label bytes fileCount maxBytes }
+      previews   { label bytes fileCount maxBytes }
+      hls        { label bytes fileCount maxBytes }
+      transcoded { label bytes fileCount maxBytes }
+    }
+  }
+`;
+
 interface TagSummary {
   id: string;
   name: string;
@@ -188,12 +213,29 @@ interface DirectoryNode {
   type: "file" | "directory";
   children?: DirectoryNode[] | null;
   mediaAsset?: MediaAsset;
+  size?: number | null;
+}
+
+interface CacheTypeStats {
+  label: string;
+  bytes: number;
+  fileCount: number;
+  maxBytes: number;
+}
+
+interface CacheStats {
+  thumbnails: CacheTypeStats;
+  previews: CacheTypeStats;
+  hls: CacheTypeStats;
+  transcoded: CacheTypeStats;
+  totalBytes: number;
 }
 
 function formatBytes(bytes: string | number) {
   const n = typeof bytes === "string" ? parseInt(bytes) : bytes;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
-  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
+  return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`;
 }
 
 function formatDate(iso: string) {
@@ -276,6 +318,8 @@ export default function Dashboard() {
   const [tagFilterAssets, setTagFilterAssets] = useState<MediaAsset[]>([]);
   const [tagFilterLoading, setTagFilterLoading] = useState(false);
   const tagFilterMenuRef = useRef<HTMLDivElement>(null);
+  const tagFilterTriggerRef = useRef<HTMLButtonElement>(null);
+  const [tagFilterMenuRight, setTagFilterMenuRight] = useState<number>(0);
   const [compressQueue, setCompressQueue] = useState<CompressJob[]>([]);
   const [showQueuePanel, setShowQueuePanel] = useState(false);
   const compressQueueRef = useRef<CompressJob[]>([]);
@@ -287,6 +331,8 @@ export default function Dashboard() {
   const [showNewFolderDialog, setShowNewFolderDialog] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
+  const [cacheStats, setCacheStats] = useState<CacheStats | null>(null);
+  const [showCachePanel, setShowCachePanel] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const refreshInFlightRef = useRef(false);
   const thumbnailPollTimerRef = useRef<number | null>(null);
@@ -300,6 +346,16 @@ export default function Dashboard() {
   const requestedThumbnailIdsRef = useRef<Set<string>>(new Set());
   const flushThumbnailTimerRef = useRef<number | null>(null);
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  useEffect(() => {
+    if (searchParams.get("queue") === "open") {
+      setShowQueuePanel(true);
+      const next = new URLSearchParams(searchParams);
+      next.delete("queue");
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -730,6 +786,24 @@ export default function Dashboard() {
     window.location.href = url;
   };
 
+  const handleClearCache = async (type: string) => {
+    if (!window.confirm(`Clear ${type === "all" ? "all caches" : `${type} cache`}? This cannot be undone.`)) return;
+    try {
+      const token = getAuthToken();
+      if (!token) return;
+      const client = createGraphQLClient(token);
+      const data = await client.request<{ clearCache: CacheStats }>(CLEAR_CACHE_MUTATION, { type });
+      setCacheStats(data.clearCache);
+      // Flush stale directory state so thumbnailUrl/transcodedUrl reflect the nulled DB rows
+      setDirectoryCache({});
+      if (rootPath) await loadDirectoryIntoCache(rootPath);
+      if (currentPath && currentPath !== rootPath) await loadDirectoryIntoCache(currentPath);
+    } catch (err) {
+      console.error("Failed to clear cache:", err);
+      alert("Failed to clear cache. Please try again.");
+    }
+  };
+
   const handleDeleteSelected = async () => {
     if (selectedAssetIds.size === 0) return;
     const confirmDelete = window.confirm(
@@ -1148,6 +1222,23 @@ export default function Dashboard() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [showTagFilterMenu]);
 
+  const fetchCacheStats = useCallback(async () => {
+    const token = getAuthToken();
+    if (!token) return;
+    try {
+      const client = createGraphQLClient(token);
+      const data = await client.request<{ cacheStats: CacheStats }>(CACHE_STATS_QUERY);
+      setCacheStats(data.cacheStats);
+    } catch { /* non-critical */ }
+  }, []);
+
+  useEffect(() => {
+    if (user?.role !== "admin") return;
+    void fetchCacheStats();
+    const id = window.setInterval(fetchCacheStats, 10_000);
+    return () => window.clearInterval(id);
+  }, [user?.role, fetchCacheStats]);
+
   useEffect(() => {
     if (!currentPath) return;
     const hasMissingThumbnails = currentFolderChildren.some(
@@ -1251,11 +1342,18 @@ export default function Dashboard() {
               <Folder className="w-4 h-4 text-[#060e20]" />
             </div>
             <span className="text-sm">{node.name}</span>
-            {Array.isArray(children) && (
-              <span className="text-xs text-muted-foreground ml-auto mr-2 bg-muted px-2 py-0.5 rounded-full">
-                {children.length}
-              </span>
-            )}
+            <span className="flex items-center gap-1.5 ml-auto mr-2 flex-shrink-0">
+              {node.size != null && node.size > 0 && (
+                <span className="text-xs text-muted-foreground font-mono">
+                  {formatBytes(node.size)}
+                </span>
+              )}
+              {Array.isArray(children) && (
+                <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
+                  {children.length}
+                </span>
+              )}
+            </span>
           </button>
           {(user?.role === "admin" || user?.role === "editor") && (
             <button
@@ -1282,6 +1380,7 @@ export default function Dashboard() {
   };
 
   const isAtRoot = currentPath === rootPath;
+  const rootSize = rootPath ? (directoryCache[rootPath]?.size ?? null) : null;
   const heroTitle = activeTagFilter
     ? `#${activeTagFilter}`
     : !isAtRoot && currentFolder
@@ -1347,6 +1446,64 @@ export default function Dashboard() {
 
         {/* Bottom */}
         <div className="px-3 pb-6 space-y-3">
+          {rootSize != null && rootSize > 0 && (
+            <div className="flex items-center justify-between px-3 py-2 rounded-xl border border-border/20 text-xs text-muted-foreground">
+              <span className="flex items-center gap-1.5">
+                <HardDrive className="w-3.5 h-3.5 flex-shrink-0" />
+                Media Total
+              </span>
+              <span className="font-mono">{formatBytes(rootSize)}</span>
+            </div>
+          )}
+          {/* Cache stats (admin only) */}
+          {user?.role === "admin" && cacheStats && (
+            <div className="rounded-xl border border-border/20 overflow-hidden">
+              <button
+                type="button"
+                onClick={() => { setShowCachePanel((p) => { if (!p) void fetchCacheStats(); return !p; }); }}
+                className="w-full flex items-center justify-between px-3 py-2.5 text-sm text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-all"
+              >
+                <span className="flex items-center gap-2">
+                  <HardDrive className="w-4 h-4 flex-shrink-0" />
+                  Cache
+                </span>
+                <span className="flex items-center gap-1.5 min-w-0">
+                  <span className="font-mono text-xs truncate">{formatBytes(cacheStats.totalBytes)}</span>
+                  <ChevronDown className={`w-3.5 h-3.5 flex-shrink-0 transition-transform duration-200 ${showCachePanel ? "rotate-180" : ""}`} />
+                </span>
+              </button>
+              {showCachePanel && (
+                <div className="px-3 pb-3 pt-2 space-y-2 border-t border-border/20">
+                  {(["thumbnails", "previews", "hls", "transcoded"] as const).map((key) => {
+                    const s = cacheStats[key];
+                    return (
+                      <div key={key} className="flex items-center justify-between gap-2 text-xs">
+                        <span className="text-muted-foreground truncate">{s.label}</span>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <span className="font-mono text-foreground">{formatBytes(s.bytes)}</span>
+                          <button
+                            type="button"
+                            onClick={() => void handleClearCache(key)}
+                            className="text-destructive hover:underline"
+                          >
+                            Clear
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <button
+                    type="button"
+                    onClick={() => void handleClearCache("all")}
+                    className="w-full text-xs text-destructive border border-destructive/40 rounded-lg py-1.5 hover:bg-destructive/10 transition-colors"
+                  >
+                    Clear All
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Refresh button */}
           <button
             type="button"
@@ -1490,6 +1647,62 @@ export default function Dashboard() {
                 >
                   <Key className="w-4 h-4" /> Change Password
                 </button>
+                {rootSize != null && rootSize > 0 && (
+                  <div className="flex items-center justify-between px-3 py-2 rounded-xl border border-border/20 text-xs text-muted-foreground">
+                    <span className="flex items-center gap-1.5">
+                      <HardDrive className="w-3.5 h-3.5 flex-shrink-0" />
+                      Media Total
+                    </span>
+                    <span className="font-mono">{formatBytes(rootSize)}</span>
+                  </div>
+                )}
+                {user?.role === "admin" && cacheStats && (
+                  <div className="rounded-xl border border-border/20 overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => { setShowCachePanel((p) => { if (!p) void fetchCacheStats(); return !p; }); }}
+                      className="w-full flex items-center justify-between px-3 py-2.5 text-sm text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-all"
+                    >
+                      <span className="flex items-center gap-2">
+                        <HardDrive className="w-4 h-4 flex-shrink-0" />
+                        Cache
+                      </span>
+                      <span className="flex items-center gap-1.5 min-w-0">
+                        <span className="font-mono text-xs truncate">{formatBytes(cacheStats.totalBytes)}</span>
+                        <ChevronDown className={`w-3.5 h-3.5 flex-shrink-0 transition-transform duration-200 ${showCachePanel ? "rotate-180" : ""}`} />
+                      </span>
+                    </button>
+                    {showCachePanel && (
+                      <div className="px-3 pb-3 pt-2 space-y-2 border-t border-border/20">
+                        {(["thumbnails", "previews", "hls", "transcoded"] as const).map((key) => {
+                          const s = cacheStats[key];
+                          return (
+                            <div key={key} className="flex items-center justify-between gap-2 text-xs">
+                              <span className="text-muted-foreground truncate">{s.label}</span>
+                              <div className="flex items-center gap-2 flex-shrink-0">
+                                <span className="font-mono text-foreground">{formatBytes(s.bytes)}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => void handleClearCache(key)}
+                                  className="text-destructive hover:underline"
+                                >
+                                  Clear
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                        <button
+                          type="button"
+                          onClick={() => void handleClearCache("all")}
+                          className="w-full text-xs text-destructive border border-destructive/40 rounded-lg py-1.5 hover:bg-destructive/10 transition-colors"
+                        >
+                          Clear All
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
                 <button
                   type="button"
                   onClick={() => { setShowLogoutConfirm(true); setMobileMenuOpen(false); }}
@@ -1641,10 +1854,21 @@ export default function Dashboard() {
             {/* Tag filter */}
             <div className="relative" ref={tagFilterMenuRef}>
               <button
+                ref={tagFilterTriggerRef}
                 type="button"
                 onClick={() => {
-                  if (!showTagFilterMenu) refreshTagSuggestions();
-                  setShowTagFilterMenu((p) => !p);
+                  const next = !showTagFilterMenu;
+                  if (next) {
+                    refreshTagSuggestions();
+                    const rect = tagFilterTriggerRef.current?.getBoundingClientRect();
+                    if (rect) {
+                      const menuWidth = Math.min(256, window.innerWidth - 16);
+                      const minRight = rect.right - window.innerWidth + 8;
+                      const maxRight = rect.right - menuWidth - 8;
+                      setTagFilterMenuRight(Math.max(minRight, Math.min(0, maxRight)));
+                    }
+                  }
+                  setShowTagFilterMenu(next);
                 }}
                 className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm transition-all ${
                   activeTagFilter
@@ -1677,7 +1901,10 @@ export default function Dashboard() {
                 )}
               </button>
               {showTagFilterMenu && (
-                <div className="absolute right-0 top-full mt-1 w-64 bg-card border border-border/20 rounded-xl shadow-ambient z-50 py-1 overflow-hidden max-h-80 overflow-y-auto">
+                <div
+                  className="absolute top-full mt-1 w-64 max-w-[calc(100vw-1rem)] bg-card border border-border/20 rounded-xl shadow-ambient z-50 py-1 max-h-80 overflow-y-auto"
+                  style={{ right: tagFilterMenuRight }}
+                >
                   {tagSuggestions.length === 0 ? (
                     <p className="px-4 py-3 text-xs text-muted-foreground">
                       No tags yet. Select files and apply a tag to start.
@@ -1838,7 +2065,9 @@ export default function Dashboard() {
                           <p className="font-manrope font-semibold text-sm text-foreground truncate max-w-[120px]">
                             {node.name}
                           </p>
-                          <p className="label-meta mt-1">Folder</p>
+                          <p className="label-meta mt-1">
+                            {node.size != null && node.size > 0 ? formatBytes(node.size) : "Folder"}
+                          </p>
                         </div>
                       </button>
                       {!selectionMode && (user?.role === "admin" || user?.role === "editor") && (
@@ -2041,6 +2270,13 @@ export default function Dashboard() {
             setCompressDialogAssets([selectedAsset]);
             setIsCompressDialogOpen(true);
           }
+        }}
+        onRemoveTag={async (tagName) => {
+          if (!selectedAsset) return;
+          await removeTagFromAsset(selectedAsset.id, tagName);
+          setSelectedAsset((prev) =>
+            prev ? { ...prev, tags: (prev.tags ?? []).filter((t) => t.name !== tagName) } : prev
+          );
         }}
       />
 
