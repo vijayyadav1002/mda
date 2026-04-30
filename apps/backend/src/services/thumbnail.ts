@@ -107,7 +107,14 @@ export async function renderHeicToJpeg(inputPath: string, outputPath: string, op
     .toFile(outputPath);
 }
 
-export async function generateThumbnail(filePath: string): Promise<string | null> {
+export interface ThumbnailGenerationOptions {
+  signal?: AbortSignal;
+}
+
+export async function generateThumbnail(
+  filePath: string,
+  options?: ThumbnailGenerationOptions
+): Promise<string | null> {
   const ext = path.extname(filePath).toLowerCase();
   const hash = crypto.createHash('md5').update(filePath).digest('hex');
   const thumbnailFileName = `${hash}.jpg`;
@@ -122,11 +129,18 @@ export async function generateThumbnail(filePath: string): Promise<string | null
     // Thumbnail doesn't exist, generate it
   }
 
+  if (options?.signal?.aborted) return null;
+
   if (SUPPORTED_IMAGE_FORMATS.includes(ext)) {
     await generateImageThumbnail(filePath, thumbnailPath);
   } else if (SUPPORTED_VIDEO_FORMATS.includes(ext)) {
-    await generateVideoThumbnail(filePath, thumbnailPath);
+    await generateVideoThumbnail(filePath, thumbnailPath, options);
   } else {
+    return null;
+  }
+
+  if (options?.signal?.aborted) {
+    await fs.unlink(thumbnailPath).catch(() => undefined);
     return null;
   }
 
@@ -177,19 +191,45 @@ async function generateImageThumbnail(inputPath: string, outputPath: string) {
   }
 }
 
-async function generateVideoThumbnail(inputPath: string, outputPath: string): Promise<void> {
+async function generateVideoThumbnail(
+  inputPath: string,
+  outputPath: string,
+  options?: ThumbnailGenerationOptions
+): Promise<void> {
   return new Promise((resolve, reject) => {
-    ffmpeg(inputPath)
+    if (options?.signal?.aborted) {
+      reject(new Error('Thumbnail generation cancelled'));
+      return;
+    }
+
+    let cancelled = false;
+    const cmd = ffmpeg(inputPath)
       .screenshots({
         count: 1,
         filename: path.basename(outputPath),
         folder: path.dirname(outputPath),
         size: `${config.thumbnailSize}x${config.thumbnailSize}`
+      });
+
+    const onAbort = () => {
+      cancelled = true;
+      try { cmd.kill('SIGKILL'); } catch { /* ignore */ }
+    };
+    options?.signal?.addEventListener('abort', onAbort, { once: true });
+
+    cmd
+      .on('end', () => {
+        options?.signal?.removeEventListener('abort', onAbort);
+        resolve();
       })
-      .on('end', () => resolve())
       .on('error', (err) => {
-        console.error(`Error generating video thumbnail for ${inputPath}:`, err);
-        reject(err);
+        options?.signal?.removeEventListener('abort', onAbort);
+        if (cancelled) {
+          reject(new Error('Thumbnail generation cancelled'));
+        } else {
+          console.error(`Error generating video thumbnail for ${inputPath}:`, err);
+          reject(err);
+        }
       });
   });
 }
@@ -215,14 +255,20 @@ export async function compressVideo(inputPath: string, outputPath: string): Prom
   });
 }
 
-export async function generateAndSaveThumbnail(filePath: string, assetId: string) {
+export async function generateAndSaveThumbnail(
+  filePath: string,
+  assetId: string,
+  options?: ThumbnailGenerationOptions
+) {
   try {
-    const thumbnailPath = await generateThumbnail(filePath);
+    const thumbnailPath = await generateThumbnail(filePath, options);
+    if (options?.signal?.aborted) return;
     if (thumbnailPath) {
       await db.query('UPDATE media_assets SET thumbnail_path = $1, updated_at = NOW() WHERE id = $2', [thumbnailPath, assetId]);
       console.log(`✓ Updated thumbnail for asset ${assetId}`);
     }
   } catch (error) {
+    if (options?.signal?.aborted) return; // Cancellation is expected — don't log as failure.
     console.error(`Failed to generate/save thumbnail for ${filePath}:`, error);
   }
 }

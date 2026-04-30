@@ -2,7 +2,7 @@ import { db } from '../db/index.js';
 import { hashPassword, verifyPassword } from '../services/auth.js';
 import { logAudit } from '../services/audit.js';
 import { compressImage, compressVideo, compressImageAdvanced, compressVideoAdvanced } from '../services/thumbnail.js';
-import { enqueueMediaRefresh, addToThumbnailQueue } from '../services/queue.js';
+import { enqueueMediaRefresh, addToThumbnailQueue, cancelThumbnailSession } from '../services/queue.js';
 import { cleanupDeletedAssetCaches } from '../services/media-cleanup.js';
 import { getCacheStats, clearCacheByType } from '../services/cache-maintenance.js';
 import { indexFile } from '../services/media-indexer.js';
@@ -786,7 +786,7 @@ export const resolvers = {
       return queuedCount;
     },
 
-    generateThumbnailsForAssets: async (_: any, args: { ids: string[] }, context: GraphQLContext) => {
+    generateThumbnailsForAssets: async (_: any, args: { ids: string[]; sessionId?: string | null }, context: GraphQLContext) => {
       if (!context.user) throw new Error('Unauthorized');
 
       const numericIds = Array.from(
@@ -836,7 +836,8 @@ export const resolvers = {
           await addToThumbnailQueue({
             filePath,
             assetId: String(row.id),
-            mediaType: isVideo ? 'video' : 'image'
+            mediaType: isVideo ? 'video' : 'image',
+            sessionId: args.sessionId ?? undefined
           });
           queuedCount += 1;
         } catch (error) {
@@ -845,6 +846,17 @@ export const resolvers = {
       }
 
       return queuedCount;
+    },
+
+    cancelThumbnailJobsForSession: async (_: any, args: { sessionId: string }, context: GraphQLContext) => {
+      if (!context.user) throw new Error('Unauthorized');
+      if (!args.sessionId || typeof args.sessionId !== 'string') return 0;
+      try {
+        return await cancelThumbnailSession(args.sessionId);
+      } catch (error) {
+        console.warn(`[CancelThumbnailJobsForSession] Failed: ${error instanceof Error ? error.message : String(error)}`);
+        return 0;
+      }
     },
 
     previewCompressAssets: async (
