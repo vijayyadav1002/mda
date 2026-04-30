@@ -42,8 +42,14 @@ const GENERATE_THUMBNAILS_FOR_PATH_MUTATION = `
 `;
 
 const GENERATE_THUMBNAILS_FOR_ASSETS_MUTATION = `
-  mutation GenerateThumbnailsForAssets($ids: [ID!]!) {
-    generateThumbnailsForAssets(ids: $ids)
+  mutation GenerateThumbnailsForAssets($ids: [ID!]!, $sessionId: String) {
+    generateThumbnailsForAssets(ids: $ids, sessionId: $sessionId)
+  }
+`;
+
+const CANCEL_THUMBNAIL_JOBS_MUTATION = `
+  mutation CancelThumbnailJobsForSession($sessionId: String!) {
+    cancelThumbnailJobsForSession(sessionId: $sessionId)
   }
 `;
 
@@ -53,6 +59,13 @@ const LAZY_THUMBNAIL_ROOT_MARGIN = "300px";
 // Debounce batching window: group viewport hits inside this window into a
 // single GraphQL mutation so a single scroll doesn't fire N requests.
 const LAZY_THUMBNAIL_FLUSH_MS = 250;
+
+const generateThumbnailSessionId = () => {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+};
 
 const CONFIRM_COMPRESS_MUTATION = `
   mutation ConfirmCompressReplace($ids: [ID!]!) {
@@ -345,6 +358,9 @@ export default function Dashboard() {
   const pendingThumbnailIdsRef = useRef<Set<string>>(new Set());
   const requestedThumbnailIdsRef = useRef<Set<string>>(new Set());
   const flushThumbnailTimerRef = useRef<number | null>(null);
+  // Per-folder-visit token. Sent with every queued-thumbnail mutation so the
+  // backend can cancel everything from a session when the user navigates away.
+  const thumbnailSessionIdRef = useRef<string>(generateThumbnailSessionId());
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -651,7 +667,8 @@ export default function Dashboard() {
 
   // Flush any pending viewport-collected asset IDs to the backend in a single
   // batched GraphQL mutation. Failures clear the "already requested" marker
-  // so the next scroll can retry.
+  // so the next scroll can retry. The mutation carries the current folder's
+  // session id so the backend can cancel the whole batch on navigation.
   const flushPendingThumbnailRequests = useCallback(async () => {
     flushThumbnailTimerRef.current = null;
     const ids = Array.from(pendingThumbnailIdsRef.current);
@@ -659,13 +676,29 @@ export default function Dashboard() {
     if (ids.length === 0) return;
     const token = getAuthToken();
     if (!token) return;
+    const sessionId = thumbnailSessionIdRef.current;
     try {
       const client = createGraphQLClient(token);
-      await client.request(GENERATE_THUMBNAILS_FOR_ASSETS_MUTATION, { ids });
+      await client.request(GENERATE_THUMBNAILS_FOR_ASSETS_MUTATION, { ids, sessionId });
     } catch (err) {
       console.error("Failed to queue on-demand thumbnails:", err);
       for (const id of ids) requestedThumbnailIdsRef.current.delete(id);
     }
+  }, []);
+
+  // Fire-and-forget request to drop every thumbnail job queued under a session.
+  // Used when the user moves to another folder or unmounts the dashboard.
+  const cancelThumbnailSessionOnServer = useCallback((sessionId: string) => {
+    if (!sessionId) return;
+    const token = getAuthToken();
+    if (!token) return;
+    const client = createGraphQLClient(token);
+    client
+      .request(CANCEL_THUMBNAIL_JOBS_MUTATION, { sessionId })
+      .catch((err) => {
+        // Non-blocking — worst case the Pi finishes a few jobs we no longer need.
+        console.warn("Failed to cancel thumbnail session on server:", err);
+      });
   }, []);
 
   // Lazily create one shared IntersectionObserver the first time a card's ref
@@ -709,12 +742,19 @@ export default function Dashboard() {
         window.clearTimeout(flushThumbnailTimerRef.current);
         flushThumbnailTimerRef.current = null;
       }
+      // Cancel any thumbnail jobs the user queued in their last folder so the
+      // server stops working on them after the tab/dashboard goes away.
+      cancelThumbnailSessionOnServer(thumbnailSessionIdRef.current);
     };
-  }, []);
+  }, [cancelThumbnailSessionOnServer]);
 
   // When the user navigates to a different folder, forget which thumbnails we
-  // have already asked for so the new folder can request its own assets.
+  // have already asked for so the new folder can request its own assets, and
+  // tell the backend to drop any jobs queued during the previous visit.
   useEffect(() => {
+    const previousSessionId = thumbnailSessionIdRef.current;
+    thumbnailSessionIdRef.current = generateThumbnailSessionId();
+
     requestedThumbnailIdsRef.current.clear();
     pendingThumbnailIdsRef.current.clear();
     const observer = thumbnailObserverRef.current;
@@ -728,7 +768,9 @@ export default function Dashboard() {
       window.clearTimeout(flushThumbnailTimerRef.current);
       flushThumbnailTimerRef.current = null;
     }
-  }, [currentPath]);
+
+    cancelThumbnailSessionOnServer(previousSessionId);
+  }, [currentPath, cancelThumbnailSessionOnServer]);
 
   // Ref callback attached to the thumbnail <div> of each card that is
   // currently missing a thumbnail. Registering an element starts observing it;
