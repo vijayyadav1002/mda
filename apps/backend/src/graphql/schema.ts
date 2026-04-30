@@ -57,6 +57,17 @@ export const schema = `
     size: Float
   }
 
+  type SearchFolderResult {
+    name: String!
+    path: String!
+    parentPath: String
+  }
+
+  type SearchResults {
+    files: [MediaAsset!]!
+    folders: [SearchFolderResult!]!
+  }
+
   type Query {
     me: User
     users: [User!]!
@@ -69,6 +80,7 @@ export const schema = `
     tags: [Tag!]!
     mediaAssetsByTag(tagName: String!, limit: Int, offset: Int): [MediaAsset!]!
     cacheStats: CacheStats!
+    search(term: String!, limit: Int): SearchResults!
   }
 
   type Mutation {

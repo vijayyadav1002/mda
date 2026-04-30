@@ -111,6 +111,43 @@ const getDirectorySizeFromDB = async (dirPath: string): Promise<number> => {
   return Number(result.rows[0].total);
 };
 
+const SEARCH_MAX_FOLDER_DEPTH = 12;
+
+const collectMatchingFolders = async (
+  rootDir: string,
+  needleLower: string,
+  limit: number
+): Promise<{ name: string; path: string; parentPath: string | null }[]> => {
+  const results: { name: string; path: string; parentPath: string | null }[] = [];
+
+  const walk = async (dir: string, depth: number, parent: string | null) => {
+    if (results.length >= limit) return;
+    if (depth > SEARCH_MAX_FOLDER_DEPTH) return;
+
+    let entries;
+    try {
+      entries = await fs.readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+
+    for (const entry of entries) {
+      if (results.length >= limit) return;
+      if (entry.name.startsWith('.')) continue;
+      if (!entry.isDirectory()) continue;
+
+      const fullPath = path.join(dir, entry.name);
+      if (entry.name.toLowerCase().includes(needleLower)) {
+        results.push({ name: entry.name, path: fullPath, parentPath: dir });
+      }
+      await walk(fullPath, depth + 1, dir);
+    }
+  };
+
+  await walk(rootDir, 0, null);
+  return results;
+};
+
 const buildDirectoryNode = async (dirPath: string): Promise<any> => {
   const stats = await fs.stat(dirPath);
   if (!stats.isDirectory()) {
@@ -316,6 +353,47 @@ export const resolvers = {
         throw new Error('Admin access required');
       }
       return getCacheStats();
+    },
+
+    search: async (
+      _: any,
+      args: { term: string; limit?: number },
+      context: GraphQLContext
+    ) => {
+      if (!context.user) throw new Error('Unauthorized');
+
+      const trimmed = (args.term ?? '').trim();
+      if (trimmed.length === 0) {
+        return { files: [], folders: [] };
+      }
+
+      const limit = Math.min(Math.max(args.limit ?? 25, 1), 100);
+      const escapedTerm = trimmed.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+      const likePattern = `%${escapedTerm}%`;
+
+      const fileResult = await db.query(
+        `SELECT * FROM media_assets
+         WHERE file_name ILIKE $1 ESCAPE '\\'
+         ORDER BY
+           CASE WHEN LOWER(file_name) = LOWER($2) THEN 0
+                WHEN LOWER(file_name) LIKE LOWER($3) THEN 1
+                ELSE 2 END,
+           file_name ASC
+         LIMIT $4`,
+        [likePattern, trimmed, `${escapedTerm}%`, limit]
+      );
+
+      const rootPath = resolveLibraryPath(null);
+      const folders = await collectMatchingFolders(rootPath, trimmed.toLowerCase(), limit);
+
+      return {
+        files: fileResult.rows.map(mapMediaAssetRow),
+        folders: folders.map((f) => ({
+          name: f.name,
+          path: f.path,
+          parentPath: f.parentPath
+        }))
+      };
     }
   },
 
