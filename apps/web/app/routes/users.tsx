@@ -4,6 +4,7 @@ import { createGraphQLClient, getAuthToken, clearAuthToken } from "~/lib/api";
 import { useActiveQueueCount } from "~/lib/useActiveQueueCount";
 import { Input } from "~/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "~/components/ui/dialog";
+import { SearchBar, type SearchFileResult, type SearchFolderResult } from "~/components/SearchBar";
 import {
   UserPlus, Trash2, Edit, Key, ArrowLeft,
   Users, Folder, ListTodo,
@@ -255,6 +256,14 @@ export default function UsersPage() {
     navigate("/login");
   };
 
+  const handleSearchFolder = (folder: SearchFolderResult) => {
+    navigate(`/dashboard?path=${encodeURIComponent(folder.path)}`);
+  };
+
+  const handleSearchFile = (file: SearchFileResult) => {
+    navigate(`/dashboard?openAsset=${encodeURIComponent(file.id)}`);
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
@@ -347,14 +356,19 @@ export default function UsersPage() {
       {/* ── Main content ── */}
       <div className="flex-1 md:ml-64 min-h-screen">
         {/* Toolbar */}
-        <div className="sticky top-0 z-10 bg-background/80 backdrop-blur-sm px-6 md:px-10 py-4 flex items-center gap-3">
+        <div className="sticky top-0 z-20 bg-background/80 backdrop-blur-sm px-6 md:px-10 py-4 flex flex-col md:flex-row md:items-center gap-3">
           <button
             type="button"
             onClick={() => navigate("/dashboard")}
-            className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+            className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
           >
             <ArrowLeft className="w-4 h-4" /> Dashboard
           </button>
+          <SearchBar
+            onSelectFile={handleSearchFile}
+            onSelectFolder={handleSearchFolder}
+            className="w-full md:max-w-xl md:ml-auto"
+          />
         </div>
 
         {/* Hero */}

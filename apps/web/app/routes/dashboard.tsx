@@ -7,6 +7,7 @@ import { MediaAssetViewer } from "~/components/MediaAssetViewer";
 import { CompressDialog } from "~/components/CompressDialog";
 import { CompressQueuePanel, type CompressJob } from "~/components/CompressQueuePanel";
 import { TagDialog, type TagSuggestion } from "~/components/TagDialog";
+import { SearchBar, type SearchFileResult, type SearchFolderResult } from "~/components/SearchBar";
 import {
   Folder, FileImage, ArrowLeft, ChevronDown, ChevronRight,
   Trash2, CheckSquare, Square, Users, Key, RotateCcw,
@@ -177,6 +178,22 @@ const RENAME_TAG_MUTATION = `
 const DELETE_TAG_MUTATION = `
   mutation DeleteTag($name: String!) {
     deleteTag(name: $name)
+  }
+`;
+
+const MEDIA_ASSET_QUERY = `
+  query GetMediaAsset($id: ID!) {
+    mediaAsset(id: $id) {
+      id
+      fileName
+      filePath
+      mimeType
+      fileSize
+      thumbnailUrl
+      transcodedUrl
+      createdAt
+      tags { id name }
+    }
   }
 `;
 
@@ -451,9 +468,12 @@ export default function Dashboard() {
       const rootNode = await loadDirectoryIntoCache(null);
       if (!rootNode) return;
       setRootPath(rootNode.path);
-      setCurrentPath(rootNode.path);
-      setFolderHistory([]);
-      if (rootNode.path) setExpandedFolders(new Set([rootNode.path]));
+      // Only set the initial folder if a search-driven `?path=` jump hasn't
+      // already landed; otherwise we'd race with jumpToPath and clobber it.
+      setCurrentPath((prev) => prev ?? rootNode.path);
+      if (rootNode.path) {
+        setExpandedFolders((prev) => (prev.size > 0 ? prev : new Set([rootNode.path])));
+      }
     } catch (err) {
       console.error("Failed to load data:", err);
     } finally {
@@ -1158,6 +1178,77 @@ export default function Dashboard() {
     }
   };
 
+  const jumpToPath = useCallback(async (targetPath: string) => {
+    if (!targetPath) return;
+    if (targetPath === currentPath) return;
+    if (currentPath && currentPath !== targetPath) {
+      setFolderHistory((prev) => [...prev, currentPath]);
+    }
+    setActiveTagFilter(null);
+    setTagFilterAssets([]);
+    setCurrentPath(targetPath);
+    const cachedNode = directoryCache[targetPath];
+    if (!cachedNode || cachedNode.children === null || cachedNode.children === undefined) {
+      try {
+        await loadDirectoryIntoCache(targetPath);
+      } catch (err: any) {
+        console.error("Failed to load directory:", err);
+        alert(`Failed to open folder: ${err?.message || "Unknown error"}`);
+      }
+    }
+  }, [currentPath, directoryCache]);
+
+  const openAssetById = useCallback(async (assetId: string) => {
+    const token = getAuthToken();
+    if (!token) return;
+    try {
+      const client = createGraphQLClient(token);
+      const data: any = await client.request(MEDIA_ASSET_QUERY, { id: assetId });
+      const asset = data?.mediaAsset as MediaAsset | null;
+      if (!asset) return;
+      setSelectedAsset(asset);
+      setIsViewerOpen(true);
+    } catch (err) {
+      console.error("Failed to load media asset:", err);
+    }
+  }, []);
+
+  const handleSearchFolder = useCallback((folder: SearchFolderResult) => {
+    void jumpToPath(folder.path);
+  }, [jumpToPath]);
+
+  const handleSearchFile = useCallback(async (file: SearchFileResult) => {
+    setSelectedAsset({
+      id: file.id,
+      fileName: file.fileName,
+      filePath: file.filePath,
+      mimeType: file.mimeType,
+      fileSize: file.fileSize,
+      thumbnailUrl: file.thumbnailUrl,
+      createdAt: file.createdAt,
+      tags: file.tags,
+    });
+    setIsViewerOpen(true);
+  }, []);
+
+  useEffect(() => {
+    let mutated = false;
+    const next = new URLSearchParams(searchParams);
+    const targetPath = next.get("path");
+    if (targetPath) {
+      void jumpToPath(targetPath);
+      next.delete("path");
+      mutated = true;
+    }
+    const openAssetId = next.get("openAsset");
+    if (openAssetId) {
+      void openAssetById(openAssetId);
+      next.delete("openAsset");
+      mutated = true;
+    }
+    if (mutated) setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams, jumpToPath, openAssetById]);
+
   const handleBackClick = async () => {
     if (folderHistory.length === 0) return;
     const nextHistory = [...folderHistory];
@@ -1757,8 +1848,17 @@ export default function Dashboard() {
           </div>
         )}
 
+        {/* Search bar */}
+        <div className="md:sticky md:top-0 z-20 bg-background/80 backdrop-blur-sm px-4 md:px-10 pt-3 pb-1.5">
+          <SearchBar
+            onSelectFile={handleSearchFile}
+            onSelectFolder={handleSearchFolder}
+            className="w-full md:max-w-xl"
+          />
+        </div>
+
         {/* Toolbar */}
-        <div className="md:sticky md:top-0 z-10 bg-background/80 backdrop-blur-sm px-4 md:px-10 py-3 flex items-center justify-between gap-2 md:gap-4">
+        <div className="bg-background/80 backdrop-blur-sm px-4 md:px-10 pb-3 pt-1 flex items-center justify-between gap-2 md:gap-4">
           <div className="flex items-center gap-3 min-w-0">
             {activeTagFilter && (
               <button
