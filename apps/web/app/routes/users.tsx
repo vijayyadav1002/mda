@@ -4,7 +4,7 @@ import { createGraphQLClient, getAuthToken, clearAuthToken } from "~/lib/api";
 import { useActiveQueueCount } from "~/lib/useActiveQueueCount";
 import { Input } from "~/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "~/components/ui/dialog";
-import { SearchBar, type SearchFileResult, type SearchFolderResult } from "~/components/SearchBar";
+import { SearchBar } from "~/components/SearchBar";
 import {
   UserPlus, Trash2, Edit, Key, ArrowLeft,
   Users, Folder, ListTodo,
@@ -256,12 +256,8 @@ export default function UsersPage() {
     navigate("/login");
   };
 
-  const handleSearchFolder = (folder: SearchFolderResult) => {
-    navigate(`/dashboard?path=${encodeURIComponent(folder.path)}`);
-  };
-
-  const handleSearchFile = (file: SearchFileResult) => {
-    navigate(`/dashboard?openAsset=${encodeURIComponent(file.id)}`);
+  const handleSearch = (_term: string, _mediaType: string) => {
+    navigate("/dashboard");
   };
 
   if (loading) {
@@ -365,8 +361,8 @@ export default function UsersPage() {
             <ArrowLeft className="w-4 h-4" /> Dashboard
           </button>
           <SearchBar
-            onSelectFile={handleSearchFile}
-            onSelectFolder={handleSearchFolder}
+            onSearch={handleSearch}
+            onClear={() => {}}
             className="w-full md:max-w-xl md:ml-auto"
           />
         </div>

@@ -357,34 +357,67 @@ export const resolvers = {
 
     search: async (
       _: any,
-      args: { term: string; limit?: number },
+      args: { term?: string; mediaType?: string; sortBy?: string; limit?: number },
       context: GraphQLContext
     ) => {
       if (!context.user) throw new Error('Unauthorized');
 
       const trimmed = (args.term ?? '').trim();
-      if (trimmed.length === 0) {
+      const mediaType = args.mediaType === 'image' || args.mediaType === 'video' ? args.mediaType : null;
+      const sortBy = ['size-asc', 'size-desc', 'date-asc', 'date-desc'].includes(args.sortBy ?? '')
+        ? args.sortBy!
+        : null;
+
+      if (trimmed.length === 0 && !mediaType) {
         return { files: [], folders: [] };
       }
 
       const limit = Math.min(Math.max(args.limit ?? 25, 1), 100);
-      const escapedTerm = trimmed.replace(/[\\%_]/g, (ch) => `\\${ch}`);
-      const likePattern = `%${escapedTerm}%`;
 
+      const queryParams: unknown[] = [];
+      const conditions: string[] = [];
+
+      if (trimmed.length > 0) {
+        const escapedTerm = trimmed.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+        queryParams.push(`%${escapedTerm}%`);
+        conditions.push(`file_name ILIKE $${queryParams.length} ESCAPE '\\'`);
+      }
+
+      if (mediaType) {
+        queryParams.push(`${mediaType}/%`);
+        conditions.push(`mime_type LIKE $${queryParams.length}`);
+      }
+
+      const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+      let orderClause: string;
+      if (sortBy === 'size-asc') {
+        orderClause = 'ORDER BY file_size ASC, file_name ASC';
+      } else if (sortBy === 'size-desc') {
+        orderClause = 'ORDER BY file_size DESC, file_name ASC';
+      } else if (sortBy === 'date-asc') {
+        orderClause = 'ORDER BY created_at ASC';
+      } else if (sortBy === 'date-desc') {
+        orderClause = 'ORDER BY created_at DESC';
+      } else if (trimmed.length > 0) {
+        const escapedTerm = trimmed.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+        const base = queryParams.length;
+        queryParams.push(trimmed, `${escapedTerm}%`);
+        orderClause = `ORDER BY CASE WHEN LOWER(file_name) = LOWER($${base + 1}) THEN 0 WHEN LOWER(file_name) LIKE LOWER($${base + 2}) THEN 1 ELSE 2 END, file_name ASC`;
+      } else {
+        orderClause = 'ORDER BY file_name ASC';
+      }
+
+      queryParams.push(limit);
       const fileResult = await db.query(
-        `SELECT * FROM media_assets
-         WHERE file_name ILIKE $1 ESCAPE '\\'
-         ORDER BY
-           CASE WHEN LOWER(file_name) = LOWER($2) THEN 0
-                WHEN LOWER(file_name) LIKE LOWER($3) THEN 1
-                ELSE 2 END,
-           file_name ASC
-         LIMIT $4`,
-        [likePattern, trimmed, `${escapedTerm}%`, limit]
+        `SELECT * FROM media_assets ${whereClause} ${orderClause} LIMIT $${queryParams.length}`,
+        queryParams
       );
 
-      const rootPath = resolveLibraryPath(null);
-      const folders = await collectMatchingFolders(rootPath, trimmed.toLowerCase(), limit);
+      // Only search folders when there's a text term (folders have no media type)
+      const folders = trimmed.length > 0 && !mediaType
+        ? await collectMatchingFolders(resolveLibraryPath(null), trimmed.toLowerCase(), limit)
+        : [];
 
       return {
         files: fileResult.rows.map(mapMediaAssetRow),

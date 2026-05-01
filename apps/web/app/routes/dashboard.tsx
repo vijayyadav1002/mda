@@ -7,7 +7,7 @@ import { MediaAssetViewer } from "~/components/MediaAssetViewer";
 import { CompressDialog } from "~/components/CompressDialog";
 import { CompressQueuePanel, type CompressJob } from "~/components/CompressQueuePanel";
 import { TagDialog, type TagSuggestion } from "~/components/TagDialog";
-import { SearchBar, type SearchFileResult, type SearchFolderResult } from "~/components/SearchBar";
+import { SearchBar } from "~/components/SearchBar";
 import {
   Folder, FileImage, ArrowLeft, ChevronDown, ChevronRight,
   Trash2, CheckSquare, Square, Users, Key, RotateCcw,
@@ -221,6 +221,19 @@ const CLEAR_CACHE_MUTATION = `
   }
 `;
 
+const SEARCH_RESULTS_QUERY = `
+  query SearchResults($term: String, $mediaType: String, $limit: Int) {
+    search(term: $term, mediaType: $mediaType, limit: $limit) {
+      files {
+        id fileName filePath fileSize mimeType
+        thumbnailUrl transcodedUrl
+        indexedAt createdAt updatedAt
+        tags { id name }
+      }
+    }
+  }
+`;
+
 interface TagSummary {
   id: string;
   name: string;
@@ -363,6 +376,9 @@ export default function Dashboard() {
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [cacheStats, setCacheStats] = useState<CacheStats | null>(null);
   const [showCachePanel, setShowCachePanel] = useState(false);
+  const [searchQuery, setSearchQuery] = useState<{ term: string; mediaType: string } | null>(null);
+  const [searchAssets, setSearchAssets] = useState<MediaAsset[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const refreshInFlightRef = useRef(false);
   const thumbnailPollTimerRef = useRef<number | null>(null);
@@ -1186,6 +1202,8 @@ export default function Dashboard() {
     }
     setActiveTagFilter(null);
     setTagFilterAssets([]);
+    setSearchQuery(null);
+    setSearchAssets([]);
     setCurrentPath(targetPath);
     const cachedNode = directoryCache[targetPath];
     if (!cachedNode || cachedNode.children === null || cachedNode.children === undefined) {
@@ -1213,22 +1231,35 @@ export default function Dashboard() {
     }
   }, []);
 
-  const handleSearchFolder = useCallback((folder: SearchFolderResult) => {
-    void jumpToPath(folder.path);
-  }, [jumpToPath]);
+  const handleSearch = useCallback(async (term: string, mediaType: string) => {
+    const trimmed = term.trim();
+    if (!trimmed && mediaType === "all") {
+      setSearchQuery(null);
+      setSearchAssets([]);
+      return;
+    }
+    setSearchQuery({ term: trimmed, mediaType });
+    setSearchLoading(true);
+    const token = getAuthToken();
+    if (!token) { setSearchLoading(false); return; }
+    try {
+      const client = createGraphQLClient(token);
+      const vars: Record<string, unknown> = { limit: 100 };
+      if (trimmed) vars.term = trimmed;
+      if (mediaType !== "all") vars.mediaType = mediaType;
+      const data: any = await client.request(SEARCH_RESULTS_QUERY, vars);
+      setSearchAssets((data?.search?.files ?? []) as MediaAsset[]);
+    } catch (err) {
+      console.error("Search failed:", err);
+      setSearchAssets([]);
+    } finally {
+      setSearchLoading(false);
+    }
+  }, []);
 
-  const handleSearchFile = useCallback(async (file: SearchFileResult) => {
-    setSelectedAsset({
-      id: file.id,
-      fileName: file.fileName,
-      filePath: file.filePath,
-      mimeType: file.mimeType,
-      fileSize: file.fileSize,
-      thumbnailUrl: file.thumbnailUrl,
-      createdAt: file.createdAt,
-      tags: file.tags,
-    });
-    setIsViewerOpen(true);
+  const handleClearSearch = useCallback(() => {
+    setSearchQuery(null);
+    setSearchAssets([]);
   }, []);
 
   useEffect(() => {
@@ -1317,8 +1348,20 @@ export default function Dashboard() {
     }));
   }, [tagFilterAssets]);
 
+  const searchResultNodes = useMemo<DirectoryNode[]>(() => {
+    return searchAssets.map((asset) => ({
+      name: asset.fileName,
+      path: asset.filePath,
+      type: "file",
+      children: null,
+      mediaAsset: asset,
+    }));
+  }, [searchAssets]);
+
   const sortedFolderChildren = useMemo(() => {
-    const baseChildren = activeTagFilter ? tagFilterNodes : currentFolderChildren;
+    const baseChildren = searchQuery
+      ? searchResultNodes
+      : activeTagFilter ? tagFilterNodes : currentFolderChildren;
     if (sortOption === "default") return baseChildren;
     const folders = baseChildren.filter((n) => n.type === "directory");
     const files = baseChildren.filter((n) => n.type !== "directory");
@@ -1333,7 +1376,7 @@ export default function Dashboard() {
       return sortOption === "date-asc" ? dateA - dateB : dateB - dateA;
     });
     return [...folders, ...sorted];
-  }, [activeTagFilter, currentFolderChildren, sortOption, tagFilterNodes]);
+  }, [activeTagFilter, currentFolderChildren, searchQuery, searchResultNodes, sortOption, tagFilterNodes]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -1514,16 +1557,24 @@ export default function Dashboard() {
 
   const isAtRoot = currentPath === rootPath;
   const rootSize = rootPath ? (directoryCache[rootPath]?.size ?? null) : null;
-  const heroTitle = activeTagFilter
-    ? `#${activeTagFilter}`
-    : !isAtRoot && currentFolder
-      ? currentFolder.name
-      : "Your Collection";
-  const heroSubtitle = activeTagFilter
-    ? `${tagFilterAssets.length} tagged file${tagFilterAssets.length === 1 ? "" : "s"} across your library`
-    : !isAtRoot
-      ? `${folderHistory.length + 1} level${folderHistory.length > 0 ? "s" : ""} deep`
-      : "Organized precision for your creative assets and digital artifacts.";
+  const heroTitle = searchQuery
+    ? searchQuery.term
+      ? `"${searchQuery.term}"`
+      : searchQuery.mediaType === "image" ? "All Images" : "All Videos"
+    : activeTagFilter
+      ? `#${activeTagFilter}`
+      : !isAtRoot && currentFolder
+        ? currentFolder.name
+        : "Your Collection";
+  const heroSubtitle = searchQuery
+    ? searchLoading
+      ? "Searching…"
+      : `${searchAssets.length} result${searchAssets.length === 1 ? "" : "s"} found`
+    : activeTagFilter
+      ? `${tagFilterAssets.length} tagged file${tagFilterAssets.length === 1 ? "" : "s"} across your library`
+      : !isAtRoot
+        ? `${folderHistory.length + 1} level${folderHistory.length > 0 ? "s" : ""} deep`
+        : "Organized precision for your creative assets and digital artifacts.";
 
   if (loading) {
     return (
@@ -1851,16 +1902,25 @@ export default function Dashboard() {
         {/* Search bar */}
         <div className="md:sticky md:top-0 z-20 bg-background/80 backdrop-blur-sm px-4 md:px-10 pt-3 pb-1.5">
           <SearchBar
-            onSelectFile={handleSearchFile}
-            onSelectFolder={handleSearchFolder}
+            onSearch={handleSearch}
+            onClear={handleClearSearch}
             className="w-full md:max-w-xl"
           />
         </div>
 
         {/* Toolbar */}
-        <div className="bg-background/80 backdrop-blur-sm px-4 md:px-10 pb-3 pt-1 flex items-center justify-between gap-2 md:gap-4">
+        <div className="relative z-30 bg-background/80 backdrop-blur-sm px-4 md:px-10 pb-3 pt-1 flex items-center justify-between gap-2 md:gap-4">
           <div className="flex items-center gap-3 min-w-0">
-            {activeTagFilter && (
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={handleClearSearch}
+                className="flex items-center gap-1.5 text-sm text-brand-primary hover:opacity-80 transition-opacity"
+              >
+                <ArrowLeft className="w-4 h-4" /> Exit search
+              </button>
+            )}
+            {activeTagFilter && !searchQuery && (
               <button
                 type="button"
                 onClick={clearTagFilter}
@@ -1869,7 +1929,7 @@ export default function Dashboard() {
                 <ArrowLeft className="w-4 h-4" /> Exit tag filter
               </button>
             )}
-            {!activeTagFilter && folderHistory.length > 0 && (
+            {!activeTagFilter && !searchQuery && folderHistory.length > 0 && (
               <button
                 type="button"
                 onClick={() => void handleBackClick()}
