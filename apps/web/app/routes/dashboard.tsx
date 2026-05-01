@@ -222,14 +222,15 @@ const CLEAR_CACHE_MUTATION = `
 `;
 
 const SEARCH_RESULTS_QUERY = `
-  query SearchResults($term: String, $mediaType: String, $limit: Int) {
-    search(term: $term, mediaType: $mediaType, limit: $limit) {
+  query SearchResults($term: String, $mediaType: String, $sortBy: String, $limit: Int, $minSize: Float, $maxSize: Float) {
+    search(term: $term, mediaType: $mediaType, sortBy: $sortBy, limit: $limit, minSize: $minSize, maxSize: $maxSize) {
       files {
         id fileName filePath fileSize mimeType
         thumbnailUrl transcodedUrl
         indexedAt createdAt updatedAt
         tags { id name }
       }
+      folders { name path parentPath }
     }
   }
 `;
@@ -379,6 +380,8 @@ export default function Dashboard() {
   const [searchQuery, setSearchQuery] = useState<{ term: string; mediaType: string } | null>(null);
   const [searchAssets, setSearchAssets] = useState<MediaAsset[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
+  const [searchLimit, setSearchLimit] = useState<25 | 50 | 100 | 250 | 0>(25);
+  const [minSizeBytes, setMinSizeBytes] = useState<number>(0); // 0 = no filter
   const fileInputRef = useRef<HTMLInputElement>(null);
   const refreshInFlightRef = useRef(false);
   const thumbnailPollTimerRef = useRef<number | null>(null);
@@ -1244,9 +1247,11 @@ export default function Dashboard() {
     if (!token) { setSearchLoading(false); return; }
     try {
       const client = createGraphQLClient(token);
-      const vars: Record<string, unknown> = { limit: 100 };
+      const vars: Record<string, unknown> = { limit: searchLimit };
       if (trimmed) vars.term = trimmed;
       if (mediaType !== "all") vars.mediaType = mediaType;
+      if (sortOption !== "default") vars.sortBy = sortOption;
+      if (minSizeBytes > 0) vars.minSize = minSizeBytes;
       const data: any = await client.request(SEARCH_RESULTS_QUERY, vars);
       setSearchAssets((data?.search?.files ?? []) as MediaAsset[]);
     } catch (err) {
@@ -1255,11 +1260,12 @@ export default function Dashboard() {
     } finally {
       setSearchLoading(false);
     }
-  }, []);
+  }, [searchLimit, sortOption, minSizeBytes]);
 
   const handleClearSearch = useCallback(() => {
     setSearchQuery(null);
     setSearchAssets([]);
+    setMinSizeBytes(0);
   }, []);
 
   useEffect(() => {
@@ -1362,7 +1368,7 @@ export default function Dashboard() {
     const baseChildren = searchQuery
       ? searchResultNodes
       : activeTagFilter ? tagFilterNodes : currentFolderChildren;
-    if (sortOption === "default") return baseChildren;
+    if (sortOption === "default" || searchQuery) return baseChildren;
     const folders = baseChildren.filter((n) => n.type === "directory");
     const files = baseChildren.filter((n) => n.type !== "directory");
     const sorted = [...files].sort((a, b) => {
@@ -1387,6 +1393,12 @@ export default function Dashboard() {
     if (showSortMenu) document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [showSortMenu]);
+
+  useEffect(() => {
+    if (!searchQuery) return;
+    void handleSearch(searchQuery.term, searchQuery.mediaType);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sortOption, searchLimit, minSizeBytes]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -1569,7 +1581,9 @@ export default function Dashboard() {
   const heroSubtitle = searchQuery
     ? searchLoading
       ? "Searching…"
-      : `${searchAssets.length} result${searchAssets.length === 1 ? "" : "s"} found`
+      : searchLimit > 0 && searchAssets.length >= searchLimit
+        ? `Showing top ${searchAssets.length} results — try a narrower search or increase the limit`
+        : `${searchAssets.length} result${searchAssets.length === 1 ? "" : "s"} found`
     : activeTagFilter
       ? `${tagFilterAssets.length} tagged file${tagFilterAssets.length === 1 ? "" : "s"} across your library`
       : !isAtRoot
@@ -2208,6 +2222,44 @@ export default function Dashboard() {
                 </div>
               )}
             </div>
+
+            {/* Search result limit — only visible during active search */}
+            {searchQuery && (
+              <select
+                value={searchLimit}
+                onChange={(e) => setSearchLimit(Number(e.target.value) as typeof searchLimit)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm bg-muted text-muted-foreground focus:outline-none focus:ring-2 focus:ring-brand-primary/30 cursor-pointer"
+                aria-label="Max search results"
+              >
+                <option value={25}>25 results</option>
+                <option value={50}>50 results</option>
+                <option value={100}>100 results</option>
+                <option value={250}>250 results</option>
+                <option value={0}>All results</option>
+              </select>
+            )}
+
+            {/* File size filter — only visible during active search */}
+            {searchQuery && (
+              <select
+                value={minSizeBytes}
+                onChange={(e) => setMinSizeBytes(Number(e.target.value))}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary/30 cursor-pointer ${
+                  minSizeBytes > 0
+                    ? "text-brand-primary bg-brand-primary/10"
+                    : "bg-muted text-muted-foreground"
+                }`}
+                aria-label="Minimum file size"
+              >
+                <option value={0}>Any size</option>
+                <option value={10 * 1024 * 1024}>&gt; 10 MB</option>
+                <option value={100 * 1024 * 1024}>&gt; 100 MB</option>
+                <option value={500 * 1024 * 1024}>&gt; 500 MB</option>
+                <option value={1024 * 1024 * 1024}>&gt; 1 GB</option>
+                <option value={2 * 1024 * 1024 * 1024}>&gt; 2 GB</option>
+                <option value={5 * 1024 * 1024 * 1024}>&gt; 5 GB</option>
+              </select>
+            )}
 
             {/* View toggle */}
             <div className="flex gap-1 bg-muted p-1 rounded-xl">

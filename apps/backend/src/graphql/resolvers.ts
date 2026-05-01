@@ -112,6 +112,7 @@ const getDirectorySizeFromDB = async (dirPath: string): Promise<number> => {
 };
 
 const SEARCH_MAX_FOLDER_DEPTH = 12;
+const SEARCH_HARD_CAP = 2000;
 
 const collectMatchingFolders = async (
   rootDir: string,
@@ -357,7 +358,7 @@ export const resolvers = {
 
     search: async (
       _: any,
-      args: { term?: string; mediaType?: string; sortBy?: string; limit?: number },
+      args: { term?: string; mediaType?: string; sortBy?: string; limit?: number; minSize?: number; maxSize?: number },
       context: GraphQLContext
     ) => {
       if (!context.user) throw new Error('Unauthorized');
@@ -368,11 +369,18 @@ export const resolvers = {
         ? args.sortBy!
         : null;
 
-      if (trimmed.length === 0 && !mediaType) {
+      const minSize = typeof args.minSize === 'number' && args.minSize > 0 ? Math.floor(args.minSize) : null;
+      const maxSize = typeof args.maxSize === 'number' && args.maxSize > 0 ? Math.floor(args.maxSize) : null;
+
+      if (trimmed.length === 0 && !mediaType && !minSize && !maxSize) {
         return { files: [], folders: [] };
       }
 
-      const limit = Math.min(Math.max(args.limit ?? 25, 1), 100);
+      const requestedLimit = args.limit ?? 25;
+      const limit = requestedLimit <= 0
+        ? SEARCH_HARD_CAP
+        : Math.min(Math.max(requestedLimit, 1), SEARCH_HARD_CAP);
+      const folderSearchLimit = requestedLimit <= 0 ? 200 : limit;
 
       const queryParams: unknown[] = [];
       const conditions: string[] = [];
@@ -386,6 +394,16 @@ export const resolvers = {
       if (mediaType) {
         queryParams.push(`${mediaType}/%`);
         conditions.push(`mime_type LIKE $${queryParams.length}`);
+      }
+
+      if (minSize !== null) {
+        queryParams.push(minSize);
+        conditions.push(`file_size >= $${queryParams.length}`);
+      }
+
+      if (maxSize !== null) {
+        queryParams.push(maxSize);
+        conditions.push(`file_size <= $${queryParams.length}`);
       }
 
       const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -416,7 +434,7 @@ export const resolvers = {
 
       // Only search folders when there's a text term (folders have no media type)
       const folders = trimmed.length > 0 && !mediaType
-        ? await collectMatchingFolders(resolveLibraryPath(null), trimmed.toLowerCase(), limit)
+        ? await collectMatchingFolders(resolveLibraryPath(null), trimmed.toLowerCase(), folderSearchLimit)
         : [];
 
       return {
