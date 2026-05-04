@@ -1,4 +1,4 @@
-import { Download, File, Maximize2, Minimize2, X, ListTodo } from "lucide-react";
+import { Download, File, Maximize2, Minimize2, X, ListTodo, Tag as TagIcon, Plus } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import Hls from "hls.js";
 
@@ -37,6 +37,7 @@ interface MediaAssetViewerProps {
   readonly userRole?: string;
   readonly onCompress?: () => void;
   readonly onRemoveTag?: (tagName: string) => void | Promise<void>;
+  readonly onAddTags?: () => void;
 }
 
 function formatFileSize(bytes: string) {
@@ -66,6 +67,7 @@ export function MediaAssetViewer({
   userRole,
   onCompress,
   onRemoveTag,
+  onAddTags,
 }: Readonly<MediaAssetViewerProps>) {
   const canEditTags = userRole === "admin" || userRole === "editor";
   const [removingTag, setRemovingTag] = useState<string | null>(null);
@@ -422,6 +424,16 @@ export function MediaAssetViewer({
               <Download className="w-4 h-4" />
               Download
             </a>
+            {canEditTags && onAddTags && (
+              <button
+                type="button"
+                onClick={onAddTags}
+                className="flex items-center justify-center gap-2 py-2.5 rounded-xl border border-border/30 text-sm text-foreground hover:bg-accent transition-all"
+              >
+                <TagIcon className="w-4 h-4" />
+                Add Tags
+              </button>
+            )}
             {(userRole === "admin" || userRole === "editor") && onCompress && (
               <button
                 type="button"
@@ -497,39 +509,62 @@ export function MediaAssetViewer({
                 ))}
             </div>
 
-            {(asset.tags && asset.tags.length > 0) && (
-              <>
-                <p className="label-meta mt-5 mb-3">Tags</p>
-                <div className="flex flex-wrap gap-2">
-                  {asset.tags.map((tag) => (
-                    <span
-                      key={tag.id}
-                      className="inline-flex items-center gap-1 rounded-full bg-brand-primary/10 text-brand-primary text-xs font-medium pl-3 pr-1 py-1"
-                    >
-                      <span>#{tag.name}</span>
-                      {canEditTags && onRemoveTag && (
-                        <button
-                          type="button"
-                          disabled={removingTag === tag.name}
-                          onClick={async () => {
-                            setRemovingTag(tag.name);
-                            try {
-                              await onRemoveTag(tag.name);
-                            } finally {
-                              setRemovingTag(null);
-                            }
-                          }}
-                          className="p-1 rounded-full hover:bg-brand-primary/20 transition-colors disabled:opacity-50"
-                          aria-label={`Remove ${tag.name}`}
-                          title={`Remove #${tag.name}`}
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
-                      )}
-                    </span>
-                  ))}
-                </div>
-              </>
+            <div className="flex items-center justify-between mt-5 mb-3">
+              <p className="label-meta">Tags</p>
+              {canEditTags && onAddTags && (
+                <button
+                  type="button"
+                  onClick={onAddTags}
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-brand-primary transition-colors"
+                  title="Add tags"
+                >
+                  <Plus className="w-3 h-3" />
+                  Add
+                </button>
+              )}
+            </div>
+            {asset.tags && asset.tags.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {asset.tags.map((tag) => (
+                  <span
+                    key={tag.id}
+                    className="inline-flex items-center gap-1 rounded-full bg-brand-primary/10 text-brand-primary text-xs font-medium pl-3 pr-1 py-1"
+                  >
+                    <span>#{tag.name}</span>
+                    {canEditTags && onRemoveTag && (
+                      <button
+                        type="button"
+                        disabled={removingTag === tag.name}
+                        onClick={async () => {
+                          setRemovingTag(tag.name);
+                          try {
+                            await onRemoveTag(tag.name);
+                          } finally {
+                            setRemovingTag(null);
+                          }
+                        }}
+                        className="p-1 rounded-full hover:bg-brand-primary/20 transition-colors disabled:opacity-50"
+                        aria-label={`Remove ${tag.name}`}
+                        title={`Remove #${tag.name}`}
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              canEditTags && onAddTags ? (
+                <button
+                  type="button"
+                  onClick={onAddTags}
+                  className="text-xs text-muted-foreground hover:text-brand-primary transition-colors"
+                >
+                  No tags yet — click to add
+                </button>
+              ) : (
+                <p className="text-xs text-muted-foreground">No tags</p>
+              )
             )}
           </div>
 

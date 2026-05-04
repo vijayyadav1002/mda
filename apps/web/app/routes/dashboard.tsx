@@ -552,11 +552,12 @@ export default function Dashboard() {
     const token = getAuthToken();
     if (!token) throw new Error("Not authenticated");
     const client = createGraphQLClient(token);
-    await client.request(APPLY_TAGS_MUTATION, { assetIds, tagNames });
+    const data: any = await client.request(APPLY_TAGS_MUTATION, { assetIds, tagNames });
     await refreshTagSuggestions();
     if (currentPath) await loadDirectoryIntoCache(currentPath);
     if (rootPath && rootPath !== currentPath) await loadDirectoryIntoCache(rootPath);
     if (activeTagFilter) await loadTagFilterAssets(activeTagFilter);
+    return data.applyTagsToAssets as Array<{ id: string; tags: Array<{ id: string; name: string }> }>;
   }, [activeTagFilter, currentPath, loadTagFilterAssets, refreshTagSuggestions, rootPath]);
 
   const removeTagFromAsset = useCallback(async (assetId: string, tagName: string) => {
@@ -2532,6 +2533,12 @@ export default function Dashboard() {
             prev ? { ...prev, tags: (prev.tags ?? []).filter((t) => t.name !== tagName) } : prev
           );
         }}
+        onAddTags={() => {
+          if (selectedAsset) {
+            setTagDialogAssets([selectedAsset]);
+            setIsTagDialogOpen(true);
+          }
+        }}
       />
 
       <CompressDialog
@@ -2552,7 +2559,13 @@ export default function Dashboard() {
         selectedAssets={tagDialogAssets}
         suggestions={tagSuggestions}
         onApply={async (tagNames) => {
-          await applyTagsToAssets(tagDialogAssets.map((a) => a.id), tagNames);
+          const updated = await applyTagsToAssets(tagDialogAssets.map((a) => a.id), tagNames);
+          if (isViewerOpen && selectedAsset && updated) {
+            const refreshed = updated.find((a) => a.id === selectedAsset.id);
+            if (refreshed) {
+              setSelectedAsset((prev) => prev ? { ...prev, tags: refreshed.tags } : prev);
+            }
+          }
           setIsTagDialogOpen(false);
           setSelectionMode(false);
           setSelectedAssetIds(new Set());
