@@ -222,8 +222,8 @@ const CLEAR_CACHE_MUTATION = `
 `;
 
 const SEARCH_RESULTS_QUERY = `
-  query SearchResults($term: String, $mediaType: String, $sortBy: String, $limit: Int, $minSize: Float, $maxSize: Float) {
-    search(term: $term, mediaType: $mediaType, sortBy: $sortBy, limit: $limit, minSize: $minSize, maxSize: $maxSize) {
+  query SearchResults($term: String, $mediaType: String, $sortBy: String, $limit: Int, $minSize: Float, $maxSize: Float, $path: String) {
+    search(term: $term, mediaType: $mediaType, sortBy: $sortBy, limit: $limit, minSize: $minSize, maxSize: $maxSize, path: $path) {
       files {
         id fileName filePath fileSize mimeType
         thumbnailUrl transcodedUrl
@@ -1253,6 +1253,7 @@ export default function Dashboard() {
       if (mediaType !== "all") vars.mediaType = mediaType;
       if (sortOption !== "default") vars.sortBy = sortOption;
       if (minSizeBytes > 0) vars.minSize = minSizeBytes;
+      if (currentPath && currentPath !== rootPath) vars.path = currentPath;
       const data: any = await client.request(SEARCH_RESULTS_QUERY, vars);
       setSearchAssets((data?.search?.files ?? []) as MediaAsset[]);
     } catch (err) {
@@ -1261,7 +1262,7 @@ export default function Dashboard() {
     } finally {
       setSearchLoading(false);
     }
-  }, [searchLimit, sortOption, minSizeBytes]);
+  }, [searchLimit, sortOption, minSizeBytes, currentPath, rootPath]);
 
   const handleClearSearch = useCallback(() => {
     setSearchQuery(null);
@@ -1584,7 +1585,7 @@ export default function Dashboard() {
       ? "Searching…"
       : searchLimit > 0 && searchAssets.length >= searchLimit
         ? `Showing top ${searchAssets.length} results — try a narrower search or increase the limit`
-        : `${searchAssets.length} result${searchAssets.length === 1 ? "" : "s"} found`
+        : `${searchAssets.length} result${searchAssets.length === 1 ? "" : "s"} found${currentPath && currentPath !== rootPath ? ` in /${currentPath.split("/").filter(Boolean).pop()}` : ""}`
     : activeTagFilter
       ? `${tagFilterAssets.length} tagged file${tagFilterAssets.length === 1 ? "" : "s"} across your library`
       : !isAtRoot
