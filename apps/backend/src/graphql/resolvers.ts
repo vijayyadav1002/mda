@@ -1313,6 +1313,71 @@ export const resolvers = {
       };
     },
 
+    moveFolder: async (
+      _: any,
+      args: { path: string; destinationFolder: string },
+      context: GraphQLContext
+    ) => {
+      if (!context.user || !['admin', 'editor'].includes(context.user.role)) {
+        throw new Error('Admin or Editor access required');
+      }
+
+      const sourcePath = resolveLibraryPath(args.path);
+      const sourceStat = await fs.stat(sourcePath);
+      if (!sourceStat.isDirectory()) {
+        throw new Error('Path is not a directory');
+      }
+
+      const destParent = resolveLibraryPath(args.destinationFolder);
+      const destStat = await fs.stat(destParent);
+      if (!destStat.isDirectory()) {
+        throw new Error('Destination is not a directory');
+      }
+
+      const rootPath = path.resolve(config.mediaLibraryPath);
+      if (sourcePath === rootPath) {
+        throw new Error('Cannot move the root library folder');
+      }
+
+      const folderName = path.basename(sourcePath);
+      const newFolderPath = path.join(destParent, folderName);
+
+      if (newFolderPath === sourcePath || newFolderPath.startsWith(`${sourcePath}${path.sep}`)) {
+        throw new Error('Cannot move folder into itself');
+      }
+      if (!newFolderPath.startsWith(`${rootPath}${path.sep}`)) {
+        throw new Error('Invalid destination path');
+      }
+
+      await fs.rename(sourcePath, newFolderPath);
+
+      const assetsResult = await db.query(
+        'SELECT id, file_path FROM media_assets WHERE file_path LIKE $1',
+        [`${sourcePath}${path.sep}%`]
+      );
+
+      for (const asset of assetsResult.rows) {
+        const newAssetPath = newFolderPath + asset.file_path.slice(sourcePath.length);
+        await db.query(
+          'UPDATE media_assets SET file_path = $1, updated_at = NOW() WHERE id = $2',
+          [newAssetPath, asset.id]
+        );
+      }
+
+      await logAudit(context.user.id, 'MOVE_FOLDER', 'directory', undefined, {
+        oldPath: sourcePath,
+        newPath: newFolderPath,
+        assetsUpdated: assetsResult.rows.length
+      });
+
+      return {
+        name: folderName,
+        path: newFolderPath,
+        type: 'directory',
+        children: []
+      };
+    },
+
     applyTagsToAssets: async (
       _: any,
       args: { assetIds: string[]; tagNames: string[] },

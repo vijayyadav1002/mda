@@ -107,6 +107,7 @@ export const schema = `
     createFolder(parentPath: String, name: String!): DirectoryNode!
     deleteFolder(path: String!): Boolean!
     renameFolder(path: String!, newName: String!): DirectoryNode!
+    moveFolder(path: String!, destinationFolder: String!): DirectoryNode!
 
     applyTagsToAssets(assetIds: [ID!]!, tagNames: [String!]!): [MediaAsset!]!
     removeTagFromAsset(assetId: ID!, tagName: String!): MediaAsset!

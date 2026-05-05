@@ -120,6 +120,14 @@ const RENAME_FOLDER_MUTATION = `
   }
 `;
 
+const MOVE_FOLDER_MUTATION = `
+  mutation MoveFolder($path: String!, $destinationFolder: String!) {
+    moveFolder(path: $path, destinationFolder: $destinationFolder) {
+      name path type
+    }
+  }
+`;
+
 const DIRECTORY_NODE_QUERY = `
   fragment FileInfo on MediaAsset {
     id
@@ -357,6 +365,7 @@ export default function Dashboard() {
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedAssetIds, setSelectedAssetIds] = useState<Set<string>>(new Set());
+  const [selectedFolderPaths, setSelectedFolderPaths] = useState<Set<string>>(new Set());
   const [showChangePasswordDialog, setShowChangePasswordDialog] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -880,9 +889,18 @@ export default function Dashboard() {
     });
   };
 
+  const toggleFolderSelection = (folderPath: string) => {
+    setSelectedFolderPaths((prev) => {
+      const next = new Set(prev);
+      if (next.has(folderPath)) next.delete(folderPath); else next.add(folderPath);
+      return next;
+    });
+  };
+
   const toggleSelectionMode = () => {
     setSelectionMode(!selectionMode);
-    if (selectionMode) setSelectedAssetIds(new Set());
+    setSelectedAssetIds(new Set());
+    setSelectedFolderPaths(new Set());
   };
 
   const handleDownloadSelected = () => {
@@ -1209,6 +1227,39 @@ export default function Dashboard() {
     }
   };
 
+  const handleBulkMove = async () => {
+    if (!moveTargetFolderPath || isMoving) return;
+    const token = getAuthToken();
+    if (!token) return;
+    setIsMoving(true);
+    try {
+      const client = createGraphQLClient(token);
+      for (const node of sortedFolderChildren) {
+        if (node.type === 'file' && node.mediaAsset && selectedAssetIds.has(node.mediaAsset.id)) {
+          const newPath = `${moveTargetFolderPath}/${node.mediaAsset.fileName}`;
+          await client.request(MOVE_MEDIA_ASSET_MUTATION, { id: node.mediaAsset.id, newPath });
+        }
+      }
+      for (const folderPath of selectedFolderPaths) {
+        await client.request(MOVE_FOLDER_MUTATION, { path: folderPath, destinationFolder: moveTargetFolderPath });
+      }
+      setSelectedAssetIds(new Set());
+      setSelectedFolderPaths(new Set());
+      setSelectionMode(false);
+      setShowMoveDialog(false);
+      setMoveTargetFolderPath('');
+      if (rootPath) await loadDirectoryIntoCache(rootPath);
+      if (currentPath && currentPath !== rootPath) await loadDirectoryIntoCache(currentPath);
+      if (moveTargetFolderPath !== rootPath && moveTargetFolderPath !== currentPath) {
+        await loadDirectoryIntoCache(moveTargetFolderPath);
+      }
+    } catch (err: any) {
+      alert(`Failed to move items: ${err.message || 'Unknown error'}`);
+    } finally {
+      setIsMoving(false);
+    }
+  };
+
   const handleRenameFolder = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!renamingFolder || !renameFolderValue.trim() || isRenamingFolder) return;
@@ -1295,6 +1346,10 @@ export default function Dashboard() {
   };
 
   const handleFolderClick = async (folder: DirectoryNode) => {
+    if (selectionMode) {
+      toggleFolderSelection(folder.path);
+      return;
+    }
     if (currentPath) setFolderHistory((prev) => [...prev, currentPath]);
     setCurrentPath(folder.path);
     const cachedNode = directoryCache[folder.path];
@@ -2112,51 +2167,68 @@ export default function Dashboard() {
                   <CheckSquare className="w-4 h-4" />
                   <span className="hidden sm:inline">{selectionMode ? "Cancel" : "Select"}</span>
                 </button>
-                {selectionMode && selectedAssetIds.size > 0 && (
+                {selectionMode && (selectedAssetIds.size > 0 || selectedFolderPaths.size > 0) && (
                   <>
-                    <button
-                      type="button"
-                      onClick={handleDownloadSelected}
-                      className="flex items-center gap-1 px-2.5 py-2 rounded-xl text-sm text-foreground hover:bg-accent transition-all"
-                      title={`Download ${selectedAssetIds.size} file(s)`}
-                    >
-                      <Download className="w-4 h-4" />
-                      <span className="hidden sm:inline">Download</span>
-                      <span className="text-xs">({selectedAssetIds.size})</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setCompressDialogAssets(
-                          sortedFolderChildren
-                            .filter(n => n.type === "file" && n.mediaAsset && selectedAssetIds.has(n.mediaAsset.id))
-                            .map(n => n.mediaAsset!)
-                        );
-                        setIsCompressDialogOpen(true);
-                      }}
-                      className="flex items-center gap-1 px-2.5 py-2 rounded-xl text-sm text-brand-primary hover:bg-accent transition-all"
-                    >
-                      <Minimize2 className="w-4 h-4" />
-                      <span className="hidden sm:inline">Compress</span>
-                      <span className="text-xs">({selectedAssetIds.size})</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const pool: MediaAsset[] = activeTagFilter
-                          ? tagFilterAssets
-                          : sortedFolderChildren
-                              .filter((n) => n.type === "file" && n.mediaAsset)
-                              .map((n) => n.mediaAsset!);
-                        setTagDialogAssets(pool.filter((a) => selectedAssetIds.has(a.id)));
-                        setIsTagDialogOpen(true);
-                      }}
-                      className="flex items-center gap-1 px-2.5 py-2 rounded-xl text-sm text-brand-primary hover:bg-accent transition-all"
-                    >
-                      <TagIcon className="w-4 h-4" />
-                      <span className="hidden sm:inline">Tag</span>
-                      <span className="text-xs">({selectedAssetIds.size})</span>
-                    </button>
+                    {selectedAssetIds.size > 0 && (
+                      <button
+                        type="button"
+                        onClick={handleDownloadSelected}
+                        className="flex items-center gap-1 px-2.5 py-2 rounded-xl text-sm text-foreground hover:bg-accent transition-all"
+                        title={`Download ${selectedAssetIds.size} file(s)`}
+                      >
+                        <Download className="w-4 h-4" />
+                        <span className="hidden sm:inline">Download</span>
+                        <span className="text-xs">({selectedAssetIds.size})</span>
+                      </button>
+                    )}
+                    {selectedAssetIds.size > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCompressDialogAssets(
+                            sortedFolderChildren
+                              .filter(n => n.type === "file" && n.mediaAsset && selectedAssetIds.has(n.mediaAsset.id))
+                              .map(n => n.mediaAsset!)
+                          );
+                          setIsCompressDialogOpen(true);
+                        }}
+                        className="flex items-center gap-1 px-2.5 py-2 rounded-xl text-sm text-brand-primary hover:bg-accent transition-all"
+                      >
+                        <Minimize2 className="w-4 h-4" />
+                        <span className="hidden sm:inline">Compress</span>
+                        <span className="text-xs">({selectedAssetIds.size})</span>
+                      </button>
+                    )}
+                    {selectedAssetIds.size > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const pool: MediaAsset[] = activeTagFilter
+                            ? tagFilterAssets
+                            : sortedFolderChildren
+                                .filter((n) => n.type === "file" && n.mediaAsset)
+                                .map((n) => n.mediaAsset!);
+                          setTagDialogAssets(pool.filter((a) => selectedAssetIds.has(a.id)));
+                          setIsTagDialogOpen(true);
+                        }}
+                        className="flex items-center gap-1 px-2.5 py-2 rounded-xl text-sm text-brand-primary hover:bg-accent transition-all"
+                      >
+                        <TagIcon className="w-4 h-4" />
+                        <span className="hidden sm:inline">Tag</span>
+                        <span className="text-xs">({selectedAssetIds.size})</span>
+                      </button>
+                    )}
+                    {(user?.role === "admin" || user?.role === "editor") && (
+                      <button
+                        type="button"
+                        onClick={() => { setMoveTargetFolderPath(''); setShowMoveDialog(true); }}
+                        className="flex items-center gap-1 px-2.5 py-2 rounded-xl text-sm text-brand-primary hover:bg-accent transition-all"
+                      >
+                        <FolderOpen className="w-4 h-4" />
+                        <span className="hidden sm:inline">Move</span>
+                        <span className="text-xs">({selectedAssetIds.size + selectedFolderPaths.size})</span>
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={handleDeleteSelected}
@@ -2427,8 +2499,17 @@ export default function Dashboard() {
                       <button
                         type="button"
                         onClick={() => void handleFolderClick(node)}
-                        className="w-full rounded-2xl bg-card hover:bg-accent transition-all duration-300 p-6 flex flex-col items-center justify-center gap-4 min-h-[180px] text-center"
+                        className={`w-full rounded-2xl bg-card hover:bg-accent transition-all duration-300 p-6 flex flex-col items-center justify-center gap-4 min-h-[180px] text-center ${
+                          selectedFolderPaths.has(node.path) ? 'ring-2 ring-brand-primary ring-offset-2 ring-offset-background' : ''
+                        }`}
                       >
+                        {selectionMode && (
+                          <div className="absolute top-3 left-3 z-10">
+                            {selectedFolderPaths.has(node.path)
+                              ? <CheckSquare className="w-5 h-5 text-brand-primary drop-shadow" />
+                              : <Square className="w-5 h-5 text-white drop-shadow" />}
+                          </div>
+                        )}
                         <div className="w-16 h-16 rounded-2xl gradient-brand flex items-center justify-center shadow-ambient group-hover:scale-110 transition-transform duration-300">
                           <Folder className="w-8 h-8 text-[#060e20]" />
                         </div>
@@ -2727,30 +2808,40 @@ export default function Dashboard() {
       <Dialog open={showMoveDialog} onOpenChange={(open) => { if (!open) { setShowMoveDialog(false); setMoveTargetFolderPath(''); } }}>
         <DialogContent className="bg-card border-border/20 shadow-ambient rounded-2xl">
           <DialogHeader>
-            <DialogTitle className="font-manrope font-bold text-foreground">Move File</DialogTitle>
+            <DialogTitle className="font-manrope font-bold text-foreground">
+              {selectionMode ? 'Move Items' : 'Move File'}
+            </DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground -mt-1">
-            Select destination for <strong className="text-foreground font-medium">{selectedAsset?.fileName}</strong>
+            {selectionMode
+              ? <>Move <strong className="text-foreground font-medium">{selectedAssetIds.size + selectedFolderPaths.size} selected items</strong> to a new location</>
+              : <>Select destination for <strong className="text-foreground font-medium">{selectedAsset?.fileName}</strong></>
+            }
           </p>
           <div className="max-h-60 overflow-y-auto space-y-1 border border-border/20 rounded-xl p-2 mt-1">
             {allAvailableFolders.map((folder) => {
               const relPath = rootPath && folder.path !== rootPath
                 ? folder.path.replace(rootPath, '') || '/'
                 : '/';
-              const isSelected = moveTargetFolderPath === folder.path;
-              const isCurrent = selectedAsset
+              const isPickerSelected = moveTargetFolderPath === folder.path;
+              const isCurrent = !selectionMode && selectedAsset
                 ? selectedAsset.filePath.substring(0, selectedAsset.filePath.lastIndexOf('/')) === folder.path
                 : false;
+              const isInvalidDest = selectionMode && (
+                selectedFolderPaths.has(folder.path) ||
+                [...selectedFolderPaths].some(fp => folder.path.startsWith(fp + '/'))
+              );
+              const isDisabled = isCurrent || isInvalidDest;
               return (
                 <button
                   key={folder.path}
                   type="button"
-                  disabled={isCurrent}
+                  disabled={isDisabled}
                   onClick={() => setMoveTargetFolderPath(folder.path)}
                   className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all text-left ${
-                    isSelected
+                    isPickerSelected
                       ? 'bg-brand-primary/20 text-brand-primary'
-                      : isCurrent
+                      : isDisabled
                         ? 'opacity-40 cursor-not-allowed text-foreground'
                         : 'hover:bg-accent text-foreground'
                   }`}
@@ -2758,6 +2849,7 @@ export default function Dashboard() {
                   <Folder className="w-4 h-4 flex-shrink-0" />
                   <span className="font-mono text-xs truncate">{relPath}</span>
                   {isCurrent && <span className="ml-auto text-xs text-muted-foreground">current</span>}
+                  {isInvalidDest && <span className="ml-auto text-xs text-muted-foreground">selected</span>}
                 </button>
               );
             })}
@@ -2776,7 +2868,7 @@ export default function Dashboard() {
             <button
               type="button"
               disabled={!moveTargetFolderPath || isMoving}
-              onClick={() => void handleMoveAsset()}
+              onClick={() => void (selectionMode ? handleBulkMove() : handleMoveAsset())}
               className="flex-1 py-2.5 rounded-xl gradient-brand text-[#060e20] font-manrope font-bold text-sm disabled:opacity-50 transition-all"
             >
               {isMoving ? 'Moving…' : 'Move Here'}
