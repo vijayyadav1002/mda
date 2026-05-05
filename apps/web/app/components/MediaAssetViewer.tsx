@@ -1,4 +1,4 @@
-import { Download, File, Maximize2, Minimize2, X, ListTodo, Tag as TagIcon, Plus } from "lucide-react";
+import { Download, File, Maximize2, Minimize2, X, ListTodo, Tag as TagIcon, Plus, Pencil, FolderOpen } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import Hls from "hls.js";
 
@@ -38,6 +38,8 @@ interface MediaAssetViewerProps {
   readonly onCompress?: () => void;
   readonly onRemoveTag?: (tagName: string) => void | Promise<void>;
   readonly onAddTags?: () => void;
+  readonly onRename?: (newName: string) => Promise<void>;
+  readonly onMove?: () => void;
 }
 
 function formatFileSize(bytes: string) {
@@ -68,9 +70,15 @@ export function MediaAssetViewer({
   onCompress,
   onRemoveTag,
   onAddTags,
+  onRename,
+  onMove,
 }: Readonly<MediaAssetViewerProps>) {
-  const canEditTags = userRole === "admin" || userRole === "editor";
+  const canEdit = userRole === "admin" || userRole === "editor";
+  const canEditTags = canEdit;
   const [removingTag, setRemovingTag] = useState<string | null>(null);
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState("");
+  const [renameLoading, setRenameLoading] = useState(false);
   const [imageDimensions, setImageDimensions] = useState({ width: 0, height: 0 });
   const [currentVideoId, setCurrentVideoId] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -86,6 +94,8 @@ export function MediaAssetViewer({
     if (!isOpen) {
       setImageDimensions({ width: 0, height: 0 });
       setIsFullscreen(false);
+      setIsRenaming(false);
+      setRenameValue("");
     }
   }, [isOpen, asset?.id]);
 
@@ -399,13 +409,57 @@ export function MediaAssetViewer({
         <div className="w-full md:w-80 flex-shrink-0 flex flex-col bg-card overflow-y-auto max-h-[50vh] md:max-h-[90vh]">
           {/* Header */}
           <div className="px-6 pt-6 pb-4 flex items-start justify-between">
-            <div className="flex-1 min-w-0">
-              <p className="label-meta">Master Asset</p>
-              <h2 className="font-manrope font-bold text-lg text-foreground mt-1 leading-tight break-all">
-                {asset.fileName}
-              </h2>
-              <p className="text-xs text-muted-foreground mt-1 truncate">{asset.filePath}</p>
-            </div>
+            {isRenaming ? (
+              <form
+                className="flex-1 min-w-0"
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  if (!renameValue.trim() || renameLoading || !onRename) return;
+                  setRenameLoading(true);
+                  try {
+                    await onRename(renameValue.trim());
+                    setIsRenaming(false);
+                    setRenameValue("");
+                  } catch (err: any) {
+                    alert(`Failed to rename: ${err.message || "Unknown error"}`);
+                  } finally {
+                    setRenameLoading(false);
+                  }
+                }}
+              >
+                <p className="label-meta">Rename File</p>
+                <input
+                  autoFocus
+                  value={renameValue}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  className="w-full font-manrope font-bold text-base text-foreground mt-1 bg-transparent border-b border-brand-primary/50 focus:outline-none focus:border-brand-primary pb-0.5"
+                />
+                <div className="flex gap-3 mt-2">
+                  <button
+                    type="submit"
+                    disabled={renameLoading || !renameValue.trim()}
+                    className="text-xs text-brand-primary hover:underline disabled:opacity-50"
+                  >
+                    {renameLoading ? "Saving…" : "Save"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setIsRenaming(false); setRenameValue(""); }}
+                    className="text-xs text-muted-foreground hover:underline"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <div className="flex-1 min-w-0">
+                <p className="label-meta">Master Asset</p>
+                <h2 className="font-manrope font-bold text-lg text-foreground mt-1 leading-tight break-all">
+                  {asset.fileName}
+                </h2>
+                <p className="text-xs text-muted-foreground mt-1 truncate">{asset.filePath}</p>
+              </div>
+            )}
             <button
               type="button"
               onClick={onClose}
@@ -442,6 +496,26 @@ export function MediaAssetViewer({
               >
                 <ListTodo className="w-4 h-4" />
                 Add to Compress Queue
+              </button>
+            )}
+            {canEdit && onRename && (
+              <button
+                type="button"
+                onClick={() => { setRenameValue(asset.fileName); setIsRenaming(true); }}
+                className="flex items-center justify-center gap-2 py-2.5 rounded-xl border border-border/30 text-sm text-foreground hover:bg-accent transition-all"
+              >
+                <Pencil className="w-4 h-4" />
+                Rename File
+              </button>
+            )}
+            {canEdit && onMove && (
+              <button
+                type="button"
+                onClick={onMove}
+                className="flex items-center justify-center gap-2 py-2.5 rounded-xl border border-border/30 text-sm text-foreground hover:bg-accent transition-all"
+              >
+                <FolderOpen className="w-4 h-4" />
+                Move to Folder
               </button>
             )}
           </div>

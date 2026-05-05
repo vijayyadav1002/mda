@@ -685,19 +685,20 @@ export const resolvers = {
 
       const asset = result.rows[0];
       const oldPath = asset.file_path;
+      const newPath = resolveLibraryPath(args.newPath);
 
       // Move the file
-      await fs.rename(oldPath, args.newPath);
+      await fs.rename(oldPath, newPath);
 
       // Update database
       await db.query(
         'UPDATE media_assets SET file_path = $1, updated_at = NOW() WHERE id = $2',
-        [args.newPath, args.id]
+        [newPath, args.id]
       );
 
       await logAudit(context.user.id, 'MOVE_ASSET', 'media_asset', parseInt(args.id, 10), {
         oldPath,
-        newPath: args.newPath
+        newPath
       });
 
       const updated = await db.query('SELECT * FROM media_assets WHERE id = $1', [args.id]);
@@ -721,13 +722,21 @@ export const resolvers = {
         throw new Error('Admin or Editor access required');
       }
 
+      if (!args.newName || !args.newName.trim() || /[/\\]/.test(args.newName) || args.newName.includes('..') || args.newName.startsWith('.')) {
+        throw new Error('Invalid file name');
+      }
+
       const result = await db.query('SELECT * FROM media_assets WHERE id = $1', [args.id]);
-      
+
       if (result.rows.length === 0) throw new Error('Media asset not found');
 
       const asset = result.rows[0];
       const oldPath = asset.file_path;
       const newPath = path.join(path.dirname(oldPath), args.newName);
+      const rootPath = path.resolve(config.mediaLibraryPath);
+      if (!newPath.startsWith(`${rootPath}${path.sep}`)) {
+        throw new Error('Invalid file path');
+      }
 
       // Rename the file
       await fs.rename(oldPath, newPath);
@@ -1242,6 +1251,131 @@ export const resolvers = {
       });
 
       return true;
+    },
+
+    renameFolder: async (
+      _: any,
+      args: { path: string; newName: string },
+      context: GraphQLContext
+    ) => {
+      if (!context.user || !['admin', 'editor'].includes(context.user.role)) {
+        throw new Error('Admin or Editor access required');
+      }
+
+      if (!args.newName || /[/\\]/.test(args.newName) || args.newName.startsWith('.')) {
+        throw new Error('Invalid folder name');
+      }
+
+      const targetPath = resolveLibraryPath(args.path);
+      const targetStat = await fs.stat(targetPath);
+      if (!targetStat.isDirectory()) {
+        throw new Error('Path is not a directory');
+      }
+      const rootPath = path.resolve(config.mediaLibraryPath);
+
+      if (targetPath === rootPath) {
+        throw new Error('Cannot rename the root library folder');
+      }
+
+      const parentDir = path.dirname(targetPath);
+      const newFolderPath = path.join(parentDir, args.newName);
+
+      if (!newFolderPath.startsWith(`${rootPath}${path.sep}`)) {
+        throw new Error('Invalid directory path');
+      }
+
+      await fs.rename(targetPath, newFolderPath);
+
+      const assetsResult = await db.query(
+        'SELECT id, file_path FROM media_assets WHERE file_path LIKE $1',
+        [`${targetPath}${path.sep}%`]
+      );
+
+      for (const asset of assetsResult.rows) {
+        const newAssetPath = newFolderPath + asset.file_path.slice(targetPath.length);
+        await db.query(
+          'UPDATE media_assets SET file_path = $1, updated_at = NOW() WHERE id = $2',
+          [newAssetPath, asset.id]
+        );
+      }
+
+      await logAudit(context.user.id, 'RENAME_FOLDER', 'directory', undefined, {
+        oldPath: targetPath,
+        newPath: newFolderPath,
+        assetsUpdated: assetsResult.rows.length
+      });
+
+      return {
+        name: args.newName,
+        path: newFolderPath,
+        type: 'directory',
+        children: []
+      };
+    },
+
+    moveFolder: async (
+      _: any,
+      args: { path: string; destinationFolder: string },
+      context: GraphQLContext
+    ) => {
+      if (!context.user || !['admin', 'editor'].includes(context.user.role)) {
+        throw new Error('Admin or Editor access required');
+      }
+
+      const sourcePath = resolveLibraryPath(args.path);
+      const sourceStat = await fs.stat(sourcePath);
+      if (!sourceStat.isDirectory()) {
+        throw new Error('Path is not a directory');
+      }
+
+      const destParent = resolveLibraryPath(args.destinationFolder);
+      const destStat = await fs.stat(destParent);
+      if (!destStat.isDirectory()) {
+        throw new Error('Destination is not a directory');
+      }
+
+      const rootPath = path.resolve(config.mediaLibraryPath);
+      if (sourcePath === rootPath) {
+        throw new Error('Cannot move the root library folder');
+      }
+
+      const folderName = path.basename(sourcePath);
+      const newFolderPath = path.join(destParent, folderName);
+
+      if (newFolderPath === sourcePath || newFolderPath.startsWith(`${sourcePath}${path.sep}`)) {
+        throw new Error('Cannot move folder into itself');
+      }
+      if (!newFolderPath.startsWith(`${rootPath}${path.sep}`)) {
+        throw new Error('Invalid destination path');
+      }
+
+      await fs.rename(sourcePath, newFolderPath);
+
+      const assetsResult = await db.query(
+        'SELECT id, file_path FROM media_assets WHERE file_path LIKE $1',
+        [`${sourcePath}${path.sep}%`]
+      );
+
+      for (const asset of assetsResult.rows) {
+        const newAssetPath = newFolderPath + asset.file_path.slice(sourcePath.length);
+        await db.query(
+          'UPDATE media_assets SET file_path = $1, updated_at = NOW() WHERE id = $2',
+          [newAssetPath, asset.id]
+        );
+      }
+
+      await logAudit(context.user.id, 'MOVE_FOLDER', 'directory', undefined, {
+        oldPath: sourcePath,
+        newPath: newFolderPath,
+        assetsUpdated: assetsResult.rows.length
+      });
+
+      return {
+        name: folderName,
+        path: newFolderPath,
+        type: 'directory',
+        children: []
+      };
     },
 
     applyTagsToAssets: async (

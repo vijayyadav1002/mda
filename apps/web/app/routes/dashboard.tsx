@@ -13,7 +13,7 @@ import {
   Trash2, CheckSquare, Square, Users, Key, RotateCcw,
   Menu, X, ImagePlus, ArrowUpDown, Minimize2,
   Upload, LogOut, Download, FolderPlus, ListTodo,
-  Moon, Sun, User, Tag as TagIcon, Pencil, HardDrive,
+  Moon, Sun, User, Tag as TagIcon, Pencil, HardDrive, FolderOpen,
 } from "lucide-react";
 
 const API_URL = getApiUrl();
@@ -93,6 +93,38 @@ const CREATE_FOLDER_MUTATION = `
 const DELETE_FOLDER_MUTATION = `
   mutation DeleteFolder($path: String!) {
     deleteFolder(path: $path)
+  }
+`;
+
+const RENAME_MEDIA_ASSET_MUTATION = `
+  mutation RenameMediaAsset($id: ID!, $newName: String!) {
+    renameMediaAsset(id: $id, newName: $newName) {
+      id fileName filePath mimeType fileSize thumbnailUrl transcodedUrl createdAt tags { id name }
+    }
+  }
+`;
+
+const MOVE_MEDIA_ASSET_MUTATION = `
+  mutation MoveMediaAsset($id: ID!, $newPath: String!) {
+    moveMediaAsset(id: $id, newPath: $newPath) {
+      id fileName filePath mimeType fileSize thumbnailUrl transcodedUrl createdAt tags { id name }
+    }
+  }
+`;
+
+const RENAME_FOLDER_MUTATION = `
+  mutation RenameFolder($path: String!, $newName: String!) {
+    renameFolder(path: $path, newName: $newName) {
+      name path type
+    }
+  }
+`;
+
+const MOVE_FOLDER_MUTATION = `
+  mutation MoveFolder($path: String!, $destinationFolder: String!) {
+    moveFolder(path: $path, destinationFolder: $destinationFolder) {
+      name path type
+    }
   }
 `;
 
@@ -333,6 +365,7 @@ export default function Dashboard() {
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedAssetIds, setSelectedAssetIds] = useState<Set<string>>(new Set());
+  const [selectedFolderPaths, setSelectedFolderPaths] = useState<Set<string>>(new Set());
   const [showChangePasswordDialog, setShowChangePasswordDialog] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -375,6 +408,12 @@ export default function Dashboard() {
   const [showNewFolderDialog, setShowNewFolderDialog] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
+  const [showMoveDialog, setShowMoveDialog] = useState(false);
+  const [moveTargetFolderPath, setMoveTargetFolderPath] = useState('');
+  const [isMoving, setIsMoving] = useState(false);
+  const [renamingFolder, setRenamingFolder] = useState<{ path: string; name: string } | null>(null);
+  const [renameFolderValue, setRenameFolderValue] = useState('');
+  const [isRenamingFolder, setIsRenamingFolder] = useState(false);
   const [cacheStats, setCacheStats] = useState<CacheStats | null>(null);
   const [showCachePanel, setShowCachePanel] = useState(false);
   const [searchQuery, setSearchQuery] = useState<{ term: string; mediaType: string } | null>(null);
@@ -850,9 +889,18 @@ export default function Dashboard() {
     });
   };
 
+  const toggleFolderSelection = (folderPath: string) => {
+    setSelectedFolderPaths((prev) => {
+      const next = new Set(prev);
+      if (next.has(folderPath)) next.delete(folderPath); else next.add(folderPath);
+      return next;
+    });
+  };
+
   const toggleSelectionMode = () => {
     setSelectionMode(!selectionMode);
-    if (selectionMode) setSelectedAssetIds(new Set());
+    setSelectedAssetIds(new Set());
+    setSelectedFolderPaths(new Set());
   };
 
   const handleDownloadSelected = () => {
@@ -1135,6 +1183,114 @@ export default function Dashboard() {
     }
   };
 
+  const allAvailableFolders = useMemo(() => {
+    const seen = new Set<string>();
+    const result: Array<{ name: string; path: string }> = [];
+    for (const node of Object.values(directoryCache)) {
+      if (!seen.has(node.path)) {
+        seen.add(node.path);
+        result.push({ name: node.name, path: node.path });
+      }
+      if (node.children) {
+        for (const child of node.children) {
+          if (child.type === 'directory' && !seen.has(child.path)) {
+            seen.add(child.path);
+            result.push({ name: child.name, path: child.path });
+          }
+        }
+      }
+    }
+    return result.sort((a, b) => a.path.localeCompare(b.path));
+  }, [directoryCache]);
+
+  const handleMoveAsset = async () => {
+    if (!selectedAsset || !moveTargetFolderPath || isMoving) return;
+    setIsMoving(true);
+    try {
+      const token = getAuthToken();
+      if (!token) return;
+      const client = createGraphQLClient(token);
+      const newPath = `${moveTargetFolderPath}/${selectedAsset.fileName}`;
+      const data: any = await client.request(MOVE_MEDIA_ASSET_MUTATION, { id: selectedAsset.id, newPath });
+      setSelectedAsset(data.moveMediaAsset);
+      setShowMoveDialog(false);
+      setMoveTargetFolderPath('');
+      if (rootPath) await loadDirectoryIntoCache(rootPath);
+      if (currentPath && currentPath !== rootPath) await loadDirectoryIntoCache(currentPath);
+      if (moveTargetFolderPath !== rootPath && moveTargetFolderPath !== currentPath) {
+        await loadDirectoryIntoCache(moveTargetFolderPath);
+      }
+    } catch (err: any) {
+      alert(`Failed to move file: ${err.message || 'Unknown error'}`);
+    } finally {
+      setIsMoving(false);
+    }
+  };
+
+  const handleBulkMove = async () => {
+    if (!moveTargetFolderPath || isMoving) return;
+    const token = getAuthToken();
+    if (!token) return;
+    setIsMoving(true);
+    try {
+      const client = createGraphQLClient(token);
+      for (const node of sortedFolderChildren) {
+        if (node.type === 'file' && node.mediaAsset && selectedAssetIds.has(node.mediaAsset.id)) {
+          const newPath = `${moveTargetFolderPath}/${node.mediaAsset.fileName}`;
+          await client.request(MOVE_MEDIA_ASSET_MUTATION, { id: node.mediaAsset.id, newPath });
+        }
+      }
+      for (const folderPath of selectedFolderPaths) {
+        await client.request(MOVE_FOLDER_MUTATION, { path: folderPath, destinationFolder: moveTargetFolderPath });
+      }
+      setSelectedAssetIds(new Set());
+      setSelectedFolderPaths(new Set());
+      setSelectionMode(false);
+      setShowMoveDialog(false);
+      setMoveTargetFolderPath('');
+      if (rootPath) await loadDirectoryIntoCache(rootPath);
+      if (currentPath && currentPath !== rootPath) await loadDirectoryIntoCache(currentPath);
+      if (moveTargetFolderPath !== rootPath && moveTargetFolderPath !== currentPath) {
+        await loadDirectoryIntoCache(moveTargetFolderPath);
+      }
+    } catch (err: any) {
+      alert(`Failed to move items: ${err.message || 'Unknown error'}`);
+    } finally {
+      setIsMoving(false);
+    }
+  };
+
+  const handleRenameFolder = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!renamingFolder || !renameFolderValue.trim() || isRenamingFolder) return;
+    setIsRenamingFolder(true);
+    try {
+      const token = getAuthToken();
+      if (!token) return;
+      const client = createGraphQLClient(token);
+      await client.request(RENAME_FOLDER_MUTATION, { path: renamingFolder.path, newName: renameFolderValue.trim() });
+      const renamedPath = renamingFolder.path;
+      setRenamingFolder(null);
+      setRenameFolderValue('');
+      setDirectoryCache((prev) => {
+        const next = { ...prev };
+        for (const key of Object.keys(next)) {
+          if (key === renamedPath || key.startsWith(`${renamedPath}/`)) delete next[key];
+        }
+        return next;
+      });
+      if (currentPath && (currentPath === renamedPath || currentPath.startsWith(`${renamedPath}/`))) {
+        await handleBackClick();
+      } else {
+        if (currentPath) await loadDirectoryIntoCache(currentPath);
+      }
+    } catch (err: any) {
+      alert(`Failed to rename folder: ${err.message || 'Unknown error'}`);
+    } finally {
+      setIsRenamingFolder(false);
+    }
+  };
+
   const handleUpload = async () => {
     if (uploadFiles.length === 0 || isUploading) return;
     setIsUploading(true);
@@ -1190,6 +1346,10 @@ export default function Dashboard() {
   };
 
   const handleFolderClick = async (folder: DirectoryNode) => {
+    if (selectionMode) {
+      toggleFolderSelection(folder.path);
+      return;
+    }
     if (currentPath) setFolderHistory((prev) => [...prev, currentPath]);
     setCurrentPath(folder.path);
     const cachedNode = directoryCache[folder.path];
@@ -1546,14 +1706,24 @@ export default function Dashboard() {
             </span>
           </button>
           {(user?.role === "admin" || user?.role === "editor") && (
-            <button
-              type="button"
-              onClick={() => void handleDeleteFolder(node.path, node.name)}
-              className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-destructive/10 rounded-lg transition-all duration-150 mr-1 flex-shrink-0"
-              title="Delete folder"
-            >
-              <Trash2 className="w-3.5 h-3.5 text-destructive" />
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => { setRenamingFolder({ path: node.path, name: node.name }); setRenameFolderValue(node.name); }}
+                className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-accent rounded-lg transition-all duration-150 flex-shrink-0"
+                title="Rename folder"
+              >
+                <Pencil className="w-3.5 h-3.5 text-foreground" />
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleDeleteFolder(node.path, node.name)}
+                className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-destructive/10 rounded-lg transition-all duration-150 mr-1 flex-shrink-0"
+                title="Delete folder"
+              >
+                <Trash2 className="w-3.5 h-3.5 text-destructive" />
+              </button>
+            </>
           )}
         </div>
         {isExpanded && children === null && (
@@ -1997,51 +2167,68 @@ export default function Dashboard() {
                   <CheckSquare className="w-4 h-4" />
                   <span className="hidden sm:inline">{selectionMode ? "Cancel" : "Select"}</span>
                 </button>
-                {selectionMode && selectedAssetIds.size > 0 && (
+                {selectionMode && (selectedAssetIds.size > 0 || selectedFolderPaths.size > 0) && (
                   <>
-                    <button
-                      type="button"
-                      onClick={handleDownloadSelected}
-                      className="flex items-center gap-1 px-2.5 py-2 rounded-xl text-sm text-foreground hover:bg-accent transition-all"
-                      title={`Download ${selectedAssetIds.size} file(s)`}
-                    >
-                      <Download className="w-4 h-4" />
-                      <span className="hidden sm:inline">Download</span>
-                      <span className="text-xs">({selectedAssetIds.size})</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setCompressDialogAssets(
-                          sortedFolderChildren
-                            .filter(n => n.type === "file" && n.mediaAsset && selectedAssetIds.has(n.mediaAsset.id))
-                            .map(n => n.mediaAsset!)
-                        );
-                        setIsCompressDialogOpen(true);
-                      }}
-                      className="flex items-center gap-1 px-2.5 py-2 rounded-xl text-sm text-brand-primary hover:bg-accent transition-all"
-                    >
-                      <Minimize2 className="w-4 h-4" />
-                      <span className="hidden sm:inline">Compress</span>
-                      <span className="text-xs">({selectedAssetIds.size})</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const pool: MediaAsset[] = activeTagFilter
-                          ? tagFilterAssets
-                          : sortedFolderChildren
-                              .filter((n) => n.type === "file" && n.mediaAsset)
-                              .map((n) => n.mediaAsset!);
-                        setTagDialogAssets(pool.filter((a) => selectedAssetIds.has(a.id)));
-                        setIsTagDialogOpen(true);
-                      }}
-                      className="flex items-center gap-1 px-2.5 py-2 rounded-xl text-sm text-brand-primary hover:bg-accent transition-all"
-                    >
-                      <TagIcon className="w-4 h-4" />
-                      <span className="hidden sm:inline">Tag</span>
-                      <span className="text-xs">({selectedAssetIds.size})</span>
-                    </button>
+                    {selectedAssetIds.size > 0 && (
+                      <button
+                        type="button"
+                        onClick={handleDownloadSelected}
+                        className="flex items-center gap-1 px-2.5 py-2 rounded-xl text-sm text-foreground hover:bg-accent transition-all"
+                        title={`Download ${selectedAssetIds.size} file(s)`}
+                      >
+                        <Download className="w-4 h-4" />
+                        <span className="hidden sm:inline">Download</span>
+                        <span className="text-xs">({selectedAssetIds.size})</span>
+                      </button>
+                    )}
+                    {selectedAssetIds.size > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCompressDialogAssets(
+                            sortedFolderChildren
+                              .filter(n => n.type === "file" && n.mediaAsset && selectedAssetIds.has(n.mediaAsset.id))
+                              .map(n => n.mediaAsset!)
+                          );
+                          setIsCompressDialogOpen(true);
+                        }}
+                        className="flex items-center gap-1 px-2.5 py-2 rounded-xl text-sm text-brand-primary hover:bg-accent transition-all"
+                      >
+                        <Minimize2 className="w-4 h-4" />
+                        <span className="hidden sm:inline">Compress</span>
+                        <span className="text-xs">({selectedAssetIds.size})</span>
+                      </button>
+                    )}
+                    {selectedAssetIds.size > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const pool: MediaAsset[] = activeTagFilter
+                            ? tagFilterAssets
+                            : sortedFolderChildren
+                                .filter((n) => n.type === "file" && n.mediaAsset)
+                                .map((n) => n.mediaAsset!);
+                          setTagDialogAssets(pool.filter((a) => selectedAssetIds.has(a.id)));
+                          setIsTagDialogOpen(true);
+                        }}
+                        className="flex items-center gap-1 px-2.5 py-2 rounded-xl text-sm text-brand-primary hover:bg-accent transition-all"
+                      >
+                        <TagIcon className="w-4 h-4" />
+                        <span className="hidden sm:inline">Tag</span>
+                        <span className="text-xs">({selectedAssetIds.size})</span>
+                      </button>
+                    )}
+                    {(user?.role === "admin" || user?.role === "editor") && (
+                      <button
+                        type="button"
+                        onClick={() => { setMoveTargetFolderPath(''); setShowMoveDialog(true); }}
+                        className="flex items-center gap-1 px-2.5 py-2 rounded-xl text-sm text-brand-primary hover:bg-accent transition-all"
+                      >
+                        <FolderOpen className="w-4 h-4" />
+                        <span className="hidden sm:inline">Move</span>
+                        <span className="text-xs">({selectedAssetIds.size + selectedFolderPaths.size})</span>
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={handleDeleteSelected}
@@ -2312,8 +2499,17 @@ export default function Dashboard() {
                       <button
                         type="button"
                         onClick={() => void handleFolderClick(node)}
-                        className="w-full rounded-2xl bg-card hover:bg-accent transition-all duration-300 p-6 flex flex-col items-center justify-center gap-4 min-h-[180px] text-center"
+                        className={`w-full rounded-2xl bg-card hover:bg-accent transition-all duration-300 p-6 flex flex-col items-center justify-center gap-4 min-h-[180px] text-center ${
+                          selectedFolderPaths.has(node.path) ? 'ring-2 ring-brand-primary ring-offset-2 ring-offset-background' : ''
+                        }`}
                       >
+                        {selectionMode && (
+                          <div className="absolute top-3 left-3 z-10">
+                            {selectedFolderPaths.has(node.path)
+                              ? <CheckSquare className="w-5 h-5 text-brand-primary drop-shadow" />
+                              : <Square className="w-5 h-5 text-white drop-shadow" />}
+                          </div>
+                        )}
                         <div className="w-16 h-16 rounded-2xl gradient-brand flex items-center justify-center shadow-ambient group-hover:scale-110 transition-transform duration-300">
                           <Folder className="w-8 h-8 text-[#060e20]" />
                         </div>
@@ -2327,14 +2523,24 @@ export default function Dashboard() {
                         </div>
                       </button>
                       {!selectionMode && (user?.role === "admin" || user?.role === "editor") && (
-                        <button
-                          type="button"
-                          onClick={(e) => { e.stopPropagation(); void handleDeleteFolder(node.path, node.name); }}
-                          className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 w-8 h-8 bg-background/80 backdrop-blur-sm rounded-xl flex items-center justify-center hover:bg-destructive/20 transition-all duration-200"
-                          title="Delete folder"
-                        >
-                          <Trash2 className="w-3.5 h-3.5 text-destructive" />
-                        </button>
+                        <div className="absolute top-3 right-3 flex gap-1 opacity-0 group-hover:opacity-100">
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); setRenamingFolder({ path: node.path, name: node.name }); setRenameFolderValue(node.name); }}
+                            className="w-8 h-8 bg-background/80 backdrop-blur-sm rounded-xl flex items-center justify-center hover:bg-accent transition-all duration-200"
+                            title="Rename folder"
+                          >
+                            <Pencil className="w-3.5 h-3.5 text-foreground" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); void handleDeleteFolder(node.path, node.name); }}
+                            className="w-8 h-8 bg-background/80 backdrop-blur-sm rounded-xl flex items-center justify-center hover:bg-destructive/20 transition-all duration-200"
+                            title="Delete folder"
+                          >
+                            <Trash2 className="w-3.5 h-3.5 text-destructive" />
+                          </button>
+                        </div>
                       )}
                     </div>
                   );
@@ -2540,6 +2746,20 @@ export default function Dashboard() {
             setIsTagDialogOpen(true);
           }
         }}
+        onRename={async (newName) => {
+          if (!selectedAsset) return;
+          const token = getAuthToken();
+          if (!token) return;
+          const client = createGraphQLClient(token);
+          const data: any = await client.request(RENAME_MEDIA_ASSET_MUTATION, { id: selectedAsset.id, newName });
+          setSelectedAsset(data.renameMediaAsset);
+          if (rootPath) await loadDirectoryIntoCache(rootPath);
+          if (currentPath && currentPath !== rootPath) await loadDirectoryIntoCache(currentPath);
+        }}
+        onMove={() => {
+          setMoveTargetFolderPath('');
+          setShowMoveDialog(true);
+        }}
       />
 
       <CompressDialog
@@ -2583,6 +2803,116 @@ export default function Dashboard() {
         onClearCompleted={clearCompletedJobs}
         apiUrl={API_URL}
       />
+
+      {/* Move Asset */}
+      <Dialog open={showMoveDialog} onOpenChange={(open) => { if (!open) { setShowMoveDialog(false); setMoveTargetFolderPath(''); } }}>
+        <DialogContent className="bg-card border-border/20 shadow-ambient rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="font-manrope font-bold text-foreground">
+              {selectionMode ? 'Move Items' : 'Move File'}
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground -mt-1">
+            {selectionMode
+              ? <>Move <strong className="text-foreground font-medium">{selectedAssetIds.size + selectedFolderPaths.size} selected items</strong> to a new location</>
+              : <>Select destination for <strong className="text-foreground font-medium">{selectedAsset?.fileName}</strong></>
+            }
+          </p>
+          <div className="max-h-60 overflow-y-auto space-y-1 border border-border/20 rounded-xl p-2 mt-1">
+            {allAvailableFolders.map((folder) => {
+              const relPath = rootPath && folder.path !== rootPath
+                ? folder.path.replace(rootPath, '') || '/'
+                : '/';
+              const isPickerSelected = moveTargetFolderPath === folder.path;
+              const isCurrent = !selectionMode && selectedAsset
+                ? selectedAsset.filePath.substring(0, selectedAsset.filePath.lastIndexOf('/')) === folder.path
+                : false;
+              const isInvalidDest = selectionMode && (
+                selectedFolderPaths.has(folder.path) ||
+                [...selectedFolderPaths].some(fp => folder.path.startsWith(fp + '/'))
+              );
+              const isDisabled = isCurrent || isInvalidDest;
+              return (
+                <button
+                  key={folder.path}
+                  type="button"
+                  disabled={isDisabled}
+                  onClick={() => setMoveTargetFolderPath(folder.path)}
+                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all text-left ${
+                    isPickerSelected
+                      ? 'bg-brand-primary/20 text-brand-primary'
+                      : isDisabled
+                        ? 'opacity-40 cursor-not-allowed text-foreground'
+                        : 'hover:bg-accent text-foreground'
+                  }`}
+                >
+                  <Folder className="w-4 h-4 flex-shrink-0" />
+                  <span className="font-mono text-xs truncate">{relPath}</span>
+                  {isCurrent && <span className="ml-auto text-xs text-muted-foreground">current</span>}
+                  {isInvalidDest && <span className="ml-auto text-xs text-muted-foreground">selected</span>}
+                </button>
+              );
+            })}
+            {allAvailableFolders.length === 0 && (
+              <p className="text-xs text-muted-foreground text-center py-4">No folders available</p>
+            )}
+          </div>
+          <div className="flex gap-3 mt-2">
+            <button
+              type="button"
+              onClick={() => { setShowMoveDialog(false); setMoveTargetFolderPath(''); }}
+              className="flex-1 py-2.5 rounded-xl border border-border/30 text-sm text-foreground hover:bg-accent transition-all"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={!moveTargetFolderPath || isMoving}
+              onClick={() => void (selectionMode ? handleBulkMove() : handleMoveAsset())}
+              className="flex-1 py-2.5 rounded-xl gradient-brand text-[#060e20] font-manrope font-bold text-sm disabled:opacity-50 transition-all"
+            >
+              {isMoving ? 'Moving…' : 'Move Here'}
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Rename Folder */}
+      <Dialog open={!!renamingFolder} onOpenChange={(open) => { if (!open) { setRenamingFolder(null); setRenameFolderValue(''); } }}>
+        <DialogContent className="bg-card border-border/20 shadow-ambient rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="font-manrope font-bold text-foreground">Rename Folder</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={(e) => void handleRenameFolder(e)} className="space-y-4 mt-1">
+            <div className="space-y-1.5">
+              <label className="label-meta">New name</label>
+              <Input
+                autoFocus
+                value={renameFolderValue}
+                onChange={(e) => setRenameFolderValue(e.target.value)}
+                placeholder={renamingFolder?.name ?? ''}
+                className="bg-muted border-border/20 text-foreground"
+              />
+            </div>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => { setRenamingFolder(null); setRenameFolderValue(''); }}
+                className="flex-1 py-2.5 rounded-xl border border-border/30 text-sm text-foreground hover:bg-accent transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={!renameFolderValue.trim() || isRenamingFolder}
+                className="flex-1 py-2.5 rounded-xl gradient-brand text-[#060e20] font-manrope font-bold text-sm disabled:opacity-50 transition-all"
+              >
+                {isRenamingFolder ? 'Renaming…' : 'Rename'}
+              </button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {/* Change Password */}
       <Dialog open={showChangePasswordDialog} onOpenChange={setShowChangePasswordDialog}>
