@@ -80,7 +80,7 @@ export const schema = `
     tags: [Tag!]!
     mediaAssetsByTag(tagName: String!, limit: Int, offset: Int): [MediaAsset!]!
     cacheStats: CacheStats!
-    search(term: String, mediaType: String, sortBy: String, limit: Int, minSize: Float, maxSize: Float): SearchResults!
+    search(term: String, mediaType: String, sortBy: String, limit: Int, minSize: Float, maxSize: Float, path: String): SearchResults!
   }
 
   type Mutation {

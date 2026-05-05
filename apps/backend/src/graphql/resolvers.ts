@@ -358,7 +358,7 @@ export const resolvers = {
 
     search: async (
       _: any,
-      args: { term?: string; mediaType?: string; sortBy?: string; limit?: number; minSize?: number; maxSize?: number },
+      args: { term?: string; mediaType?: string; sortBy?: string; limit?: number; minSize?: number; maxSize?: number; path?: string },
       context: GraphQLContext
     ) => {
       if (!context.user) throw new Error('Unauthorized');
@@ -406,6 +406,12 @@ export const resolvers = {
         conditions.push(`file_size <= $${queryParams.length}`);
       }
 
+      const scopedPath = args.path ? resolveLibraryPath(args.path) : null;
+      if (scopedPath) {
+        queryParams.push(`${scopedPath}/%`);
+        conditions.push(`file_path LIKE $${queryParams.length}`);
+      }
+
       const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
       let orderClause: string;
@@ -434,7 +440,7 @@ export const resolvers = {
 
       // Only search folders when there's a text term (folders have no media type)
       const folders = trimmed.length > 0 && !mediaType
-        ? await collectMatchingFolders(resolveLibraryPath(null), trimmed.toLowerCase(), folderSearchLimit)
+        ? await collectMatchingFolders(scopedPath ?? resolveLibraryPath(null), trimmed.toLowerCase(), folderSearchLimit)
         : [];
 
       return {
