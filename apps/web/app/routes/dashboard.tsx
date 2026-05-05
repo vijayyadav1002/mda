@@ -1560,7 +1560,7 @@ export default function Dashboard() {
     if (!searchQuery) return;
     void handleSearch(searchQuery.term, searchQuery.mediaType);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sortOption, searchLimit, minSizeBytes]);
+  }, [sortOption, searchLimit, minSizeBytes, currentPath]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -2630,6 +2630,11 @@ export default function Dashboard() {
                         <p className="label-meta mt-1">
                           {formatBytes(asset.fileSize)} · {formatDate(asset.createdAt)}
                         </p>
+                        {searchQuery && rootPath && (
+                          <p className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground/70">
+                            {(asset.filePath.substring(0, asset.filePath.lastIndexOf('/')).replace(rootPath, '') || '/').replace(/^\//, '') || '/'}
+                          </p>
+                        )}
                         {asset.tags && asset.tags.length > 0 && (
                           <div className="mt-2 flex flex-wrap gap-1">
                             {asset.tags.map((tag) => (
