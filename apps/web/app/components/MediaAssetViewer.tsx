@@ -1,4 +1,4 @@
-import { Download, File, Maximize2, Minimize2, X, ListTodo, Tag as TagIcon, Plus, Pencil, FolderOpen, Save } from "lucide-react";
+import { Download, File, Maximize2, Minimize2, X, ListTodo, Tag as TagIcon, Plus, Pencil, FolderOpen, Save, Copy } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import Hls from "hls.js";
 import ReactMarkdown from "react-markdown";
@@ -44,6 +44,7 @@ interface MediaAssetViewerProps {
   readonly onAddTags?: () => void;
   readonly onRename?: (newName: string) => Promise<void>;
   readonly onMove?: () => void;
+  readonly onDuplicate?: () => void;
   readonly onAssetUpdated?: (updates: Partial<Pick<MediaAsset, "fileSize" | "updatedAt">>) => void;
 }
 
@@ -110,6 +111,7 @@ export function MediaAssetViewer({
   onAddTags,
   onRename,
   onMove,
+  onDuplicate,
   onAssetUpdated,
 }: Readonly<MediaAssetViewerProps>) {
   const canEdit = userRole === "admin" || userRole === "editor";
@@ -801,6 +803,16 @@ export function MediaAssetViewer({
               >
                 <FolderOpen className="w-4 h-4" />
                 Move to Folder
+              </button>
+            )}
+            {canEdit && onDuplicate && (
+              <button
+                type="button"
+                onClick={onDuplicate}
+                className="flex items-center justify-center gap-2 py-2.5 rounded-xl border border-border/30 text-sm text-foreground hover:bg-accent transition-all"
+              >
+                <Copy className="w-4 h-4" />
+                Duplicate File
               </button>
             )}
           </div>

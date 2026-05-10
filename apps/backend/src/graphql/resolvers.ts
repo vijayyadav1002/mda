@@ -82,6 +82,42 @@ const resolveLibraryPath = (requestedPath?: string | null) => {
   return targetPath;
 };
 
+const buildDuplicatePath = async (
+  destinationDir: string,
+  name: string,
+  options: { preserveExtension: boolean }
+): Promise<string> => {
+  const ext = options.preserveExtension ? path.extname(name) : '';
+  const base = options.preserveExtension ? path.basename(name, ext) : name;
+  for (let i = 1; i < 1000; i += 1) {
+    const suffix = i === 1 ? ' copy' : ` copy ${i}`;
+    const candidate = path.join(destinationDir, `${base}${suffix}${ext}`);
+    try {
+      await fs.access(candidate);
+    } catch {
+      return candidate;
+    }
+  }
+  throw new Error('Could not choose a duplicate file name');
+};
+
+const collectIndexableFiles = async (dirPath: string): Promise<string[]> => {
+  const files: string[] = [];
+  const entries = await fs.readdir(dirPath, { withFileTypes: true });
+  for (const entry of entries) {
+    if (entry.name.startsWith('.')) continue;
+    const fullPath = path.join(dirPath, entry.name);
+    const stat = await fs.lstat(fullPath);
+    if (stat.isSymbolicLink()) continue;
+    if (stat.isDirectory()) {
+      files.push(...await collectIndexableFiles(fullPath));
+    } else if (stat.isFile()) {
+      files.push(fullPath);
+    }
+  }
+  return files;
+};
+
 const listMediaFilesInDirectory = async (dirPath: string): Promise<string[]> => {
   const entries = (await fs.readdir(dirPath, { withFileTypes: true }))
     .filter((entry) => !entry.name.startsWith('.'));
@@ -762,6 +798,50 @@ export const resolvers = {
       };
     },
 
+    duplicateMediaAsset: async (
+      _: any,
+      args: { id: string; destinationFolder?: string | null },
+      context: GraphQLContext
+    ) => {
+      if (!context.user || !['admin', 'editor'].includes(context.user.role)) {
+        throw new Error('Admin or Editor access required');
+      }
+
+      const result = await db.query('SELECT * FROM media_assets WHERE id = $1', [args.id]);
+      if (result.rows.length === 0) throw new Error('Media asset not found');
+
+      const asset = result.rows[0];
+      const sourcePath = path.resolve(asset.file_path);
+      const rootPath = resolveLibraryPath(null);
+      if (sourcePath !== rootPath && !sourcePath.startsWith(`${rootPath}${path.sep}`)) {
+        throw new Error('Invalid source file path');
+      }
+
+      const destinationDir = args.destinationFolder
+        ? resolveLibraryPath(args.destinationFolder)
+        : path.dirname(sourcePath);
+      const destinationStat = await fs.stat(destinationDir);
+      if (!destinationStat.isDirectory()) {
+        throw new Error('Destination must be a folder');
+      }
+
+      const duplicatePath = await buildDuplicatePath(destinationDir, asset.file_name, { preserveExtension: true });
+      await fs.copyFile(sourcePath, duplicatePath);
+      await indexFile(duplicatePath);
+
+      const copied = await db.query('SELECT * FROM media_assets WHERE file_path = $1', [duplicatePath]);
+      if (copied.rows.length === 0) {
+        throw new Error('Duplicate was created but could not be indexed');
+      }
+
+      await logAudit(context.user.id, 'DUPLICATE_ASSET', 'media_asset', parseInt(args.id, 10), {
+        sourcePath,
+        duplicatePath
+      });
+
+      return mapMediaAssetRow(copied.rows[0]);
+    },
+
     deleteMediaAsset: async (_: any, args: { id: string }, context: GraphQLContext) => {
       if (!context.user || !['admin', 'editor'].includes(context.user.role)) {
         throw new Error('Admin or Editor access required');
@@ -1377,6 +1457,59 @@ export const resolvers = {
         type: 'directory',
         children: []
       };
+    },
+
+    duplicateFolder: async (
+      _: any,
+      args: { path: string; destinationFolder?: string | null },
+      context: GraphQLContext
+    ) => {
+      if (!context.user || !['admin', 'editor'].includes(context.user.role)) {
+        throw new Error('Admin or Editor access required');
+      }
+
+      const sourcePath = resolveLibraryPath(args.path);
+      const sourceStat = await fs.stat(sourcePath);
+      if (!sourceStat.isDirectory()) {
+        throw new Error('Path is not a directory');
+      }
+
+      const rootPath = path.resolve(config.mediaLibraryPath);
+      if (sourcePath === rootPath) {
+        throw new Error('Cannot duplicate the root library folder');
+      }
+
+      const destinationDir = args.destinationFolder
+        ? resolveLibraryPath(args.destinationFolder)
+        : path.dirname(sourcePath);
+      const destinationStat = await fs.stat(destinationDir);
+      if (!destinationStat.isDirectory()) {
+        throw new Error('Destination is not a directory');
+      }
+
+      const duplicatePath = await buildDuplicatePath(destinationDir, path.basename(sourcePath), { preserveExtension: false });
+      if (duplicatePath === sourcePath || duplicatePath.startsWith(`${sourcePath}${path.sep}`)) {
+        throw new Error('Cannot duplicate folder into itself');
+      }
+
+      await fs.cp(sourcePath, duplicatePath, {
+        recursive: true,
+        errorOnExist: true,
+        force: false,
+      });
+
+      const copiedFiles = await collectIndexableFiles(duplicatePath);
+      for (const filePath of copiedFiles) {
+        await indexFile(filePath);
+      }
+
+      await logAudit(context.user.id, 'DUPLICATE_FOLDER', 'directory', undefined, {
+        sourcePath,
+        duplicatePath,
+        filesCopied: copiedFiles.length
+      });
+
+      return buildDirectoryNode(duplicatePath);
     },
 
     applyTagsToAssets: async (

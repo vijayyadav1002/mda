@@ -14,6 +14,7 @@ import {
   Menu, X, ImagePlus, ArrowUpDown, Minimize2,
   Upload, LogOut, Download, FolderPlus, ListTodo,
   Moon, Sun, User, Tag as TagIcon, Pencil, HardDrive, FolderOpen,
+  Copy,
 } from "lucide-react";
 
 const API_URL = getApiUrl();
@@ -108,6 +109,22 @@ const MOVE_MEDIA_ASSET_MUTATION = `
   mutation MoveMediaAsset($id: ID!, $newPath: String!) {
     moveMediaAsset(id: $id, newPath: $newPath) {
       id fileName filePath mimeType fileSize thumbnailUrl transcodedUrl createdAt tags { id name }
+    }
+  }
+`;
+
+const DUPLICATE_MEDIA_ASSET_MUTATION = `
+  mutation DuplicateMediaAsset($id: ID!, $destinationFolder: String) {
+    duplicateMediaAsset(id: $id, destinationFolder: $destinationFolder) {
+      id fileName filePath mimeType fileSize thumbnailUrl transcodedUrl createdAt tags { id name }
+    }
+  }
+`;
+
+const DUPLICATE_FOLDER_MUTATION = `
+  mutation DuplicateFolder($path: String!, $destinationFolder: String) {
+    duplicateFolder(path: $path, destinationFolder: $destinationFolder) {
+      name path type
     }
   }
 `;
@@ -454,6 +471,10 @@ export default function Dashboard() {
   const [showMoveDialog, setShowMoveDialog] = useState(false);
   const [moveTargetFolderPath, setMoveTargetFolderPath] = useState('');
   const [isMoving, setIsMoving] = useState(false);
+  const [showDuplicateDialog, setShowDuplicateDialog] = useState(false);
+  const [duplicateTargetFolderPath, setDuplicateTargetFolderPath] = useState('');
+  const [duplicateSourceFolder, setDuplicateSourceFolder] = useState<{ path: string; name: string } | null>(null);
+  const [isDuplicating, setIsDuplicating] = useState(false);
   const [renamingFolder, setRenamingFolder] = useState<{ path: string; name: string } | null>(null);
   const [renameFolderValue, setRenameFolderValue] = useState('');
   const [isRenamingFolder, setIsRenamingFolder] = useState(false);
@@ -1270,6 +1291,47 @@ export default function Dashboard() {
     }
   };
 
+  const handleDuplicateAsset = async () => {
+    if ((!selectedAsset && !duplicateSourceFolder) || !duplicateTargetFolderPath || isDuplicating) return;
+    setIsDuplicating(true);
+    try {
+      const token = getAuthToken();
+      if (!token) return;
+      const client = createGraphQLClient(token);
+      if (duplicateSourceFolder) {
+        await client.request(DUPLICATE_FOLDER_MUTATION, {
+          path: duplicateSourceFolder.path,
+          destinationFolder: duplicateTargetFolderPath,
+        });
+      } else if (selectedAsset) {
+        const data: any = await client.request(DUPLICATE_MEDIA_ASSET_MUTATION, {
+          id: selectedAsset.id,
+          destinationFolder: duplicateTargetFolderPath,
+        });
+        setSelectedAsset(data.duplicateMediaAsset);
+      }
+      setShowDuplicateDialog(false);
+      setDuplicateTargetFolderPath('');
+      setDuplicateSourceFolder(null);
+      if (rootPath) await loadDirectoryIntoCache(rootPath);
+      if (currentPath && currentPath !== rootPath) await loadDirectoryIntoCache(currentPath);
+      if (duplicateTargetFolderPath !== rootPath && duplicateTargetFolderPath !== currentPath) {
+        await loadDirectoryIntoCache(duplicateTargetFolderPath);
+      }
+    } catch (err: any) {
+      alert(`Failed to duplicate item: ${err.message || 'Unknown error'}`);
+    } finally {
+      setIsDuplicating(false);
+    }
+  };
+
+  const openDuplicateFolderDialog = (folder: { path: string; name: string }) => {
+    setSelectedAsset(null);
+    setDuplicateSourceFolder(folder);
+    setDuplicateTargetFolderPath(folder.path.substring(0, folder.path.lastIndexOf('/')) || currentPath || rootPath || '');
+    setShowDuplicateDialog(true);
+  };
+
   const handleBulkMove = async () => {
     if (!moveTargetFolderPath || isMoving) return;
     const token = getAuthToken();
@@ -1767,6 +1829,14 @@ export default function Dashboard() {
                 title="Rename folder"
               >
                 <Pencil className="w-3.5 h-3.5 text-foreground" />
+              </button>
+              <button
+                type="button"
+                onClick={() => openDuplicateFolderDialog({ path: node.path, name: node.name })}
+                className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-accent rounded-lg transition-all duration-150 flex-shrink-0"
+                title="Duplicate folder"
+              >
+                <Copy className="w-3.5 h-3.5 text-foreground" />
               </button>
               <button
                 type="button"
@@ -2590,6 +2660,14 @@ export default function Dashboard() {
                           </button>
                           <button
                             type="button"
+                            onClick={(e) => { e.stopPropagation(); openDuplicateFolderDialog({ path: node.path, name: node.name }); }}
+                            className="w-8 h-8 bg-background/80 backdrop-blur-sm rounded-xl flex items-center justify-center hover:bg-accent transition-all duration-200"
+                            title="Duplicate folder"
+                          >
+                            <Copy className="w-3.5 h-3.5 text-foreground" />
+                          </button>
+                          <button
+                            type="button"
                             onClick={(e) => { e.stopPropagation(); void handleDeleteFolder(node.path, node.name); }}
                             className="w-8 h-8 bg-background/80 backdrop-blur-sm rounded-xl flex items-center justify-center hover:bg-destructive/20 transition-all duration-200"
                             title="Delete folder"
@@ -2820,6 +2898,13 @@ export default function Dashboard() {
           setMoveTargetFolderPath('');
           setShowMoveDialog(true);
         }}
+        onDuplicate={() => {
+          if (!selectedAsset) return;
+          const currentFolderPath = selectedAsset.filePath.substring(0, selectedAsset.filePath.lastIndexOf('/'));
+          setDuplicateSourceFolder(null);
+          setDuplicateTargetFolderPath(currentFolderPath || currentPath || rootPath || '');
+          setShowDuplicateDialog(true);
+        }}
         onAssetUpdated={(updates) => {
           setSelectedAsset((prev) => prev ? { ...prev, ...updates } : prev);
           if (rootPath) void loadDirectoryIntoCache(rootPath);
@@ -2868,6 +2953,80 @@ export default function Dashboard() {
         onClearCompleted={clearCompletedJobs}
         apiUrl={API_URL}
       />
+
+      {/* Duplicate Asset */}
+      <Dialog open={showDuplicateDialog} onOpenChange={(open) => { if (!open) { setShowDuplicateDialog(false); setDuplicateTargetFolderPath(''); setDuplicateSourceFolder(null); } }}>
+        <DialogContent className="bg-card border-border/20 shadow-ambient rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="font-manrope font-bold text-foreground">
+              {duplicateSourceFolder ? 'Duplicate Folder' : 'Duplicate File'}
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground -mt-1">
+            Choose where to place a copy of{' '}
+            <strong className="text-foreground font-medium">
+              {duplicateSourceFolder?.name ?? selectedAsset?.fileName}
+            </strong>
+          </p>
+          <div className="max-h-60 overflow-y-auto space-y-1 border border-border/20 rounded-xl p-2 mt-1">
+            {allAvailableFolders.map((folder) => {
+              const relPath = rootPath && folder.path !== rootPath
+                ? folder.path.replace(rootPath, '') || '/'
+                : '/';
+              const isPickerSelected = duplicateTargetFolderPath === folder.path;
+              const currentFolderPath = selectedAsset?.filePath.substring(0, selectedAsset.filePath.lastIndexOf('/'));
+              const sourceFolderPath = duplicateSourceFolder?.path;
+              const isCurrent = duplicateSourceFolder
+                ? sourceFolderPath?.substring(0, sourceFolderPath.lastIndexOf('/')) === folder.path
+                : currentFolderPath === folder.path;
+              const isInvalidDest = !!sourceFolderPath && (
+                folder.path === sourceFolderPath || folder.path.startsWith(`${sourceFolderPath}/`)
+              );
+              return (
+                <button
+                  key={folder.path}
+                  type="button"
+                  disabled={isInvalidDest}
+                  onClick={() => setDuplicateTargetFolderPath(folder.path)}
+                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all text-left ${
+                    isPickerSelected
+                      ? 'bg-brand-primary/20 text-brand-primary'
+                      : isInvalidDest
+                        ? 'opacity-40 cursor-not-allowed text-foreground'
+                        : 'hover:bg-accent text-foreground'
+                  }`}
+                >
+                  <Folder className="w-4 h-4 flex-shrink-0" />
+                  <span className="font-mono text-xs truncate">{relPath}</span>
+                  {isCurrent && <span className="ml-auto text-xs text-muted-foreground">current</span>}
+                  {isInvalidDest && <span className="ml-auto text-xs text-muted-foreground">inside source</span>}
+                </button>
+              );
+            })}
+            {allAvailableFolders.length === 0 && (
+              <p className="text-xs text-muted-foreground text-center py-4">No folders available</p>
+            )}
+          </div>
+          <div className="flex gap-3 mt-2">
+            <button
+              type="button"
+              onClick={() => { setShowDuplicateDialog(false); setDuplicateTargetFolderPath(''); setDuplicateSourceFolder(null); }}
+              className="flex-1 py-2.5 rounded-xl border border-border/30 text-sm text-foreground hover:bg-accent transition-all"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={!duplicateTargetFolderPath || isDuplicating}
+              onClick={() => void handleDuplicateAsset()}
+              className="flex-1 inline-flex items-center justify-center gap-2 py-2.5 rounded-xl gradient-brand text-[#060e20] font-manrope font-bold text-sm disabled:opacity-50 transition-all"
+            >
+              <Copy className="w-4 h-4" />
+              {isDuplicating ? 'Duplicating…' : 'Duplicate Here'}
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Move Asset */}
       <Dialog open={showMoveDialog} onOpenChange={(open) => { if (!open) { setShowMoveDialog(false); setMoveTargetFolderPath(''); } }}>

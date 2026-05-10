@@ -94,6 +94,7 @@ export const schema = `
     
     moveMediaAsset(id: ID!, newPath: String!): MediaAsset!
     renameMediaAsset(id: ID!, newName: String!): MediaAsset!
+    duplicateMediaAsset(id: ID!, destinationFolder: String): MediaAsset!
     deleteMediaAsset(id: ID!): Boolean!
     compressMediaAsset(id: ID!, quality: Int, overwrite: Boolean): MediaAsset!
     refreshMediaLibrary: String!
@@ -108,6 +109,7 @@ export const schema = `
     deleteFolder(path: String!): Boolean!
     renameFolder(path: String!, newName: String!): DirectoryNode!
     moveFolder(path: String!, destinationFolder: String!): DirectoryNode!
+    duplicateFolder(path: String!, destinationFolder: String): DirectoryNode!
 
     applyTagsToAssets(assetIds: [ID!]!, tagNames: [String!]!): [MediaAsset!]!
     removeTagFromAsset(assetId: ID!, tagName: String!): MediaAsset!
