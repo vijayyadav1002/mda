@@ -22,6 +22,7 @@ import crypto from 'node:crypto';
 import { pipeline } from 'node:stream/promises';
 import archiver from 'archiver';
 import { indexFile } from './services/media-indexer.js';
+import { canCompressFile, classifyFile } from './services/file-types.js';
 
 let workerHandles: ReturnType<typeof startWorkers> | null = null;
 let cacheMaintenanceTimer: ReturnType<typeof setInterval> | null = null;
@@ -29,6 +30,56 @@ let cacheMaintenanceTimer: ReturnType<typeof setInterval> | null = null;
 const fastify = Fastify({
   logger: true
 });
+
+async function authenticateRequest(request: any) {
+  const authHeader = request.headers.authorization as string | undefined;
+  const queryToken = typeof request.query?.token === 'string' ? request.query.token : undefined;
+  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : queryToken;
+  if (!token) return null;
+
+  try {
+    const decoded = fastify.jwt.verify<any>(token);
+    const userResult = await db.query('SELECT id, role FROM users WHERE id = $1', [decoded.id]);
+    if (userResult.rows.length === 0) return null;
+    return { id: String(userResult.rows[0].id), role: userResult.rows[0].role as string };
+  } catch {
+    return null;
+  }
+}
+
+async function requirePreviewAsset(request: any, reply: any) {
+  const user = await authenticateRequest(request);
+  if (!user) {
+    reply.code(401).send({ error: 'Unauthorized' });
+    return null;
+  }
+
+  const { id } = request.params as { id: string };
+  const result = await db.query(
+    'SELECT file_path, file_name, mime_type FROM media_assets WHERE id = $1',
+    [id]
+  );
+  if (result.rows.length === 0) {
+    reply.code(404).send({ error: 'Asset not found' });
+    return null;
+  }
+
+  const row = result.rows[0];
+  const absPath = path.resolve(row.file_path as string);
+  try {
+    await fs.promises.access(absPath);
+  } catch {
+    reply.code(404).send({ error: 'File not found on disk' });
+    return null;
+  }
+
+  return {
+    filePath: absPath,
+    fileName: row.file_name as string,
+    mimeType: row.mime_type as string,
+    classification: classifyFile(row.file_name as string, row.mime_type as string),
+  };
+}
 
 // Register plugins
 await fastify.register(cors, {
@@ -124,6 +175,84 @@ fastify.get('/download/:id', async (request, reply) => {
     stream.on('end', resolve);
     stream.on('error', reject);
   });
+});
+
+fastify.get('/file-preview/:id/pdf', async (request, reply) => {
+  const target = await requirePreviewAsset(request, reply);
+  if (!target) return;
+
+  if (target.classification.category !== 'pdf') {
+    return reply.code(415).send({ error: 'PDF preview is not available for this file type' });
+  }
+
+  const stat = await fs.promises.stat(target.filePath);
+  const safeName = encodeURIComponent(target.fileName).replace(/'/g, "%27");
+  reply.raw.writeHead(200, {
+    'Content-Type': 'application/pdf',
+    'Content-Length': stat.size,
+    'Content-Disposition': `inline; filename="${safeName}"; filename*=UTF-8''${safeName}`,
+    'Cache-Control': 'no-store',
+  });
+  const stream = fs.createReadStream(target.filePath);
+  stream.pipe(reply.raw);
+  await new Promise<void>((resolve, reject) => {
+    stream.on('end', resolve);
+    stream.on('error', reject);
+  });
+});
+
+fastify.get('/file-preview/:id/content', async (request, reply) => {
+  const target = await requirePreviewAsset(request, reply);
+  if (!target) return;
+
+  const MAX_TEXT_BYTES = 1024 * 1024;
+  const MAX_ROWS = 200;
+  const MAX_COLS = 40;
+
+  if (target.classification.category === 'text' || target.classification.category === 'markdown') {
+    const handle = await fs.promises.open(target.filePath, 'r');
+    try {
+      const buffer = Buffer.alloc(MAX_TEXT_BYTES + 1);
+      const { bytesRead } = await handle.read(buffer, 0, MAX_TEXT_BYTES + 1, 0);
+      const truncated = bytesRead > MAX_TEXT_BYTES;
+      return reply.send({
+        kind: target.classification.category,
+        text: buffer.subarray(0, Math.min(bytesRead, MAX_TEXT_BYTES)).toString('utf8'),
+        truncated,
+      });
+    } finally {
+      await handle.close();
+    }
+  }
+
+  if (target.classification.category === 'word') {
+    const mammoth = await import('mammoth');
+    const sanitizeHtml = (await import('sanitize-html')).default;
+    const converted = await mammoth.convertToHtml({ path: target.filePath });
+    return reply.send({
+      kind: 'word',
+      html: sanitizeHtml(converted.value, {
+        allowedTags: sanitizeHtml.defaults.allowedTags.concat(['img', 'h1', 'h2']),
+        allowedAttributes: { ...sanitizeHtml.defaults.allowedAttributes, img: ['src', 'alt'] },
+      }),
+      messages: converted.messages.map((message) => message.message),
+    });
+  }
+
+  if (target.classification.category === 'excel') {
+    const XLSX = await import('xlsx');
+    const workbook = XLSX.readFile(target.filePath, { cellDates: true });
+    const sheets = workbook.SheetNames.map((name) => {
+      const rows = XLSX.utils
+        .sheet_to_json<any[]>(workbook.Sheets[name], { header: 1, blankrows: false, defval: '' })
+        .slice(0, MAX_ROWS)
+        .map((row) => row.slice(0, MAX_COLS).map((cell) => cell instanceof Date ? cell.toISOString().slice(0, 10) : String(cell)));
+      return { name, rows };
+    });
+    return reply.send({ kind: 'excel', sheets, maxRows: MAX_ROWS, maxCols: MAX_COLS });
+  }
+
+  return reply.code(415).send({ error: 'Preview is not available for this file type' });
 });
 
 // Bulk ZIP download — streams a zip of the requested asset IDs
@@ -703,13 +832,14 @@ fastify.post('/api/compress/enqueue', async (request, reply) => {
         .then(r => r.rows[0] ?? null)
     )
   );
-  const assets = rows.filter(Boolean).map(r => ({
+  const allAssets = rows.filter(Boolean).map(r => ({
     id: String(r.id),
     fileName: r.file_name as string,
     fileSize: String(r.file_size),
     mimeType: r.mime_type as string,
     filePath: r.file_path as string,
   }));
+  const assets = allAssets.filter((asset) => canCompressFile(asset.fileName, asset.mimeType));
 
   if (assets.length === 0) return reply.code(400).send({ error: 'No valid assets found' });
 
@@ -734,7 +864,7 @@ fastify.post('/api/compress/enqueue', async (request, reply) => {
 
   // Enqueue BullMQ job with full asset data (including filePath for worker)
   await addToCompressionQueue({ userId, jobId, assets, options });
-  return reply.send({ jobId });
+  return reply.send({ jobId, skippedCount: allAssets.length - assets.length });
 });
 
 // Cancel an active or pending compression job
@@ -883,18 +1013,11 @@ fastify.post('/api/upload', async (request, reply) => {
     return reply.code(400).send({ error: 'Target directory does not exist' });
   }
 
-  const SUPPORTED = new Set(['.jpg', '.jpeg', '.png', '.heic', '.gif', '.webp', '.bmp', '.mp4', '.mov', '.avi', '.mkv', '.webm', '.m4v']);
   const uploaded: { fileName: string; filePath: string }[] = [];
 
   const parts = request.parts();
   for await (const part of parts) {
     if (part.type !== 'file') continue;
-
-    const ext = path.extname(part.filename).toLowerCase();
-    if (!SUPPORTED.has(ext)) {
-      part.file.resume();
-      return reply.code(400).send({ error: `Unsupported file type: ${ext}` });
-    }
 
     const safeName = path.basename(part.filename);
     const destPath = path.join(targetDir, safeName);

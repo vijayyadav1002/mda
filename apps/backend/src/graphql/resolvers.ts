@@ -1,11 +1,12 @@
 import { db } from '../db/index.js';
 import { hashPassword, verifyPassword } from '../services/auth.js';
 import { logAudit } from '../services/audit.js';
-import { compressImage, compressVideo, compressImageAdvanced, compressVideoAdvanced } from '../services/thumbnail.js';
+import { compressImage, compressVideo, compressImageAdvanced, compressVideoAdvanced, compressPdfAdvanced } from '../services/thumbnail.js';
 import { enqueueMediaRefresh, addToThumbnailQueue, cancelThumbnailSession } from '../services/queue.js';
 import { cleanupDeletedAssetCaches } from '../services/media-cleanup.js';
 import { getCacheStats, clearCacheByType } from '../services/cache-maintenance.js';
 import { indexFile } from '../services/media-indexer.js';
+import { canCompressFile, canThumbnailFile } from '../services/file-types.js';
 import {
   normalizeTagName,
   upsertTag,
@@ -22,10 +23,6 @@ import type { GraphQLContext } from './context.js';
 import fs from 'fs/promises';
 import path from 'path';
 import { config } from '../config.js';
-
-const SUPPORTED_IMAGE_FORMATS = ['.jpg', '.jpeg', '.png', '.heic', '.gif', '.webp', '.bmp'];
-const SUPPORTED_VIDEO_FORMATS = ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.m4v'];
-const SUPPORTED_FORMATS = new Set([...SUPPORTED_IMAGE_FORMATS, ...SUPPORTED_VIDEO_FORMATS]);
 
 const mapMediaAssetRow = (row: any) => ({
   id: row.id,
@@ -93,8 +90,7 @@ const listMediaFilesInDirectory = async (dirPath: string): Promise<string[]> => 
   for (const entry of entries) {
     if (!entry.isFile()) continue;
     const fullPath = path.join(dirPath, entry.name);
-    const ext = path.extname(entry.name).toLowerCase();
-    if (SUPPORTED_FORMATS.has(ext)) {
+    if (canThumbnailFile(entry.name)) {
       mediaFiles.push(fullPath);
     }
   }
@@ -167,13 +163,11 @@ const buildDirectoryNode = async (dirPath: string): Promise<any> => {
     .filter((entry) => entry.isFile())
     .map((entry) => path.join(dirPath, entry.name));
 
-  const mediaFilePaths = filePaths.filter((filePath) => SUPPORTED_FORMATS.has(path.extname(filePath).toLowerCase()));
-
   const assetsByPath = new Map<string, any>();
-  if (mediaFilePaths.length > 0) {
+  if (filePaths.length > 0) {
     const result = await db.query(
       'SELECT * FROM media_assets WHERE file_path = ANY($1::text[])',
-      [mediaFilePaths]
+      [filePaths]
     );
 
     for (const row of result.rows) {
@@ -829,6 +823,9 @@ export const resolvers = {
         } else if (asset.mime_type.startsWith('video/')) {
           await compressVideo(asset.file_path, tempPath);
           await fs.rename(tempPath, outputPath);
+        } else if (canCompressFile(asset.file_name, asset.mime_type)) {
+          await compressPdfAdvanced(asset.file_path, tempPath, { quality });
+          await fs.rename(tempPath, outputPath);
         } else {
           throw new Error('Unsupported media type for compression');
         }
@@ -842,6 +839,8 @@ export const resolvers = {
           await compressImage(asset.file_path, outputPath, quality);
         } else if (asset.mime_type.startsWith('video/')) {
           await compressVideo(asset.file_path, outputPath);
+        } else if (canCompressFile(asset.file_name, asset.mime_type)) {
+          await compressPdfAdvanced(asset.file_path, outputPath, { quality });
         } else {
           throw new Error('Unsupported media type for compression');
         }
@@ -970,11 +969,9 @@ export const resolvers = {
         if (hasUsableThumbnail) continue;
 
         const filePath = row.file_path as string;
-        const ext = path.extname(filePath).toLowerCase();
-        if (!SUPPORTED_FORMATS.has(ext)) continue;
-
         const mimeType = (row.mime_type as string | null) ?? '';
-        const isVideo = mimeType.startsWith('video/') || SUPPORTED_VIDEO_FORMATS.includes(ext);
+        if (!canThumbnailFile(filePath, mimeType)) continue;
+        const isVideo = mimeType.startsWith('video/');
 
         try {
           await addToThumbnailQueue({
@@ -1040,6 +1037,10 @@ export const resolvers = {
         } else if (asset.mime_type.startsWith('video/')) {
           await compressVideoAdvanced(asset.file_path, previewPath, {
             resolution: args.options.resolution,
+            quality: args.options.quality
+          });
+        } else if (canCompressFile(asset.file_name, asset.mime_type)) {
+          await compressPdfAdvanced(asset.file_path, previewPath, {
             quality: args.options.quality
           });
         } else {
