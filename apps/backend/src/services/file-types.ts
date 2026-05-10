@@ -49,7 +49,7 @@ export function classifyFile(fileNameOrPath: string, existingMimeType?: string |
     category,
     mimeType,
     canPreview: ['image', 'video', 'pdf', 'word', 'excel', 'text', 'markdown'].includes(category),
-    canThumbnail: category === 'image' || category === 'video',
+    canThumbnail: ['image', 'video', 'pdf', 'word', 'excel', 'text', 'markdown'].includes(category),
     canCompress: category === 'image' || category === 'video' || category === 'pdf',
   };
 }
