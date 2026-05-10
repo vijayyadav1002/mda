@@ -1,6 +1,9 @@
-import { Download, File, Maximize2, Minimize2, X, ListTodo, Tag as TagIcon, Plus, Pencil, FolderOpen } from "lucide-react";
+import { Download, File, Maximize2, Minimize2, X, ListTodo, Tag as TagIcon, Plus, Pencil, FolderOpen, Save, Copy } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import Hls from "hls.js";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { getAuthToken } from "~/lib/api";
 
 type VideoSource =
   | { kind: "mp4"; url: string }
@@ -26,6 +29,7 @@ interface MediaAsset {
   thumbnailUrl: string | null;
   transcodedUrl?: string;
   createdAt: string;
+  updatedAt: string;
   tags?: AssetTag[];
 }
 
@@ -40,7 +44,16 @@ interface MediaAssetViewerProps {
   readonly onAddTags?: () => void;
   readonly onRename?: (newName: string) => Promise<void>;
   readonly onMove?: () => void;
+  readonly onDuplicate?: () => void;
+  readonly onAssetUpdated?: (updates: Partial<Pick<MediaAsset, "fileSize" | "updatedAt">>) => void;
 }
+
+type FileCategory = "image" | "video" | "pdf" | "word" | "excel" | "text" | "markdown" | "other";
+
+type DocumentPreview =
+  | { kind: "text" | "markdown"; text: string; truncated: boolean }
+  | { kind: "word"; html: string; messages: string[] }
+  | { kind: "excel"; sheets: { name: string; rows: string[][] }[]; maxRows: number; maxCols: number };
 
 function formatFileSize(bytes: string) {
   const size = parseInt(bytes);
@@ -61,6 +74,32 @@ function getExtension(fileName: string) {
   return fileName.split(".").pop()?.toUpperCase() ?? "FILE";
 }
 
+function getFileCategory(asset: MediaAsset): FileCategory {
+  const ext = asset.fileName.split(".").pop()?.toLowerCase() ?? "";
+  if (asset.mimeType.startsWith("image/")) return "image";
+  if (asset.mimeType.startsWith("video/")) return "video";
+  if (asset.mimeType === "application/pdf" || ext === "pdf") return "pdf";
+  if (ext === "docx") return "word";
+  if (ext === "xlsx") return "excel";
+  if (ext === "md" || ext === "markdown") return "markdown";
+  if (asset.mimeType.startsWith("text/") || ext === "txt") return "text";
+  return "other";
+}
+
+function getFileCategoryLabel(category: FileCategory) {
+  const labels: Record<FileCategory, string> = {
+    image: "Image",
+    video: "Video",
+    pdf: "PDF",
+    word: "Word",
+    excel: "Excel",
+    text: "Text",
+    markdown: "Markdown",
+    other: "File",
+  };
+  return labels[category];
+}
+
 export function MediaAssetViewer({
   asset,
   isOpen,
@@ -72,6 +111,8 @@ export function MediaAssetViewer({
   onAddTags,
   onRename,
   onMove,
+  onDuplicate,
+  onAssetUpdated,
 }: Readonly<MediaAssetViewerProps>) {
   const canEdit = userRole === "admin" || userRole === "editor";
   const canEditTags = canEdit;
@@ -85,6 +126,12 @@ export function MediaAssetViewer({
   const [videoSource, setVideoSource] = useState<VideoSource | null>(null);
   const [transcodeProgress, setTranscodeProgress] = useState<TranscodeProgress | null>(null);
   const [hlsReloadKey, setHlsReloadKey] = useState(0);
+  const [documentPreview, setDocumentPreview] = useState<DocumentPreview | null>(null);
+  const [documentPreviewStatus, setDocumentPreviewStatus] = useState<"idle" | "loading" | "error">("idle");
+  const [activeSheetIndex, setActiveSheetIndex] = useState(0);
+  const [isEditingDocument, setIsEditingDocument] = useState(false);
+  const [editorText, setEditorText] = useState("");
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "error">("idle");
   const videoSourceKindRef = useRef<VideoSource["kind"] | null>(null);
   const splitVideoRef = useRef<HTMLVideoElement | null>(null);
   const fullscreenVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -96,6 +143,12 @@ export function MediaAssetViewer({
       setIsFullscreen(false);
       setIsRenaming(false);
       setRenameValue("");
+      setDocumentPreview(null);
+      setDocumentPreviewStatus("idle");
+      setActiveSheetIndex(0);
+      setIsEditingDocument(false);
+      setEditorText("");
+      setSaveStatus("idle");
     }
   }, [isOpen, asset?.id]);
 
@@ -104,6 +157,47 @@ export function MediaAssetViewer({
       setCurrentVideoId(asset.id);
     }
   }, [isOpen, asset]);
+
+  useEffect(() => {
+    if (!isOpen || !asset) return;
+    const category = getFileCategory(asset);
+    if (!["word", "excel", "text", "markdown"].includes(category)) {
+      setDocumentPreview(null);
+      setDocumentPreviewStatus("idle");
+      return;
+    }
+
+    const token = getAuthToken();
+    const controller = new AbortController();
+    setDocumentPreviewStatus("loading");
+    setDocumentPreview(null);
+    setActiveSheetIndex(0);
+    setIsEditingDocument(false);
+    setEditorText("");
+    setSaveStatus("idle");
+
+    fetch(`${apiUrl}/file-preview/${asset.id}/content`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      signal: controller.signal,
+    })
+      .then((response) => {
+        if (!response.ok) throw new Error(`Preview failed (${response.status})`);
+        return response.json();
+      })
+      .then((preview: DocumentPreview) => {
+        setDocumentPreview(preview);
+        if (preview.kind === "text" || preview.kind === "markdown") {
+          setEditorText(preview.text);
+        }
+        setDocumentPreviewStatus("idle");
+      })
+      .catch((error) => {
+        if (error.name === "AbortError") return;
+        setDocumentPreviewStatus("error");
+      });
+
+    return () => controller.abort();
+  }, [isOpen, asset?.id, apiUrl]);
 
   // Negotiate playback (mp4 fast path vs. HLS progressive) when a video opens
   useEffect(() => {
@@ -248,8 +342,51 @@ export function MediaAssetViewer({
   if (!asset || !isOpen) return null;
 
   const originalImageUrl = `${apiUrl}/image/${asset.id}`;
-  const isImage = asset.mimeType.startsWith("image/");
-  const isVideo = asset.mimeType.startsWith("video/");
+  const fileCategory = getFileCategory(asset);
+  const isImage = fileCategory === "image";
+  const isVideo = fileCategory === "video";
+  const isPdf = fileCategory === "pdf";
+  const isEditableDocument = fileCategory === "text" || fileCategory === "markdown";
+  const canFullscreen = isImage || isVideo || isPdf;
+  const token = getAuthToken();
+  const pdfPreviewUrl = `${apiUrl}/file-preview/${asset.id}/pdf${token ? `?token=${encodeURIComponent(token)}` : ""}`;
+  const originalDocumentText =
+    documentPreview?.kind === "text" || documentPreview?.kind === "markdown" ? documentPreview.text : "";
+  const hasDocumentEdits = isEditableDocument && editorText !== originalDocumentText;
+
+  const saveDocumentContent = async () => {
+    if (!asset || !isEditableDocument || saveStatus === "saving") return;
+    const authToken = getAuthToken();
+    if (!authToken) {
+      setSaveStatus("error");
+      return;
+    }
+
+    setSaveStatus("saving");
+    try {
+      const response = await fetch(`${apiUrl}/file-preview/${asset.id}/content`, {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ text: editorText }),
+      });
+      if (!response.ok) throw new Error(`Save failed (${response.status})`);
+      const updated = await response.json();
+      setDocumentPreview({
+        kind: fileCategory,
+        text: updated.text,
+        truncated: false,
+      } as DocumentPreview);
+      setEditorText(updated.text);
+      setIsEditingDocument(false);
+      setSaveStatus("idle");
+      onAssetUpdated?.({ fileSize: updated.fileSize, updatedAt: updated.updatedAt });
+    } catch {
+      setSaveStatus("error");
+    }
+  };
 
   const handleImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
     const img = e.currentTarget;
@@ -317,6 +454,13 @@ export function MediaAssetViewer({
             )}
           </div>
         )}
+        {isPdf && (
+          <iframe
+            src={pdfPreviewUrl}
+            title={asset.fileName}
+            className="w-screen h-screen border-0 bg-white"
+          />
+        )}
 
         <div className="absolute bottom-4 left-4 right-4 max-w-3xl mx-auto bg-black/50 backdrop-blur-md text-white p-4 rounded-2xl">
           <p className="font-manrope font-semibold truncate">{asset.fileName}</p>
@@ -381,7 +525,148 @@ export function MediaAssetViewer({
               )}
             </div>
           )}
-          {!isImage && !isVideo && (
+          {isPdf && (
+            <iframe
+              src={pdfPreviewUrl}
+              title={asset.fileName}
+              className="w-full h-full min-h-[400px] max-h-[40vh] md:max-h-[90vh] border-0 bg-white"
+            />
+          )}
+          {(fileCategory === "text" || fileCategory === "markdown" || fileCategory === "word" || fileCategory === "excel") && (
+            <div className="w-full h-full max-h-[40vh] md:max-h-[90vh] overflow-auto bg-background text-foreground p-5">
+              {documentPreviewStatus === "loading" && (
+                <div className="h-full min-h-[260px] flex items-center justify-center text-sm text-muted-foreground">
+                  Loading preview…
+                </div>
+              )}
+              {documentPreviewStatus === "error" && (
+                <div className="h-full min-h-[260px] flex items-center justify-center text-sm text-muted-foreground">
+                  Preview could not be loaded
+                </div>
+              )}
+              {isEditableDocument && documentPreview && (documentPreview.kind === "text" || documentPreview.kind === "markdown") && (
+                <div className="sticky top-0 z-10 -mx-5 -mt-5 mb-4 flex items-center justify-between gap-3 border-b border-border/20 bg-background/95 px-5 py-3 backdrop-blur">
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium text-muted-foreground">
+                      {isEditingDocument ? "Editing" : "Previewing"} {getFileCategoryLabel(fileCategory).toLowerCase()}
+                    </p>
+                    {saveStatus === "error" && <p className="text-xs text-red-400 mt-0.5">Could not save changes</p>}
+                  </div>
+                  {canEdit && (
+                    <div className="flex flex-wrap justify-end gap-2">
+                      {isEditingDocument ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditorText(originalDocumentText);
+                              setIsEditingDocument(false);
+                              setSaveStatus("idle");
+                            }}
+                            className="px-3 py-1.5 rounded-lg border border-border/30 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={saveDocumentContent}
+                            disabled={!hasDocumentEdits || saveStatus === "saving"}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-primary text-[#060e20] text-xs font-semibold disabled:opacity-50 transition-opacity"
+                          >
+                            <Save className="w-3.5 h-3.5" />
+                            {saveStatus === "saving" ? "Saving…" : "Save"}
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditorText(originalDocumentText);
+                            setIsEditingDocument(true);
+                            setSaveStatus("idle");
+                          }}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border/30 text-xs text-foreground hover:bg-accent transition-all"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                          Edit
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+              {documentPreview?.kind === "text" && isEditingDocument && (
+                <textarea
+                  value={editorText}
+                  onChange={(e) => {
+                    setEditorText(e.target.value);
+                    if (saveStatus === "error") setSaveStatus("idle");
+                  }}
+                  className="min-h-[360px] w-full resize-y rounded-xl border border-border/30 bg-muted/20 p-4 font-mono text-sm leading-6 text-foreground outline-none focus:border-brand-primary/70 focus:ring-2 focus:ring-brand-primary/20"
+                  spellCheck={false}
+                />
+              )}
+              {documentPreview?.kind === "text" && !isEditingDocument && (
+                <pre className="whitespace-pre-wrap break-words text-sm leading-6 font-mono">{documentPreview.text}</pre>
+              )}
+              {documentPreview?.kind === "markdown" && isEditingDocument && (
+                <textarea
+                  value={editorText}
+                  onChange={(e) => {
+                    setEditorText(e.target.value);
+                    if (saveStatus === "error") setSaveStatus("idle");
+                  }}
+                  className="min-h-[360px] w-full resize-y rounded-xl border border-border/30 bg-muted/20 p-4 font-mono text-sm leading-6 text-foreground outline-none focus:border-brand-primary/70 focus:ring-2 focus:ring-brand-primary/20"
+                  spellCheck={false}
+                />
+              )}
+              {documentPreview?.kind === "markdown" && !isEditingDocument && (
+                <div className="text-sm leading-6 [&_h1]:text-2xl [&_h1]:font-bold [&_h2]:text-xl [&_h2]:font-bold [&_h3]:font-semibold [&_p]:mb-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_pre]:overflow-auto [&_pre]:rounded-xl [&_pre]:bg-muted [&_pre]:p-3">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{documentPreview.text}</ReactMarkdown>
+                </div>
+              )}
+              {documentPreview?.kind === "word" && (
+                <div
+                  className="text-sm leading-6 [&_h1]:text-2xl [&_h1]:font-bold [&_h2]:text-xl [&_h2]:font-bold [&_p]:mb-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5"
+                  dangerouslySetInnerHTML={{ __html: documentPreview.html }}
+                />
+              )}
+              {documentPreview?.kind === "excel" && (
+                <div className="space-y-3">
+                  <div className="flex gap-2 overflow-x-auto pb-1">
+                    {documentPreview.sheets.map((sheet, index) => (
+                      <button
+                        key={sheet.name}
+                        type="button"
+                        onClick={() => setActiveSheetIndex(index)}
+                        className={`px-3 py-1.5 rounded-lg text-xs flex-shrink-0 ${
+                          activeSheetIndex === index ? "bg-brand-primary text-[#060e20]" : "bg-muted text-muted-foreground"
+                        }`}
+                      >
+                        {sheet.name}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="overflow-auto rounded-xl border border-border/20">
+                    <table className="min-w-full border-collapse text-xs">
+                      <tbody>
+                        {(documentPreview.sheets[activeSheetIndex]?.rows ?? []).map((row, rowIndex) => (
+                          <tr key={rowIndex} className={rowIndex === 0 ? "bg-muted/70" : "odd:bg-muted/20"}>
+                            {row.map((cell, cellIndex) => (
+                              <td key={cellIndex} className="border border-border/10 px-2 py-1.5 max-w-[220px] truncate">
+                                {cell}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+          {!isImage && !isVideo && !isPdf && !["word", "excel", "text", "markdown"].includes(fileCategory) && (
             <div className="flex flex-col items-center justify-center gap-4 text-muted-foreground">
               <File className="w-20 h-20 opacity-20" />
               <p className="text-sm">Preview not available</p>
@@ -389,14 +674,16 @@ export function MediaAssetViewer({
           )}
 
           {/* Fullscreen button */}
-          <button
-            type="button"
-            onClick={() => setIsFullscreen(true)}
-            className="absolute top-4 right-4 p-2.5 bg-black/40 hover:bg-black/60 text-white rounded-xl backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-all"
-            title="View Fullscreen"
-          >
-            <Maximize2 className="w-4 h-4" />
-          </button>
+          {canFullscreen && (
+            <button
+              type="button"
+              onClick={() => setIsFullscreen(true)}
+              className="absolute top-4 right-4 p-2.5 bg-black/40 hover:bg-black/60 text-white rounded-xl backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-all"
+              title="View Fullscreen"
+            >
+              <Maximize2 className="w-4 h-4" />
+            </button>
+          )}
 
           {/* Asset status */}
           <div className="absolute bottom-4 left-4 flex items-center gap-2 bg-black/40 backdrop-blur-sm px-3 py-1.5 rounded-full">
@@ -518,6 +805,16 @@ export function MediaAssetViewer({
                 Move to Folder
               </button>
             )}
+            {canEdit && onDuplicate && (
+              <button
+                type="button"
+                onClick={onDuplicate}
+                className="flex items-center justify-center gap-2 py-2.5 rounded-xl border border-border/30 text-sm text-foreground hover:bg-accent transition-all"
+              >
+                <Copy className="w-4 h-4" />
+                Duplicate File
+              </button>
+            )}
           </div>
 
           {/* Divider */}
@@ -568,7 +865,7 @@ export function MediaAssetViewer({
             <p className="label-meta mb-3">Format Type</p>
             <div className="flex flex-wrap gap-2">
               {[
-                isImage ? "Image" : "Video",
+                getFileCategoryLabel(fileCategory),
                 getExtension(asset.fileName),
                 asset.mimeType.split("/")[1]?.toUpperCase(),
               ]

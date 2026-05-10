@@ -284,6 +284,13 @@ export function CompressQueuePanel({
                                   <track kind="captions" />
                                 </video>
                               )}
+                              {asset.mimeType === "application/pdf" && (
+                                <iframe
+                                  src={`${apiUrl}${p.previewUrl}`}
+                                  title={`${asset.fileName} compressed preview`}
+                                  className="w-full h-56 border-0 bg-white"
+                                />
+                              )}
                             </div>
                           );
                         })()}

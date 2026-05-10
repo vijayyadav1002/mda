@@ -229,7 +229,8 @@ export function startWorkers() {
         const pathMod = await import('node:path');
         const fsMod = await import('node:fs');
         const { config: cfg } = await import('../config.js');
-        const { compressImageAdvanced, compressVideoAdvanced } = await import('./thumbnail.js');
+        const { compressImageAdvanced, compressVideoAdvanced, compressPdfAdvanced } = await import('./thumbnail.js');
+        const { canCompressFile } = await import('./file-types.js');
 
         const previewDir = pathMod.default.resolve(pathMod.default.dirname(cfg.thumbnailCachePath), 'compress-preview');
         await fsMod.promises.mkdir(previewDir, { recursive: true });
@@ -286,6 +287,19 @@ export function startWorkers() {
                             await fsMod.promises.unlink(previewPath).catch(() => {});
                             break;
                         }
+                    } else if (canCompressFile(asset.fileName, asset.mimeType)) {
+                        await compressPdfAdvanced(asset.filePath, previewPath, {
+                            quality: options.quality,
+                            signal,
+                        });
+                        if (signal.aborted) {
+                            await fsMod.promises.unlink(previewPath).catch(() => {});
+                            break;
+                        }
+                        await updateJob(j => ({
+                            ...j,
+                            progress: { ...j.progress, [asset.id]: { percent: 100, etaSeconds: null } },
+                        }));
                     } else {
                         console.warn(`[Worker] Skipping unsupported mime type: ${asset.mimeType}`);
                         continue;
