@@ -1,4 +1,4 @@
-import { Download, File, Maximize2, Minimize2, X, ListTodo, Tag as TagIcon, Plus, Pencil, FolderOpen } from "lucide-react";
+import { Download, File, Maximize2, Minimize2, X, ListTodo, Tag as TagIcon, Plus, Pencil, FolderOpen, Save } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import Hls from "hls.js";
 import ReactMarkdown from "react-markdown";
@@ -29,6 +29,7 @@ interface MediaAsset {
   thumbnailUrl: string | null;
   transcodedUrl?: string;
   createdAt: string;
+  updatedAt: string;
   tags?: AssetTag[];
 }
 
@@ -43,6 +44,7 @@ interface MediaAssetViewerProps {
   readonly onAddTags?: () => void;
   readonly onRename?: (newName: string) => Promise<void>;
   readonly onMove?: () => void;
+  readonly onAssetUpdated?: (updates: Partial<Pick<MediaAsset, "fileSize" | "updatedAt">>) => void;
 }
 
 type FileCategory = "image" | "video" | "pdf" | "word" | "excel" | "text" | "markdown" | "other";
@@ -108,6 +110,7 @@ export function MediaAssetViewer({
   onAddTags,
   onRename,
   onMove,
+  onAssetUpdated,
 }: Readonly<MediaAssetViewerProps>) {
   const canEdit = userRole === "admin" || userRole === "editor";
   const canEditTags = canEdit;
@@ -124,6 +127,9 @@ export function MediaAssetViewer({
   const [documentPreview, setDocumentPreview] = useState<DocumentPreview | null>(null);
   const [documentPreviewStatus, setDocumentPreviewStatus] = useState<"idle" | "loading" | "error">("idle");
   const [activeSheetIndex, setActiveSheetIndex] = useState(0);
+  const [isEditingDocument, setIsEditingDocument] = useState(false);
+  const [editorText, setEditorText] = useState("");
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "error">("idle");
   const videoSourceKindRef = useRef<VideoSource["kind"] | null>(null);
   const splitVideoRef = useRef<HTMLVideoElement | null>(null);
   const fullscreenVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -138,6 +144,9 @@ export function MediaAssetViewer({
       setDocumentPreview(null);
       setDocumentPreviewStatus("idle");
       setActiveSheetIndex(0);
+      setIsEditingDocument(false);
+      setEditorText("");
+      setSaveStatus("idle");
     }
   }, [isOpen, asset?.id]);
 
@@ -161,6 +170,9 @@ export function MediaAssetViewer({
     setDocumentPreviewStatus("loading");
     setDocumentPreview(null);
     setActiveSheetIndex(0);
+    setIsEditingDocument(false);
+    setEditorText("");
+    setSaveStatus("idle");
 
     fetch(`${apiUrl}/file-preview/${asset.id}/content`, {
       headers: token ? { Authorization: `Bearer ${token}` } : undefined,
@@ -172,6 +184,9 @@ export function MediaAssetViewer({
       })
       .then((preview: DocumentPreview) => {
         setDocumentPreview(preview);
+        if (preview.kind === "text" || preview.kind === "markdown") {
+          setEditorText(preview.text);
+        }
         setDocumentPreviewStatus("idle");
       })
       .catch((error) => {
@@ -329,9 +344,47 @@ export function MediaAssetViewer({
   const isImage = fileCategory === "image";
   const isVideo = fileCategory === "video";
   const isPdf = fileCategory === "pdf";
+  const isEditableDocument = fileCategory === "text" || fileCategory === "markdown";
   const canFullscreen = isImage || isVideo || isPdf;
   const token = getAuthToken();
   const pdfPreviewUrl = `${apiUrl}/file-preview/${asset.id}/pdf${token ? `?token=${encodeURIComponent(token)}` : ""}`;
+  const originalDocumentText =
+    documentPreview?.kind === "text" || documentPreview?.kind === "markdown" ? documentPreview.text : "";
+  const hasDocumentEdits = isEditableDocument && editorText !== originalDocumentText;
+
+  const saveDocumentContent = async () => {
+    if (!asset || !isEditableDocument || saveStatus === "saving") return;
+    const authToken = getAuthToken();
+    if (!authToken) {
+      setSaveStatus("error");
+      return;
+    }
+
+    setSaveStatus("saving");
+    try {
+      const response = await fetch(`${apiUrl}/file-preview/${asset.id}/content`, {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ text: editorText }),
+      });
+      if (!response.ok) throw new Error(`Save failed (${response.status})`);
+      const updated = await response.json();
+      setDocumentPreview({
+        kind: fileCategory,
+        text: updated.text,
+        truncated: false,
+      } as DocumentPreview);
+      setEditorText(updated.text);
+      setIsEditingDocument(false);
+      setSaveStatus("idle");
+      onAssetUpdated?.({ fileSize: updated.fileSize, updatedAt: updated.updatedAt });
+    } catch {
+      setSaveStatus("error");
+    }
+  };
 
   const handleImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
     const img = e.currentTarget;
@@ -489,10 +542,83 @@ export function MediaAssetViewer({
                   Preview could not be loaded
                 </div>
               )}
-              {documentPreview?.kind === "text" && (
+              {isEditableDocument && documentPreview && (documentPreview.kind === "text" || documentPreview.kind === "markdown") && (
+                <div className="sticky top-0 z-10 -mx-5 -mt-5 mb-4 flex items-center justify-between gap-3 border-b border-border/20 bg-background/95 px-5 py-3 backdrop-blur">
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium text-muted-foreground">
+                      {isEditingDocument ? "Editing" : "Previewing"} {getFileCategoryLabel(fileCategory).toLowerCase()}
+                    </p>
+                    {saveStatus === "error" && <p className="text-xs text-red-400 mt-0.5">Could not save changes</p>}
+                  </div>
+                  {canEdit && (
+                    <div className="flex flex-wrap justify-end gap-2">
+                      {isEditingDocument ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditorText(originalDocumentText);
+                              setIsEditingDocument(false);
+                              setSaveStatus("idle");
+                            }}
+                            className="px-3 py-1.5 rounded-lg border border-border/30 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={saveDocumentContent}
+                            disabled={!hasDocumentEdits || saveStatus === "saving"}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-primary text-[#060e20] text-xs font-semibold disabled:opacity-50 transition-opacity"
+                          >
+                            <Save className="w-3.5 h-3.5" />
+                            {saveStatus === "saving" ? "Saving…" : "Save"}
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditorText(originalDocumentText);
+                            setIsEditingDocument(true);
+                            setSaveStatus("idle");
+                          }}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border/30 text-xs text-foreground hover:bg-accent transition-all"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                          Edit
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+              {documentPreview?.kind === "text" && isEditingDocument && (
+                <textarea
+                  value={editorText}
+                  onChange={(e) => {
+                    setEditorText(e.target.value);
+                    if (saveStatus === "error") setSaveStatus("idle");
+                  }}
+                  className="min-h-[360px] w-full resize-y rounded-xl border border-border/30 bg-muted/20 p-4 font-mono text-sm leading-6 text-foreground outline-none focus:border-brand-primary/70 focus:ring-2 focus:ring-brand-primary/20"
+                  spellCheck={false}
+                />
+              )}
+              {documentPreview?.kind === "text" && !isEditingDocument && (
                 <pre className="whitespace-pre-wrap break-words text-sm leading-6 font-mono">{documentPreview.text}</pre>
               )}
-              {documentPreview?.kind === "markdown" && (
+              {documentPreview?.kind === "markdown" && isEditingDocument && (
+                <textarea
+                  value={editorText}
+                  onChange={(e) => {
+                    setEditorText(e.target.value);
+                    if (saveStatus === "error") setSaveStatus("idle");
+                  }}
+                  className="min-h-[360px] w-full resize-y rounded-xl border border-border/30 bg-muted/20 p-4 font-mono text-sm leading-6 text-foreground outline-none focus:border-brand-primary/70 focus:ring-2 focus:ring-brand-primary/20"
+                  spellCheck={false}
+                />
+              )}
+              {documentPreview?.kind === "markdown" && !isEditingDocument && (
                 <div className="text-sm leading-6 [&_h1]:text-2xl [&_h1]:font-bold [&_h2]:text-xl [&_h2]:font-bold [&_h3]:font-semibold [&_p]:mb-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_pre]:overflow-auto [&_pre]:rounded-xl [&_pre]:bg-muted [&_pre]:p-3">
                   <ReactMarkdown remarkPlugins={[remarkGfm]}>{documentPreview.text}</ReactMarkdown>
                 </div>

@@ -2820,6 +2820,11 @@ export default function Dashboard() {
           setMoveTargetFolderPath('');
           setShowMoveDialog(true);
         }}
+        onAssetUpdated={(updates) => {
+          setSelectedAsset((prev) => prev ? { ...prev, ...updates } : prev);
+          if (rootPath) void loadDirectoryIntoCache(rootPath);
+          if (currentPath && currentPath !== rootPath) void loadDirectoryIntoCache(currentPath);
+        }}
       />
 
       <CompressDialog
