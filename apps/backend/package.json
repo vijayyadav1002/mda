@@ -26,18 +26,24 @@
     "graphql": "^16.9.0",
     "ioredis": "^5.10.1",
     "libheif-js": "^1.16.2",
+    "mammoth": "^1.12.0",
     "mercurius": "^15.0.0",
+    "mime-types": "^3.0.2",
     "p-queue": "^9.1.0",
     "pg": "^8.13.1",
-    "sharp": "^0.33.5"
+    "sanitize-html": "^2.17.3",
+    "sharp": "^0.33.5",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@mda/tsconfig": "*",
     "@types/archiver": "^7.0.0",
     "@types/bcrypt": "^5.0.2",
     "@types/fluent-ffmpeg": "^2.1.27",
+    "@types/mime-types": "^3.0.1",
     "@types/node": "^22.9.3",
     "@types/pg": "^8.11.10",
+    "@types/sanitize-html": "^2.16.1",
     "tsx": "^4.21.0",
     "typescript": "^5.6.3"
   }

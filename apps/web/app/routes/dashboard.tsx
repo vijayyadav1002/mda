@@ -7,13 +7,14 @@ import { MediaAssetViewer } from "~/components/MediaAssetViewer";
 import { CompressDialog } from "~/components/CompressDialog";
 import { CompressQueuePanel, type CompressJob } from "~/components/CompressQueuePanel";
 import { TagDialog, type TagSuggestion } from "~/components/TagDialog";
-import { SearchBar, type SearchFileResult, type SearchFolderResult } from "~/components/SearchBar";
+import { SearchBar } from "~/components/SearchBar";
 import {
-  Folder, FileImage, ArrowLeft, ChevronDown, ChevronRight,
+  Folder, File, FileImage, FileText, Table2, ArrowLeft, ChevronDown, ChevronRight,
   Trash2, CheckSquare, Square, Users, Key, RotateCcw,
   Menu, X, ImagePlus, ArrowUpDown, Minimize2,
   Upload, LogOut, Download, FolderPlus, ListTodo,
-  Moon, Sun, User, Tag as TagIcon, Pencil, HardDrive,
+  Moon, Sun, User, Tag as TagIcon, Pencil, HardDrive, FolderOpen,
+  Copy,
 } from "lucide-react";
 
 const API_URL = getApiUrl();
@@ -93,6 +94,54 @@ const CREATE_FOLDER_MUTATION = `
 const DELETE_FOLDER_MUTATION = `
   mutation DeleteFolder($path: String!) {
     deleteFolder(path: $path)
+  }
+`;
+
+const RENAME_MEDIA_ASSET_MUTATION = `
+  mutation RenameMediaAsset($id: ID!, $newName: String!) {
+    renameMediaAsset(id: $id, newName: $newName) {
+      id fileName filePath mimeType fileSize thumbnailUrl transcodedUrl createdAt tags { id name }
+    }
+  }
+`;
+
+const MOVE_MEDIA_ASSET_MUTATION = `
+  mutation MoveMediaAsset($id: ID!, $newPath: String!) {
+    moveMediaAsset(id: $id, newPath: $newPath) {
+      id fileName filePath mimeType fileSize thumbnailUrl transcodedUrl createdAt tags { id name }
+    }
+  }
+`;
+
+const DUPLICATE_MEDIA_ASSET_MUTATION = `
+  mutation DuplicateMediaAsset($id: ID!, $destinationFolder: String) {
+    duplicateMediaAsset(id: $id, destinationFolder: $destinationFolder) {
+      id fileName filePath mimeType fileSize thumbnailUrl transcodedUrl createdAt tags { id name }
+    }
+  }
+`;
+
+const DUPLICATE_FOLDER_MUTATION = `
+  mutation DuplicateFolder($path: String!, $destinationFolder: String) {
+    duplicateFolder(path: $path, destinationFolder: $destinationFolder) {
+      name path type
+    }
+  }
+`;
+
+const RENAME_FOLDER_MUTATION = `
+  mutation RenameFolder($path: String!, $newName: String!) {
+    renameFolder(path: $path, newName: $newName) {
+      name path type
+    }
+  }
+`;
+
+const MOVE_FOLDER_MUTATION = `
+  mutation MoveFolder($path: String!, $destinationFolder: String!) {
+    moveFolder(path: $path, destinationFolder: $destinationFolder) {
+      name path type
+    }
   }
 `;
 
@@ -221,6 +270,20 @@ const CLEAR_CACHE_MUTATION = `
   }
 `;
 
+const SEARCH_RESULTS_QUERY = `
+  query SearchResults($term: String, $mediaType: String, $sortBy: String, $limit: Int, $minSize: Float, $maxSize: Float, $path: String) {
+    search(term: $term, mediaType: $mediaType, sortBy: $sortBy, limit: $limit, minSize: $minSize, maxSize: $maxSize, path: $path) {
+      files {
+        id fileName filePath fileSize mimeType
+        thumbnailUrl transcodedUrl
+        indexedAt createdAt updatedAt
+        tags { id name }
+      }
+      folders { name path parentPath }
+    }
+  }
+`;
+
 interface TagSummary {
   id: string;
   name: string;
@@ -272,6 +335,49 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
+type FileCategory = "image" | "video" | "pdf" | "word" | "excel" | "text" | "markdown" | "other";
+
+function getFileCategory(asset: MediaAsset): FileCategory {
+  const ext = asset.fileName.split(".").pop()?.toLowerCase() ?? "";
+  if (asset.mimeType.startsWith("image/")) return "image";
+  if (asset.mimeType.startsWith("video/")) return "video";
+  if (asset.mimeType === "application/pdf" || ext === "pdf") return "pdf";
+  if (ext === "docx") return "word";
+  if (ext === "xlsx") return "excel";
+  if (ext === "md" || ext === "markdown") return "markdown";
+  if (asset.mimeType.startsWith("text/") || ext === "txt") return "text";
+  return "other";
+}
+
+function getFileCategoryLabel(asset: MediaAsset) {
+  const labels: Record<FileCategory, string> = {
+    image: "Image",
+    video: "Video",
+    pdf: "PDF",
+    word: "Word",
+    excel: "Excel",
+    text: "Text",
+    markdown: "MD",
+    other: "File",
+  };
+  return labels[getFileCategory(asset)];
+}
+
+function canCompressAsset(asset: MediaAsset) {
+  const category = getFileCategory(asset);
+  return category === "image" || category === "video" || category === "pdf";
+}
+
+function FileTypeIcon({ asset, className }: { asset: MediaAsset; className: string }) {
+  const category = getFileCategory(asset);
+  if (category === "excel") return <Table2 className={className} />;
+  if (category === "word" || category === "text" || category === "markdown" || category === "pdf") {
+    return <FileText className={className} />;
+  }
+  if (category === "image" || category === "video") return <FileImage className={className} />;
+  return <File className={className} />;
+}
+
 function SidebarNavItem({
   icon: Icon,
   label,
@@ -319,6 +425,7 @@ export default function Dashboard() {
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedAssetIds, setSelectedAssetIds] = useState<Set<string>>(new Set());
+  const [selectedFolderPaths, setSelectedFolderPaths] = useState<Set<string>>(new Set());
   const [showChangePasswordDialog, setShowChangePasswordDialog] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -361,8 +468,23 @@ export default function Dashboard() {
   const [showNewFolderDialog, setShowNewFolderDialog] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
+  const [showMoveDialog, setShowMoveDialog] = useState(false);
+  const [moveTargetFolderPath, setMoveTargetFolderPath] = useState('');
+  const [isMoving, setIsMoving] = useState(false);
+  const [showDuplicateDialog, setShowDuplicateDialog] = useState(false);
+  const [duplicateTargetFolderPath, setDuplicateTargetFolderPath] = useState('');
+  const [duplicateSourceFolder, setDuplicateSourceFolder] = useState<{ path: string; name: string } | null>(null);
+  const [isDuplicating, setIsDuplicating] = useState(false);
+  const [renamingFolder, setRenamingFolder] = useState<{ path: string; name: string } | null>(null);
+  const [renameFolderValue, setRenameFolderValue] = useState('');
+  const [isRenamingFolder, setIsRenamingFolder] = useState(false);
   const [cacheStats, setCacheStats] = useState<CacheStats | null>(null);
   const [showCachePanel, setShowCachePanel] = useState(false);
+  const [searchQuery, setSearchQuery] = useState<{ term: string; mediaType: string } | null>(null);
+  const [searchAssets, setSearchAssets] = useState<MediaAsset[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchLimit, setSearchLimit] = useState<25 | 50 | 100 | 250 | 0>(25);
+  const [minSizeBytes, setMinSizeBytes] = useState<number>(0); // 0 = no filter
   const fileInputRef = useRef<HTMLInputElement>(null);
   const refreshInFlightRef = useRef(false);
   const thumbnailPollTimerRef = useRef<number | null>(null);
@@ -533,11 +655,12 @@ export default function Dashboard() {
     const token = getAuthToken();
     if (!token) throw new Error("Not authenticated");
     const client = createGraphQLClient(token);
-    await client.request(APPLY_TAGS_MUTATION, { assetIds, tagNames });
+    const data: any = await client.request(APPLY_TAGS_MUTATION, { assetIds, tagNames });
     await refreshTagSuggestions();
     if (currentPath) await loadDirectoryIntoCache(currentPath);
     if (rootPath && rootPath !== currentPath) await loadDirectoryIntoCache(rootPath);
     if (activeTagFilter) await loadTagFilterAssets(activeTagFilter);
+    return data.applyTagsToAssets as Array<{ id: string; tags: Array<{ id: string; name: string }> }>;
   }, [activeTagFilter, currentPath, loadTagFilterAssets, refreshTagSuggestions, rootPath]);
 
   const removeTagFromAsset = useCallback(async (assetId: string, tagName: string) => {
@@ -830,9 +953,18 @@ export default function Dashboard() {
     });
   };
 
+  const toggleFolderSelection = (folderPath: string) => {
+    setSelectedFolderPaths((prev) => {
+      const next = new Set(prev);
+      if (next.has(folderPath)) next.delete(folderPath); else next.add(folderPath);
+      return next;
+    });
+  };
+
   const toggleSelectionMode = () => {
     setSelectionMode(!selectionMode);
-    if (selectionMode) setSelectedAssetIds(new Set());
+    setSelectedAssetIds(new Set());
+    setSelectedFolderPaths(new Set());
   };
 
   const handleDownloadSelected = () => {
@@ -1115,6 +1247,155 @@ export default function Dashboard() {
     }
   };
 
+  const allAvailableFolders = useMemo(() => {
+    const seen = new Set<string>();
+    const result: Array<{ name: string; path: string }> = [];
+    for (const node of Object.values(directoryCache)) {
+      if (!seen.has(node.path)) {
+        seen.add(node.path);
+        result.push({ name: node.name, path: node.path });
+      }
+      if (node.children) {
+        for (const child of node.children) {
+          if (child.type === 'directory' && !seen.has(child.path)) {
+            seen.add(child.path);
+            result.push({ name: child.name, path: child.path });
+          }
+        }
+      }
+    }
+    return result.sort((a, b) => a.path.localeCompare(b.path));
+  }, [directoryCache]);
+
+  const handleMoveAsset = async () => {
+    if (!selectedAsset || !moveTargetFolderPath || isMoving) return;
+    setIsMoving(true);
+    try {
+      const token = getAuthToken();
+      if (!token) return;
+      const client = createGraphQLClient(token);
+      const newPath = `${moveTargetFolderPath}/${selectedAsset.fileName}`;
+      const data: any = await client.request(MOVE_MEDIA_ASSET_MUTATION, { id: selectedAsset.id, newPath });
+      setSelectedAsset(data.moveMediaAsset);
+      setShowMoveDialog(false);
+      setMoveTargetFolderPath('');
+      if (rootPath) await loadDirectoryIntoCache(rootPath);
+      if (currentPath && currentPath !== rootPath) await loadDirectoryIntoCache(currentPath);
+      if (moveTargetFolderPath !== rootPath && moveTargetFolderPath !== currentPath) {
+        await loadDirectoryIntoCache(moveTargetFolderPath);
+      }
+    } catch (err: any) {
+      alert(`Failed to move file: ${err.message || 'Unknown error'}`);
+    } finally {
+      setIsMoving(false);
+    }
+  };
+
+  const handleDuplicateAsset = async () => {
+    if ((!selectedAsset && !duplicateSourceFolder) || !duplicateTargetFolderPath || isDuplicating) return;
+    setIsDuplicating(true);
+    try {
+      const token = getAuthToken();
+      if (!token) return;
+      const client = createGraphQLClient(token);
+      if (duplicateSourceFolder) {
+        await client.request(DUPLICATE_FOLDER_MUTATION, {
+          path: duplicateSourceFolder.path,
+          destinationFolder: duplicateTargetFolderPath,
+        });
+      } else if (selectedAsset) {
+        const data: any = await client.request(DUPLICATE_MEDIA_ASSET_MUTATION, {
+          id: selectedAsset.id,
+          destinationFolder: duplicateTargetFolderPath,
+        });
+        setSelectedAsset(data.duplicateMediaAsset);
+      }
+      setShowDuplicateDialog(false);
+      setDuplicateTargetFolderPath('');
+      setDuplicateSourceFolder(null);
+      if (rootPath) await loadDirectoryIntoCache(rootPath);
+      if (currentPath && currentPath !== rootPath) await loadDirectoryIntoCache(currentPath);
+      if (duplicateTargetFolderPath !== rootPath && duplicateTargetFolderPath !== currentPath) {
+        await loadDirectoryIntoCache(duplicateTargetFolderPath);
+      }
+    } catch (err: any) {
+      alert(`Failed to duplicate item: ${err.message || 'Unknown error'}`);
+    } finally {
+      setIsDuplicating(false);
+    }
+  };
+
+  const openDuplicateFolderDialog = (folder: { path: string; name: string }) => {
+    setSelectedAsset(null);
+    setDuplicateSourceFolder(folder);
+    setDuplicateTargetFolderPath(folder.path.substring(0, folder.path.lastIndexOf('/')) || currentPath || rootPath || '');
+    setShowDuplicateDialog(true);
+  };
+
+  const handleBulkMove = async () => {
+    if (!moveTargetFolderPath || isMoving) return;
+    const token = getAuthToken();
+    if (!token) return;
+    setIsMoving(true);
+    try {
+      const client = createGraphQLClient(token);
+      for (const node of sortedFolderChildren) {
+        if (node.type === 'file' && node.mediaAsset && selectedAssetIds.has(node.mediaAsset.id)) {
+          const newPath = `${moveTargetFolderPath}/${node.mediaAsset.fileName}`;
+          await client.request(MOVE_MEDIA_ASSET_MUTATION, { id: node.mediaAsset.id, newPath });
+        }
+      }
+      for (const folderPath of selectedFolderPaths) {
+        await client.request(MOVE_FOLDER_MUTATION, { path: folderPath, destinationFolder: moveTargetFolderPath });
+      }
+      setSelectedAssetIds(new Set());
+      setSelectedFolderPaths(new Set());
+      setSelectionMode(false);
+      setShowMoveDialog(false);
+      setMoveTargetFolderPath('');
+      if (rootPath) await loadDirectoryIntoCache(rootPath);
+      if (currentPath && currentPath !== rootPath) await loadDirectoryIntoCache(currentPath);
+      if (moveTargetFolderPath !== rootPath && moveTargetFolderPath !== currentPath) {
+        await loadDirectoryIntoCache(moveTargetFolderPath);
+      }
+    } catch (err: any) {
+      alert(`Failed to move items: ${err.message || 'Unknown error'}`);
+    } finally {
+      setIsMoving(false);
+    }
+  };
+
+  const handleRenameFolder = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!renamingFolder || !renameFolderValue.trim() || isRenamingFolder) return;
+    setIsRenamingFolder(true);
+    try {
+      const token = getAuthToken();
+      if (!token) return;
+      const client = createGraphQLClient(token);
+      await client.request(RENAME_FOLDER_MUTATION, { path: renamingFolder.path, newName: renameFolderValue.trim() });
+      const renamedPath = renamingFolder.path;
+      setRenamingFolder(null);
+      setRenameFolderValue('');
+      setDirectoryCache((prev) => {
+        const next = { ...prev };
+        for (const key of Object.keys(next)) {
+          if (key === renamedPath || key.startsWith(`${renamedPath}/`)) delete next[key];
+        }
+        return next;
+      });
+      if (currentPath && (currentPath === renamedPath || currentPath.startsWith(`${renamedPath}/`))) {
+        await handleBackClick();
+      } else {
+        if (currentPath) await loadDirectoryIntoCache(currentPath);
+      }
+    } catch (err: any) {
+      alert(`Failed to rename folder: ${err.message || 'Unknown error'}`);
+    } finally {
+      setIsRenamingFolder(false);
+    }
+  };
+
   const handleUpload = async () => {
     if (uploadFiles.length === 0 || isUploading) return;
     setIsUploading(true);
@@ -1170,6 +1451,10 @@ export default function Dashboard() {
   };
 
   const handleFolderClick = async (folder: DirectoryNode) => {
+    if (selectionMode) {
+      toggleFolderSelection(folder.path);
+      return;
+    }
     if (currentPath) setFolderHistory((prev) => [...prev, currentPath]);
     setCurrentPath(folder.path);
     const cachedNode = directoryCache[folder.path];
@@ -1186,6 +1471,8 @@ export default function Dashboard() {
     }
     setActiveTagFilter(null);
     setTagFilterAssets([]);
+    setSearchQuery(null);
+    setSearchAssets([]);
     setCurrentPath(targetPath);
     const cachedNode = directoryCache[targetPath];
     if (!cachedNode || cachedNode.children === null || cachedNode.children === undefined) {
@@ -1213,22 +1500,39 @@ export default function Dashboard() {
     }
   }, []);
 
-  const handleSearchFolder = useCallback((folder: SearchFolderResult) => {
-    void jumpToPath(folder.path);
-  }, [jumpToPath]);
+  const handleSearch = useCallback(async (term: string, mediaType: string) => {
+    const trimmed = term.trim();
+    if (!trimmed && mediaType === "all") {
+      setSearchQuery(null);
+      setSearchAssets([]);
+      return;
+    }
+    setSearchQuery({ term: trimmed, mediaType });
+    setSearchLoading(true);
+    const token = getAuthToken();
+    if (!token) { setSearchLoading(false); return; }
+    try {
+      const client = createGraphQLClient(token);
+      const vars: Record<string, unknown> = { limit: searchLimit };
+      if (trimmed) vars.term = trimmed;
+      if (mediaType !== "all") vars.mediaType = mediaType;
+      if (sortOption !== "default") vars.sortBy = sortOption;
+      if (minSizeBytes > 0) vars.minSize = minSizeBytes;
+      if (currentPath && currentPath !== rootPath) vars.path = currentPath;
+      const data: any = await client.request(SEARCH_RESULTS_QUERY, vars);
+      setSearchAssets((data?.search?.files ?? []) as MediaAsset[]);
+    } catch (err) {
+      console.error("Search failed:", err);
+      setSearchAssets([]);
+    } finally {
+      setSearchLoading(false);
+    }
+  }, [searchLimit, sortOption, minSizeBytes, currentPath, rootPath]);
 
-  const handleSearchFile = useCallback(async (file: SearchFileResult) => {
-    setSelectedAsset({
-      id: file.id,
-      fileName: file.fileName,
-      filePath: file.filePath,
-      mimeType: file.mimeType,
-      fileSize: file.fileSize,
-      thumbnailUrl: file.thumbnailUrl,
-      createdAt: file.createdAt,
-      tags: file.tags,
-    });
-    setIsViewerOpen(true);
+  const handleClearSearch = useCallback(() => {
+    setSearchQuery(null);
+    setSearchAssets([]);
+    setMinSizeBytes(0);
   }, []);
 
   useEffect(() => {
@@ -1317,9 +1621,21 @@ export default function Dashboard() {
     }));
   }, [tagFilterAssets]);
 
+  const searchResultNodes = useMemo<DirectoryNode[]>(() => {
+    return searchAssets.map((asset) => ({
+      name: asset.fileName,
+      path: asset.filePath,
+      type: "file",
+      children: null,
+      mediaAsset: asset,
+    }));
+  }, [searchAssets]);
+
   const sortedFolderChildren = useMemo(() => {
-    const baseChildren = activeTagFilter ? tagFilterNodes : currentFolderChildren;
-    if (sortOption === "default") return baseChildren;
+    const baseChildren = searchQuery
+      ? searchResultNodes
+      : activeTagFilter ? tagFilterNodes : currentFolderChildren;
+    if (sortOption === "default" || searchQuery) return baseChildren;
     const folders = baseChildren.filter((n) => n.type === "directory");
     const files = baseChildren.filter((n) => n.type !== "directory");
     const sorted = [...files].sort((a, b) => {
@@ -1333,7 +1649,17 @@ export default function Dashboard() {
       return sortOption === "date-asc" ? dateA - dateB : dateB - dateA;
     });
     return [...folders, ...sorted];
-  }, [activeTagFilter, currentFolderChildren, sortOption, tagFilterNodes]);
+  }, [activeTagFilter, currentFolderChildren, searchQuery, searchResultNodes, sortOption, tagFilterNodes]);
+
+  const selectedAssets = useMemo(() => {
+    return sortedFolderChildren
+      .filter((node) => node.type === "file" && node.mediaAsset && selectedAssetIds.has(node.mediaAsset.id))
+      .map((node) => node.mediaAsset!);
+  }, [selectedAssetIds, sortedFolderChildren]);
+
+  const selectedCompressibleAssets = useMemo(() => {
+    return selectedAssets.filter(canCompressAsset);
+  }, [selectedAssets]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -1344,6 +1670,12 @@ export default function Dashboard() {
     if (showSortMenu) document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [showSortMenu]);
+
+  useEffect(() => {
+    if (!searchQuery) return;
+    void handleSearch(searchQuery.term, searchQuery.mediaType);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sortOption, searchLimit, minSizeBytes, currentPath]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -1489,14 +1821,32 @@ export default function Dashboard() {
             </span>
           </button>
           {(user?.role === "admin" || user?.role === "editor") && (
-            <button
-              type="button"
-              onClick={() => void handleDeleteFolder(node.path, node.name)}
-              className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-destructive/10 rounded-lg transition-all duration-150 mr-1 flex-shrink-0"
-              title="Delete folder"
-            >
-              <Trash2 className="w-3.5 h-3.5 text-destructive" />
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => { setRenamingFolder({ path: node.path, name: node.name }); setRenameFolderValue(node.name); }}
+                className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-accent rounded-lg transition-all duration-150 flex-shrink-0"
+                title="Rename folder"
+              >
+                <Pencil className="w-3.5 h-3.5 text-foreground" />
+              </button>
+              <button
+                type="button"
+                onClick={() => openDuplicateFolderDialog({ path: node.path, name: node.name })}
+                className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-accent rounded-lg transition-all duration-150 flex-shrink-0"
+                title="Duplicate folder"
+              >
+                <Copy className="w-3.5 h-3.5 text-foreground" />
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleDeleteFolder(node.path, node.name)}
+                className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-destructive/10 rounded-lg transition-all duration-150 mr-1 flex-shrink-0"
+                title="Delete folder"
+              >
+                <Trash2 className="w-3.5 h-3.5 text-destructive" />
+              </button>
+            </>
           )}
         </div>
         {isExpanded && children === null && (
@@ -1514,16 +1864,26 @@ export default function Dashboard() {
 
   const isAtRoot = currentPath === rootPath;
   const rootSize = rootPath ? (directoryCache[rootPath]?.size ?? null) : null;
-  const heroTitle = activeTagFilter
-    ? `#${activeTagFilter}`
-    : !isAtRoot && currentFolder
-      ? currentFolder.name
-      : "Your Collection";
-  const heroSubtitle = activeTagFilter
-    ? `${tagFilterAssets.length} tagged file${tagFilterAssets.length === 1 ? "" : "s"} across your library`
-    : !isAtRoot
-      ? `${folderHistory.length + 1} level${folderHistory.length > 0 ? "s" : ""} deep`
-      : "Organized precision for your creative assets and digital artifacts.";
+  const heroTitle = searchQuery
+    ? searchQuery.term
+      ? `"${searchQuery.term}"`
+      : searchQuery.mediaType === "image" ? "All Images" : "All Videos"
+    : activeTagFilter
+      ? `#${activeTagFilter}`
+      : !isAtRoot && currentFolder
+        ? currentFolder.name
+        : "Your Collection";
+  const heroSubtitle = searchQuery
+    ? searchLoading
+      ? "Searching…"
+      : searchLimit > 0 && searchAssets.length >= searchLimit
+        ? `Showing top ${searchAssets.length} results — try a narrower search or increase the limit`
+        : `${searchAssets.length} result${searchAssets.length === 1 ? "" : "s"} found${currentPath && currentPath !== rootPath ? ` in /${currentPath.split("/").filter(Boolean).pop()}` : ""}`
+    : activeTagFilter
+      ? `${tagFilterAssets.length} tagged file${tagFilterAssets.length === 1 ? "" : "s"} across your library`
+      : !isAtRoot
+        ? `${folderHistory.length + 1} level${folderHistory.length > 0 ? "s" : ""} deep`
+        : "Organized precision for your creative assets and digital artifacts.";
 
   if (loading) {
     return (
@@ -1851,16 +2211,25 @@ export default function Dashboard() {
         {/* Search bar */}
         <div className="md:sticky md:top-0 z-20 bg-background/80 backdrop-blur-sm px-4 md:px-10 pt-3 pb-1.5">
           <SearchBar
-            onSelectFile={handleSearchFile}
-            onSelectFolder={handleSearchFolder}
+            onSearch={handleSearch}
+            onClear={handleClearSearch}
             className="w-full md:max-w-xl"
           />
         </div>
 
         {/* Toolbar */}
-        <div className="bg-background/80 backdrop-blur-sm px-4 md:px-10 pb-3 pt-1 flex items-center justify-between gap-2 md:gap-4">
+        <div className="relative z-30 bg-background/80 backdrop-blur-sm px-4 md:px-10 pb-3 pt-1 flex items-center justify-between gap-2 md:gap-4">
           <div className="flex items-center gap-3 min-w-0">
-            {activeTagFilter && (
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={handleClearSearch}
+                className="flex items-center gap-1.5 text-sm text-brand-primary hover:opacity-80 transition-opacity"
+              >
+                <ArrowLeft className="w-4 h-4" /> Exit search
+              </button>
+            )}
+            {activeTagFilter && !searchQuery && (
               <button
                 type="button"
                 onClick={clearTagFilter}
@@ -1869,7 +2238,7 @@ export default function Dashboard() {
                 <ArrowLeft className="w-4 h-4" /> Exit tag filter
               </button>
             )}
-            {!activeTagFilter && folderHistory.length > 0 && (
+            {!activeTagFilter && !searchQuery && folderHistory.length > 0 && (
               <button
                 type="button"
                 onClick={() => void handleBackClick()}
@@ -1921,51 +2290,71 @@ export default function Dashboard() {
                   <CheckSquare className="w-4 h-4" />
                   <span className="hidden sm:inline">{selectionMode ? "Cancel" : "Select"}</span>
                 </button>
-                {selectionMode && selectedAssetIds.size > 0 && (
+                {selectionMode && (selectedAssetIds.size > 0 || selectedFolderPaths.size > 0) && (
                   <>
-                    <button
-                      type="button"
-                      onClick={handleDownloadSelected}
-                      className="flex items-center gap-1 px-2.5 py-2 rounded-xl text-sm text-foreground hover:bg-accent transition-all"
-                      title={`Download ${selectedAssetIds.size} file(s)`}
-                    >
-                      <Download className="w-4 h-4" />
-                      <span className="hidden sm:inline">Download</span>
-                      <span className="text-xs">({selectedAssetIds.size})</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setCompressDialogAssets(
-                          sortedFolderChildren
-                            .filter(n => n.type === "file" && n.mediaAsset && selectedAssetIds.has(n.mediaAsset.id))
-                            .map(n => n.mediaAsset!)
-                        );
-                        setIsCompressDialogOpen(true);
-                      }}
-                      className="flex items-center gap-1 px-2.5 py-2 rounded-xl text-sm text-brand-primary hover:bg-accent transition-all"
-                    >
-                      <Minimize2 className="w-4 h-4" />
-                      <span className="hidden sm:inline">Compress</span>
-                      <span className="text-xs">({selectedAssetIds.size})</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const pool: MediaAsset[] = activeTagFilter
-                          ? tagFilterAssets
-                          : sortedFolderChildren
-                              .filter((n) => n.type === "file" && n.mediaAsset)
-                              .map((n) => n.mediaAsset!);
-                        setTagDialogAssets(pool.filter((a) => selectedAssetIds.has(a.id)));
-                        setIsTagDialogOpen(true);
-                      }}
-                      className="flex items-center gap-1 px-2.5 py-2 rounded-xl text-sm text-brand-primary hover:bg-accent transition-all"
-                    >
-                      <TagIcon className="w-4 h-4" />
-                      <span className="hidden sm:inline">Tag</span>
-                      <span className="text-xs">({selectedAssetIds.size})</span>
-                    </button>
+                    {selectedAssetIds.size > 0 && (
+                      <button
+                        type="button"
+                        onClick={handleDownloadSelected}
+                        className="flex items-center gap-1 px-2.5 py-2 rounded-xl text-sm text-foreground hover:bg-accent transition-all"
+                        title={`Download ${selectedAssetIds.size} file(s)`}
+                      >
+                        <Download className="w-4 h-4" />
+                        <span className="hidden sm:inline">Download</span>
+                        <span className="text-xs">({selectedAssetIds.size})</span>
+                      </button>
+                    )}
+                    {selectedAssetIds.size > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (selectedCompressibleAssets.length === 0) return;
+                          const skipped = selectedAssets.length - selectedCompressibleAssets.length;
+                          if (skipped > 0) {
+                            alert(`${skipped} unsupported file${skipped === 1 ? "" : "s"} will be skipped.`);
+                          }
+                          setCompressDialogAssets(selectedCompressibleAssets);
+                          setIsCompressDialogOpen(true);
+                        }}
+                        disabled={selectedCompressibleAssets.length === 0}
+                        title={selectedCompressibleAssets.length === 0 ? "No selected files can be compressed" : undefined}
+                        className="flex items-center gap-1 px-2.5 py-2 rounded-xl text-sm text-brand-primary hover:bg-accent transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        <Minimize2 className="w-4 h-4" />
+                        <span className="hidden sm:inline">Compress</span>
+                        <span className="text-xs">({selectedCompressibleAssets.length})</span>
+                      </button>
+                    )}
+                    {selectedAssetIds.size > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const pool: MediaAsset[] = activeTagFilter
+                            ? tagFilterAssets
+                            : sortedFolderChildren
+                                .filter((n) => n.type === "file" && n.mediaAsset)
+                                .map((n) => n.mediaAsset!);
+                          setTagDialogAssets(pool.filter((a) => selectedAssetIds.has(a.id)));
+                          setIsTagDialogOpen(true);
+                        }}
+                        className="flex items-center gap-1 px-2.5 py-2 rounded-xl text-sm text-brand-primary hover:bg-accent transition-all"
+                      >
+                        <TagIcon className="w-4 h-4" />
+                        <span className="hidden sm:inline">Tag</span>
+                        <span className="text-xs">({selectedAssetIds.size})</span>
+                      </button>
+                    )}
+                    {(user?.role === "admin" || user?.role === "editor") && (
+                      <button
+                        type="button"
+                        onClick={() => { setMoveTargetFolderPath(''); setShowMoveDialog(true); }}
+                        className="flex items-center gap-1 px-2.5 py-2 rounded-xl text-sm text-brand-primary hover:bg-accent transition-all"
+                      >
+                        <FolderOpen className="w-4 h-4" />
+                        <span className="hidden sm:inline">Move</span>
+                        <span className="text-xs">({selectedAssetIds.size + selectedFolderPaths.size})</span>
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={handleDeleteSelected}
@@ -2149,6 +2538,44 @@ export default function Dashboard() {
               )}
             </div>
 
+            {/* Search result limit — only visible during active search */}
+            {searchQuery && (
+              <select
+                value={searchLimit}
+                onChange={(e) => setSearchLimit(Number(e.target.value) as typeof searchLimit)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm bg-muted text-muted-foreground focus:outline-none focus:ring-2 focus:ring-brand-primary/30 cursor-pointer"
+                aria-label="Max search results"
+              >
+                <option value={25}>25 results</option>
+                <option value={50}>50 results</option>
+                <option value={100}>100 results</option>
+                <option value={250}>250 results</option>
+                <option value={0}>All results</option>
+              </select>
+            )}
+
+            {/* File size filter — only visible during active search */}
+            {searchQuery && (
+              <select
+                value={minSizeBytes}
+                onChange={(e) => setMinSizeBytes(Number(e.target.value))}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary/30 cursor-pointer ${
+                  minSizeBytes > 0
+                    ? "text-brand-primary bg-brand-primary/10"
+                    : "bg-muted text-muted-foreground"
+                }`}
+                aria-label="Minimum file size"
+              >
+                <option value={0}>Any size</option>
+                <option value={10 * 1024 * 1024}>&gt; 10 MB</option>
+                <option value={100 * 1024 * 1024}>&gt; 100 MB</option>
+                <option value={500 * 1024 * 1024}>&gt; 500 MB</option>
+                <option value={1024 * 1024 * 1024}>&gt; 1 GB</option>
+                <option value={2 * 1024 * 1024 * 1024}>&gt; 2 GB</option>
+                <option value={5 * 1024 * 1024 * 1024}>&gt; 5 GB</option>
+              </select>
+            )}
+
             {/* View toggle */}
             <div className="flex gap-1 bg-muted p-1 rounded-xl">
               {(["grid", "tree"] as const).map((v) => (
@@ -2198,8 +2625,17 @@ export default function Dashboard() {
                       <button
                         type="button"
                         onClick={() => void handleFolderClick(node)}
-                        className="w-full rounded-2xl bg-card hover:bg-accent transition-all duration-300 p-6 flex flex-col items-center justify-center gap-4 min-h-[180px] text-center"
+                        className={`w-full rounded-2xl bg-card hover:bg-accent transition-all duration-300 p-6 flex flex-col items-center justify-center gap-4 min-h-[180px] text-center ${
+                          selectedFolderPaths.has(node.path) ? 'ring-2 ring-brand-primary ring-offset-2 ring-offset-background' : ''
+                        }`}
                       >
+                        {selectionMode && (
+                          <div className="absolute top-3 left-3 z-10">
+                            {selectedFolderPaths.has(node.path)
+                              ? <CheckSquare className="w-5 h-5 text-brand-primary drop-shadow" />
+                              : <Square className="w-5 h-5 text-white drop-shadow" />}
+                          </div>
+                        )}
                         <div className="w-16 h-16 rounded-2xl gradient-brand flex items-center justify-center shadow-ambient group-hover:scale-110 transition-transform duration-300">
                           <Folder className="w-8 h-8 text-[#060e20]" />
                         </div>
@@ -2213,21 +2649,38 @@ export default function Dashboard() {
                         </div>
                       </button>
                       {!selectionMode && (user?.role === "admin" || user?.role === "editor") && (
-                        <button
-                          type="button"
-                          onClick={(e) => { e.stopPropagation(); void handleDeleteFolder(node.path, node.name); }}
-                          className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 w-8 h-8 bg-background/80 backdrop-blur-sm rounded-xl flex items-center justify-center hover:bg-destructive/20 transition-all duration-200"
-                          title="Delete folder"
-                        >
-                          <Trash2 className="w-3.5 h-3.5 text-destructive" />
-                        </button>
+                        <div className="absolute top-3 right-3 flex gap-1 opacity-0 group-hover:opacity-100">
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); setRenamingFolder({ path: node.path, name: node.name }); setRenameFolderValue(node.name); }}
+                            className="w-8 h-8 bg-background/80 backdrop-blur-sm rounded-xl flex items-center justify-center hover:bg-accent transition-all duration-200"
+                            title="Rename folder"
+                          >
+                            <Pencil className="w-3.5 h-3.5 text-foreground" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); openDuplicateFolderDialog({ path: node.path, name: node.name }); }}
+                            className="w-8 h-8 bg-background/80 backdrop-blur-sm rounded-xl flex items-center justify-center hover:bg-accent transition-all duration-200"
+                            title="Duplicate folder"
+                          >
+                            <Copy className="w-3.5 h-3.5 text-foreground" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); void handleDeleteFolder(node.path, node.name); }}
+                            className="w-8 h-8 bg-background/80 backdrop-blur-sm rounded-xl flex items-center justify-center hover:bg-destructive/20 transition-all duration-200"
+                            title="Delete folder"
+                          >
+                            <Trash2 className="w-3.5 h-3.5 text-destructive" />
+                          </button>
+                        </div>
                       )}
                     </div>
                   );
                 } else if (node.mediaAsset) {
                   const asset = node.mediaAsset;
                   const isSelected = selectedAssetIds.has(asset.id);
-                  const isImage = asset.mimeType.startsWith("image");
                   return (
                     <div
                       key={asset.id}
@@ -2278,7 +2731,7 @@ export default function Dashboard() {
                             />
                           ) : (
                             <div className="w-full h-full flex items-center justify-center">
-                              <FileImage className="w-12 h-12 text-muted-foreground/30" />
+                              <FileTypeIcon asset={asset} className="w-12 h-12 text-muted-foreground/30" />
                             </div>
                           )}
 
@@ -2288,7 +2741,7 @@ export default function Dashboard() {
 
                         {/* Type badge */}
                         <div className="absolute top-3 left-3 z-10 bg-background/70 backdrop-blur-sm px-2 py-0.5 rounded-lg">
-                          <span className="label-meta">{isImage ? "Image" : "Video"}</span>
+                          <span className="label-meta">{getFileCategoryLabel(asset)}</span>
                         </div>
 
                         {/* Download button */}
@@ -2310,6 +2763,11 @@ export default function Dashboard() {
                         <p className="label-meta mt-1">
                           {formatBytes(asset.fileSize)} · {formatDate(asset.createdAt)}
                         </p>
+                        {searchQuery && rootPath && (
+                          <p className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground/70">
+                            {(asset.filePath.substring(0, asset.filePath.lastIndexOf('/')).replace(rootPath, '') || '/').replace(/^\//, '') || '/'}
+                          </p>
+                        )}
                         {asset.tags && asset.tags.length > 0 && (
                           <div className="mt-2 flex flex-wrap gap-1">
                             {asset.tags.map((tag) => (
@@ -2407,18 +2865,50 @@ export default function Dashboard() {
         onClose={handleCloseViewer}
         apiUrl={API_URL}
         userRole={user?.role}
-        onCompress={() => {
+        onCompress={selectedAsset && canCompressAsset(selectedAsset) ? () => {
           if (selectedAsset) {
             setCompressDialogAssets([selectedAsset]);
             setIsCompressDialogOpen(true);
           }
-        }}
+        } : undefined}
         onRemoveTag={async (tagName) => {
           if (!selectedAsset) return;
           await removeTagFromAsset(selectedAsset.id, tagName);
           setSelectedAsset((prev) =>
             prev ? { ...prev, tags: (prev.tags ?? []).filter((t) => t.name !== tagName) } : prev
           );
+        }}
+        onAddTags={() => {
+          if (selectedAsset) {
+            setTagDialogAssets([selectedAsset]);
+            setIsTagDialogOpen(true);
+          }
+        }}
+        onRename={async (newName) => {
+          if (!selectedAsset) return;
+          const token = getAuthToken();
+          if (!token) return;
+          const client = createGraphQLClient(token);
+          const data: any = await client.request(RENAME_MEDIA_ASSET_MUTATION, { id: selectedAsset.id, newName });
+          setSelectedAsset(data.renameMediaAsset);
+          if (rootPath) await loadDirectoryIntoCache(rootPath);
+          if (currentPath && currentPath !== rootPath) await loadDirectoryIntoCache(currentPath);
+        }}
+        onMove={() => {
+          setMoveTargetFolderPath('');
+          setShowMoveDialog(true);
+        }}
+        onDuplicate={() => {
+          if (!selectedAsset) return;
+          const currentFolderPath = selectedAsset.filePath.substring(0, selectedAsset.filePath.lastIndexOf('/'));
+          setDuplicateSourceFolder(null);
+          setDuplicateTargetFolderPath(currentFolderPath || currentPath || rootPath || '');
+          setShowDuplicateDialog(true);
+        }}
+        onAssetUpdated={(updates) => {
+          setSelectedAsset((prev) => prev ? { ...prev, ...updates } : prev);
+          if (rootPath) void loadDirectoryIntoCache(rootPath);
+          if (currentPath && currentPath !== rootPath) void loadDirectoryIntoCache(currentPath);
         }}
       />
 
@@ -2440,7 +2930,13 @@ export default function Dashboard() {
         selectedAssets={tagDialogAssets}
         suggestions={tagSuggestions}
         onApply={async (tagNames) => {
-          await applyTagsToAssets(tagDialogAssets.map((a) => a.id), tagNames);
+          const updated = await applyTagsToAssets(tagDialogAssets.map((a) => a.id), tagNames);
+          if (isViewerOpen && selectedAsset && updated) {
+            const refreshed = updated.find((a) => a.id === selectedAsset.id);
+            if (refreshed) {
+              setSelectedAsset((prev) => prev ? { ...prev, tags: refreshed.tags } : prev);
+            }
+          }
           setIsTagDialogOpen(false);
           setSelectionMode(false);
           setSelectedAssetIds(new Set());
@@ -2457,6 +2953,190 @@ export default function Dashboard() {
         onClearCompleted={clearCompletedJobs}
         apiUrl={API_URL}
       />
+
+      {/* Duplicate Asset */}
+      <Dialog open={showDuplicateDialog} onOpenChange={(open) => { if (!open) { setShowDuplicateDialog(false); setDuplicateTargetFolderPath(''); setDuplicateSourceFolder(null); } }}>
+        <DialogContent className="bg-card border-border/20 shadow-ambient rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="font-manrope font-bold text-foreground">
+              {duplicateSourceFolder ? 'Duplicate Folder' : 'Duplicate File'}
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground -mt-1">
+            Choose where to place a copy of{' '}
+            <strong className="text-foreground font-medium">
+              {duplicateSourceFolder?.name ?? selectedAsset?.fileName}
+            </strong>
+          </p>
+          <div className="max-h-60 overflow-y-auto space-y-1 border border-border/20 rounded-xl p-2 mt-1">
+            {allAvailableFolders.map((folder) => {
+              const relPath = rootPath && folder.path !== rootPath
+                ? folder.path.replace(rootPath, '') || '/'
+                : '/';
+              const isPickerSelected = duplicateTargetFolderPath === folder.path;
+              const currentFolderPath = selectedAsset?.filePath.substring(0, selectedAsset.filePath.lastIndexOf('/'));
+              const sourceFolderPath = duplicateSourceFolder?.path;
+              const isCurrent = duplicateSourceFolder
+                ? sourceFolderPath?.substring(0, sourceFolderPath.lastIndexOf('/')) === folder.path
+                : currentFolderPath === folder.path;
+              const isInvalidDest = !!sourceFolderPath && (
+                folder.path === sourceFolderPath || folder.path.startsWith(`${sourceFolderPath}/`)
+              );
+              return (
+                <button
+                  key={folder.path}
+                  type="button"
+                  disabled={isInvalidDest}
+                  onClick={() => setDuplicateTargetFolderPath(folder.path)}
+                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all text-left ${
+                    isPickerSelected
+                      ? 'bg-brand-primary/20 text-brand-primary'
+                      : isInvalidDest
+                        ? 'opacity-40 cursor-not-allowed text-foreground'
+                        : 'hover:bg-accent text-foreground'
+                  }`}
+                >
+                  <Folder className="w-4 h-4 flex-shrink-0" />
+                  <span className="font-mono text-xs truncate">{relPath}</span>
+                  {isCurrent && <span className="ml-auto text-xs text-muted-foreground">current</span>}
+                  {isInvalidDest && <span className="ml-auto text-xs text-muted-foreground">inside source</span>}
+                </button>
+              );
+            })}
+            {allAvailableFolders.length === 0 && (
+              <p className="text-xs text-muted-foreground text-center py-4">No folders available</p>
+            )}
+          </div>
+          <div className="flex gap-3 mt-2">
+            <button
+              type="button"
+              onClick={() => { setShowDuplicateDialog(false); setDuplicateTargetFolderPath(''); setDuplicateSourceFolder(null); }}
+              className="flex-1 py-2.5 rounded-xl border border-border/30 text-sm text-foreground hover:bg-accent transition-all"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={!duplicateTargetFolderPath || isDuplicating}
+              onClick={() => void handleDuplicateAsset()}
+              className="flex-1 inline-flex items-center justify-center gap-2 py-2.5 rounded-xl gradient-brand text-[#060e20] font-manrope font-bold text-sm disabled:opacity-50 transition-all"
+            >
+              <Copy className="w-4 h-4" />
+              {isDuplicating ? 'Duplicating…' : 'Duplicate Here'}
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Move Asset */}
+      <Dialog open={showMoveDialog} onOpenChange={(open) => { if (!open) { setShowMoveDialog(false); setMoveTargetFolderPath(''); } }}>
+        <DialogContent className="bg-card border-border/20 shadow-ambient rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="font-manrope font-bold text-foreground">
+              {selectionMode ? 'Move Items' : 'Move File'}
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground -mt-1">
+            {selectionMode
+              ? <>Move <strong className="text-foreground font-medium">{selectedAssetIds.size + selectedFolderPaths.size} selected items</strong> to a new location</>
+              : <>Select destination for <strong className="text-foreground font-medium">{selectedAsset?.fileName}</strong></>
+            }
+          </p>
+          <div className="max-h-60 overflow-y-auto space-y-1 border border-border/20 rounded-xl p-2 mt-1">
+            {allAvailableFolders.map((folder) => {
+              const relPath = rootPath && folder.path !== rootPath
+                ? folder.path.replace(rootPath, '') || '/'
+                : '/';
+              const isPickerSelected = moveTargetFolderPath === folder.path;
+              const isCurrent = !selectionMode && selectedAsset
+                ? selectedAsset.filePath.substring(0, selectedAsset.filePath.lastIndexOf('/')) === folder.path
+                : false;
+              const isInvalidDest = selectionMode && (
+                selectedFolderPaths.has(folder.path) ||
+                [...selectedFolderPaths].some(fp => folder.path.startsWith(fp + '/'))
+              );
+              const isDisabled = isCurrent || isInvalidDest;
+              return (
+                <button
+                  key={folder.path}
+                  type="button"
+                  disabled={isDisabled}
+                  onClick={() => setMoveTargetFolderPath(folder.path)}
+                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all text-left ${
+                    isPickerSelected
+                      ? 'bg-brand-primary/20 text-brand-primary'
+                      : isDisabled
+                        ? 'opacity-40 cursor-not-allowed text-foreground'
+                        : 'hover:bg-accent text-foreground'
+                  }`}
+                >
+                  <Folder className="w-4 h-4 flex-shrink-0" />
+                  <span className="font-mono text-xs truncate">{relPath}</span>
+                  {isCurrent && <span className="ml-auto text-xs text-muted-foreground">current</span>}
+                  {isInvalidDest && <span className="ml-auto text-xs text-muted-foreground">selected</span>}
+                </button>
+              );
+            })}
+            {allAvailableFolders.length === 0 && (
+              <p className="text-xs text-muted-foreground text-center py-4">No folders available</p>
+            )}
+          </div>
+          <div className="flex gap-3 mt-2">
+            <button
+              type="button"
+              onClick={() => { setShowMoveDialog(false); setMoveTargetFolderPath(''); }}
+              className="flex-1 py-2.5 rounded-xl border border-border/30 text-sm text-foreground hover:bg-accent transition-all"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={!moveTargetFolderPath || isMoving}
+              onClick={() => void (selectionMode ? handleBulkMove() : handleMoveAsset())}
+              className="flex-1 py-2.5 rounded-xl gradient-brand text-[#060e20] font-manrope font-bold text-sm disabled:opacity-50 transition-all"
+            >
+              {isMoving ? 'Moving…' : 'Move Here'}
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Rename Folder */}
+      <Dialog open={!!renamingFolder} onOpenChange={(open) => { if (!open) { setRenamingFolder(null); setRenameFolderValue(''); } }}>
+        <DialogContent className="bg-card border-border/20 shadow-ambient rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="font-manrope font-bold text-foreground">Rename Folder</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={(e) => void handleRenameFolder(e)} className="space-y-4 mt-1">
+            <div className="space-y-1.5">
+              <label className="label-meta">New name</label>
+              <Input
+                autoFocus
+                value={renameFolderValue}
+                onChange={(e) => setRenameFolderValue(e.target.value)}
+                placeholder={renamingFolder?.name ?? ''}
+                className="bg-muted border-border/20 text-foreground"
+              />
+            </div>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => { setRenamingFolder(null); setRenameFolderValue(''); }}
+                className="flex-1 py-2.5 rounded-xl border border-border/30 text-sm text-foreground hover:bg-accent transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={!renameFolderValue.trim() || isRenamingFolder}
+                className="flex-1 py-2.5 rounded-xl gradient-brand text-[#060e20] font-manrope font-bold text-sm disabled:opacity-50 transition-all"
+              >
+                {isRenamingFolder ? 'Renaming…' : 'Rename'}
+              </button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {/* Change Password */}
       <Dialog open={showChangePasswordDialog} onOpenChange={setShowChangePasswordDialog}>
@@ -2589,12 +3269,11 @@ export default function Dashboard() {
                     ? `${uploadFiles.length} file(s) selected`
                     : 'Drag & drop or click to select files'}
                 </p>
-                <p className="text-xs text-muted-foreground/60 mt-1">Images & videos · Max 1 GB per file</p>
+                <p className="text-xs text-muted-foreground/60 mt-1">Any file type · Max 1 GB per file</p>
                 <input
                   ref={fileInputRef}
                   type="file"
                   multiple
-                  accept=".jpg,.jpeg,.png,.heic,.gif,.webp,.bmp,.mp4,.mov,.avi,.mkv,.webm,.m4v"
                   className="hidden"
                   onChange={(e) => setUploadFiles(Array.from(e.target.files || []))}
                 />

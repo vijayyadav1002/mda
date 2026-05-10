@@ -1,85 +1,144 @@
-graph TB
-    subgraph Client["Browser"]
-        UI[Remix UI<br/>React 18 + Tailwind + shadcn]
-    end
+flowchart TB
+  %% MDA current architecture
+  %% Read left to right by request path, then down into background work and storage.
 
-    subgraph Proxy["Edge"]
-        Caddy[Caddy<br/>HTTPS reverse proxy]
-    end
+  User["User Browser"]
 
-    subgraph Web["apps/web — Remix + Vite :3000"]
-        Routes[Routes<br/>dashboard · login · users]
-        ApiClient[graphql-request client<br/>app/lib/api.ts]
-        AuthCtx[Auth token store<br/>getAuthToken]
-        Routes --> ApiClient
-        Routes --> AuthCtx
-    end
+  subgraph Docker["Docker Compose"]
+    Caddy["Caddy reverse proxy<br/>ports 80 and 443"]
+    App["mda-app container<br/>runs web :3000 and backend :4000"]
+    Postgres[("PostgreSQL<br/>users, assets, tags, audit")]
+    Redis[("Redis<br/>BullMQ queues and queue state")]
+    MediaFiles[("/data/media<br/>mounted from ./media-files")]
+    CacheFiles[("/app/apps/backend/cache<br/>thumbnails, previews, HLS, transcodes")]
+  end
 
-    subgraph Backend["apps/backend — Fastify :4000 (ESM)"]
-        Entry[index.ts<br/>Fastify Server Entry]
-        Start[start bootstrap<br/>index.ts:953]
-        GQL[Mercurius GraphQL<br/>schema.ts + resolvers.ts]
-        Ctx[GraphQL Context<br/>JWT verify]
+  subgraph Web["apps/web - Remix + Vite"]
+    Dashboard["Dashboard route<br/>browse, upload, move, copy, delete"]
+    Viewer["MediaAssetViewer<br/>preview, edit text/markdown, duplicate, actions"]
+    CompressUI["CompressDialog and QueuePanel<br/>image, video, PDF compression"]
+    ApiClient["app/lib/api.ts<br/>GraphQL client and REST API URLs"]
+  end
 
-        subgraph Services["src/services"]
-            Auth[auth<br/>bcrypt + JWT]
-            Indexer[media-indexer]
-            Watcher[media-watcher<br/>chokidar]
-            Thumb[thumbnail<br/>sharp · libheif · ffmpeg]
-            Trans[video-transcode<br/>HLS]
-            Queue[queue<br/>BullMQ workers]
-            Cache[cache-maintenance<br/>LRU eviction]
-            Audit[audit log]
-        end
+  subgraph Backend["apps/backend - Fastify"]
+    Fastify["index.ts<br/>Fastify server"]
+    GraphQL["Mercurius GraphQL<br/>schema.ts and resolvers.ts"]
+    RestApi["REST endpoints<br/>upload, download, preview, video, queue"]
+    Auth["JWT auth context<br/>admin/editor/viewer access"]
+  end
 
-        Entry --> GQL
-        Entry --> Ctx
-        GQL --> Ctx
-        Start --> Auth
-        Start --> Indexer
-        Start --> Watcher
-        Start --> Trans
-        Start --> Cache
-        Start --> Queue
-        Start --> Entry
-    end
+  subgraph FileOps["File Library Operations"]
+    Indexer["media-indexer<br/>indexes all regular non-hidden files"]
+    Watcher["media-watcher<br/>watches /data/media changes"]
+    FileTypes["file-types<br/>image, video, PDF, Word, Excel, text, markdown, other"]
+    Duplicate["duplicateMediaAsset and duplicateFolder<br/>copy files or folders without overwrite"]
+    MoveRenameDelete["move, rename, delete<br/>files and folders"]
+    Upload["/api/upload<br/>stores arbitrary files safely"]
+  end
 
-    subgraph Infra["Docker Compose"]
-        PG[(PostgreSQL 16)]
-        Redis[(Redis)]
-        FS[/media-files<br/>mounted at /data/media/]
-        CacheDir[/cache<br/>thumbnails + HLS/]
-    end
+  subgraph Preview["Preview and Editing"]
+    PreviewRoutes["/file-preview/:id<br/>PDF stream and document content JSON"]
+    TextEdit["PUT /file-preview/:id/content<br/>edit .txt and .md in place"]
+    DocPreview["DOCX to sanitized HTML<br/>XLSX to bounded sheet JSON"]
+    PdfPreview["PDF inline iframe preview"]
+  end
 
-    UI -->|HTTPS| Caddy
-    Caddy --> Routes
-    ApiClient -->|GraphQL over HTTP<br/>JWT in header| GQL
+  subgraph Background["Background Jobs"]
+    Queues["queue.ts<br/>BullMQ queues"]
+    ThumbnailWorker["thumbnail worker<br/>images, videos, PDFs, docs, text, markdown, Excel"]
+    MediaRefreshWorker["media-refresh worker<br/>full library re-index"]
+    EncodingWorker["encoding worker<br/>video HLS generation"]
+    CompressionWorker["compression worker<br/>image, video, PDF previews"]
+    CacheMaintenance["cache-maintenance<br/>evicts old cache files"]
+  end
 
-    Ctx --> Auth
-    GQL --> Indexer
-    GQL --> Thumb
-    GQL --> Trans
-    GQL --> Queue
+  subgraph MediaProcessing["Media Processing Helpers"]
+    Thumbnails["thumbnail.ts<br/>Sharp, ffmpeg, Ghostscript, mammoth, xlsx"]
+    VideoTranscode["video-transcode.ts<br/>MP4 compatibility and HLS"]
+    Compression["compress helpers<br/>image/video/PDF output previews"]
+  end
 
-    Auth --> PG
-    Indexer --> PG
-    Indexer --> FS
-    Watcher --> FS
-    Watcher --> Indexer
-    Thumb --> FS
-    Thumb --> CacheDir
-    Trans --> FS
-    Trans --> CacheDir
-    Queue --> Redis
-    Queue --> Thumb
-    Queue --> Trans
-    Cache --> CacheDir
-    Cache --> PG
-    Audit --> PG
+  User -->|"HTTPS or direct localhost"| Caddy
+  Caddy -->|"frontend requests"| App
+  Caddy -->|"backend paths"| App
+  App --> Web
+  App --> Backend
 
-    classDef svc fill:#1e3a5f,stroke:#4a90e2,color:#fff
-    classDef store fill:#2d4a2d,stroke:#5cb85c,color:#fff
-    classDef edge fill:#4a2d4a,stroke:#b85cb8,color:#fff
-    class Auth,Indexer,Watcher,Thumb,Trans,Queue,Cache,Audit svc
-    class PG,Redis,FS,CacheDir store
-    class Caddy edge
+  Dashboard --> Viewer
+  Dashboard --> CompressUI
+  Dashboard --> ApiClient
+  Viewer --> ApiClient
+  CompressUI --> ApiClient
+
+  ApiClient -->|"GraphQL /graphql"| GraphQL
+  ApiClient -->|"REST /api, /download, /file-preview, /video"| RestApi
+
+  Fastify --> GraphQL
+  Fastify --> RestApi
+  GraphQL --> Auth
+  RestApi --> Auth
+
+  GraphQL --> FileOps
+  RestApi --> Upload
+  RestApi --> PreviewRoutes
+  RestApi --> Compression
+
+  Upload --> MediaFiles
+  Upload --> Indexer
+  Watcher --> MediaFiles
+  Watcher --> Indexer
+  Indexer --> FileTypes
+  Indexer --> Postgres
+  Duplicate --> MediaFiles
+  Duplicate --> Indexer
+  MoveRenameDelete --> MediaFiles
+  MoveRenameDelete --> Postgres
+
+  PreviewRoutes --> PdfPreview
+  PreviewRoutes --> DocPreview
+  PreviewRoutes --> TextEdit
+  PreviewRoutes --> MediaFiles
+  TextEdit --> MediaFiles
+  TextEdit --> Postgres
+  DocPreview --> MediaFiles
+  PdfPreview --> MediaFiles
+
+  GraphQL --> Queues
+  RestApi --> Queues
+  Queues --> Redis
+  Queues --> ThumbnailWorker
+  Queues --> MediaRefreshWorker
+  Queues --> EncodingWorker
+  Queues --> CompressionWorker
+
+  ThumbnailWorker --> Thumbnails
+  MediaRefreshWorker --> Indexer
+  EncodingWorker --> VideoTranscode
+  CompressionWorker --> Compression
+
+  Thumbnails --> MediaFiles
+  Thumbnails --> CacheFiles
+  Thumbnails --> Postgres
+  VideoTranscode --> MediaFiles
+  VideoTranscode --> CacheFiles
+  Compression --> MediaFiles
+  Compression --> CacheFiles
+  CacheMaintenance --> CacheFiles
+  CacheMaintenance --> Postgres
+
+  Postgres -. "asset rows include file_path, mime_type, thumbnail_path" .-> Dashboard
+  CacheFiles -. "/thumbnails, /compress-preview, /hls, /transcoded" .-> Viewer
+
+  classDef user fill:#f8fafc,stroke:#64748b,color:#0f172a
+  classDef app fill:#e0f2fe,stroke:#0284c7,color:#0f172a
+  classDef backend fill:#ecfdf5,stroke:#059669,color:#052e16
+  classDef worker fill:#fef3c7,stroke:#d97706,color:#451a03
+  classDef store fill:#f3e8ff,stroke:#7e22ce,color:#2e1065
+  classDef file fill:#fff1f2,stroke:#e11d48,color:#4c0519
+
+  class User user
+  class Dashboard,Viewer,CompressUI,ApiClient app
+  class Fastify,GraphQL,RestApi,Auth,PreviewRoutes,TextEdit,DocPreview,PdfPreview backend
+  class Queues,ThumbnailWorker,MediaRefreshWorker,EncodingWorker,CompressionWorker,CacheMaintenance,Thumbnails,VideoTranscode,Compression worker
+  class Postgres,Redis,MediaFiles,CacheFiles store
+  class Indexer,Watcher,FileTypes,Duplicate,MoveRenameDelete,Upload file

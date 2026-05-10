@@ -1,11 +1,12 @@
 import { db } from '../db/index.js';
 import { hashPassword, verifyPassword } from '../services/auth.js';
 import { logAudit } from '../services/audit.js';
-import { compressImage, compressVideo, compressImageAdvanced, compressVideoAdvanced } from '../services/thumbnail.js';
+import { compressImage, compressVideo, compressImageAdvanced, compressVideoAdvanced, compressPdfAdvanced } from '../services/thumbnail.js';
 import { enqueueMediaRefresh, addToThumbnailQueue, cancelThumbnailSession } from '../services/queue.js';
 import { cleanupDeletedAssetCaches } from '../services/media-cleanup.js';
 import { getCacheStats, clearCacheByType } from '../services/cache-maintenance.js';
 import { indexFile } from '../services/media-indexer.js';
+import { canCompressFile, canThumbnailFile } from '../services/file-types.js';
 import {
   normalizeTagName,
   upsertTag,
@@ -22,10 +23,6 @@ import type { GraphQLContext } from './context.js';
 import fs from 'fs/promises';
 import path from 'path';
 import { config } from '../config.js';
-
-const SUPPORTED_IMAGE_FORMATS = ['.jpg', '.jpeg', '.png', '.heic', '.gif', '.webp', '.bmp'];
-const SUPPORTED_VIDEO_FORMATS = ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.m4v'];
-const SUPPORTED_FORMATS = new Set([...SUPPORTED_IMAGE_FORMATS, ...SUPPORTED_VIDEO_FORMATS]);
 
 const mapMediaAssetRow = (row: any) => ({
   id: row.id,
@@ -85,6 +82,42 @@ const resolveLibraryPath = (requestedPath?: string | null) => {
   return targetPath;
 };
 
+const buildDuplicatePath = async (
+  destinationDir: string,
+  name: string,
+  options: { preserveExtension: boolean }
+): Promise<string> => {
+  const ext = options.preserveExtension ? path.extname(name) : '';
+  const base = options.preserveExtension ? path.basename(name, ext) : name;
+  for (let i = 1; i < 1000; i += 1) {
+    const suffix = i === 1 ? ' copy' : ` copy ${i}`;
+    const candidate = path.join(destinationDir, `${base}${suffix}${ext}`);
+    try {
+      await fs.access(candidate);
+    } catch {
+      return candidate;
+    }
+  }
+  throw new Error('Could not choose a duplicate file name');
+};
+
+const collectIndexableFiles = async (dirPath: string): Promise<string[]> => {
+  const files: string[] = [];
+  const entries = await fs.readdir(dirPath, { withFileTypes: true });
+  for (const entry of entries) {
+    if (entry.name.startsWith('.')) continue;
+    const fullPath = path.join(dirPath, entry.name);
+    const stat = await fs.lstat(fullPath);
+    if (stat.isSymbolicLink()) continue;
+    if (stat.isDirectory()) {
+      files.push(...await collectIndexableFiles(fullPath));
+    } else if (stat.isFile()) {
+      files.push(fullPath);
+    }
+  }
+  return files;
+};
+
 const listMediaFilesInDirectory = async (dirPath: string): Promise<string[]> => {
   const entries = (await fs.readdir(dirPath, { withFileTypes: true }))
     .filter((entry) => !entry.name.startsWith('.'));
@@ -93,8 +126,7 @@ const listMediaFilesInDirectory = async (dirPath: string): Promise<string[]> => 
   for (const entry of entries) {
     if (!entry.isFile()) continue;
     const fullPath = path.join(dirPath, entry.name);
-    const ext = path.extname(entry.name).toLowerCase();
-    if (SUPPORTED_FORMATS.has(ext)) {
+    if (canThumbnailFile(entry.name)) {
       mediaFiles.push(fullPath);
     }
   }
@@ -112,6 +144,7 @@ const getDirectorySizeFromDB = async (dirPath: string): Promise<number> => {
 };
 
 const SEARCH_MAX_FOLDER_DEPTH = 12;
+const SEARCH_HARD_CAP = 2000;
 
 const collectMatchingFolders = async (
   rootDir: string,
@@ -166,13 +199,11 @@ const buildDirectoryNode = async (dirPath: string): Promise<any> => {
     .filter((entry) => entry.isFile())
     .map((entry) => path.join(dirPath, entry.name));
 
-  const mediaFilePaths = filePaths.filter((filePath) => SUPPORTED_FORMATS.has(path.extname(filePath).toLowerCase()));
-
   const assetsByPath = new Map<string, any>();
-  if (mediaFilePaths.length > 0) {
+  if (filePaths.length > 0) {
     const result = await db.query(
       'SELECT * FROM media_assets WHERE file_path = ANY($1::text[])',
-      [mediaFilePaths]
+      [filePaths]
     );
 
     for (const row of result.rows) {
@@ -357,34 +388,90 @@ export const resolvers = {
 
     search: async (
       _: any,
-      args: { term: string; limit?: number },
+      args: { term?: string; mediaType?: string; sortBy?: string; limit?: number; minSize?: number; maxSize?: number; path?: string },
       context: GraphQLContext
     ) => {
       if (!context.user) throw new Error('Unauthorized');
 
       const trimmed = (args.term ?? '').trim();
-      if (trimmed.length === 0) {
+      const mediaType = args.mediaType === 'image' || args.mediaType === 'video' ? args.mediaType : null;
+      const sortBy = ['size-asc', 'size-desc', 'date-asc', 'date-desc'].includes(args.sortBy ?? '')
+        ? args.sortBy!
+        : null;
+
+      const minSize = typeof args.minSize === 'number' && args.minSize > 0 ? Math.floor(args.minSize) : null;
+      const maxSize = typeof args.maxSize === 'number' && args.maxSize > 0 ? Math.floor(args.maxSize) : null;
+
+      if (trimmed.length === 0 && !mediaType && !minSize && !maxSize) {
         return { files: [], folders: [] };
       }
 
-      const limit = Math.min(Math.max(args.limit ?? 25, 1), 100);
-      const escapedTerm = trimmed.replace(/[\\%_]/g, (ch) => `\\${ch}`);
-      const likePattern = `%${escapedTerm}%`;
+      const requestedLimit = args.limit ?? 25;
+      const limit = requestedLimit <= 0
+        ? SEARCH_HARD_CAP
+        : Math.min(Math.max(requestedLimit, 1), SEARCH_HARD_CAP);
+      const folderSearchLimit = requestedLimit <= 0 ? 200 : limit;
 
+      const queryParams: unknown[] = [];
+      const conditions: string[] = [];
+
+      if (trimmed.length > 0) {
+        const escapedTerm = trimmed.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+        queryParams.push(`%${escapedTerm}%`);
+        conditions.push(`file_name ILIKE $${queryParams.length} ESCAPE '\\'`);
+      }
+
+      if (mediaType) {
+        queryParams.push(`${mediaType}/%`);
+        conditions.push(`mime_type LIKE $${queryParams.length}`);
+      }
+
+      if (minSize !== null) {
+        queryParams.push(minSize);
+        conditions.push(`file_size >= $${queryParams.length}`);
+      }
+
+      if (maxSize !== null) {
+        queryParams.push(maxSize);
+        conditions.push(`file_size <= $${queryParams.length}`);
+      }
+
+      const scopedPath = args.path ? resolveLibraryPath(args.path) : null;
+      if (scopedPath) {
+        queryParams.push(`${scopedPath}/%`);
+        conditions.push(`file_path LIKE $${queryParams.length}`);
+      }
+
+      const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+      let orderClause: string;
+      if (sortBy === 'size-asc') {
+        orderClause = 'ORDER BY file_size ASC, file_name ASC';
+      } else if (sortBy === 'size-desc') {
+        orderClause = 'ORDER BY file_size DESC, file_name ASC';
+      } else if (sortBy === 'date-asc') {
+        orderClause = 'ORDER BY created_at ASC';
+      } else if (sortBy === 'date-desc') {
+        orderClause = 'ORDER BY created_at DESC';
+      } else if (trimmed.length > 0) {
+        const escapedTerm = trimmed.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+        const base = queryParams.length;
+        queryParams.push(trimmed, `${escapedTerm}%`);
+        orderClause = `ORDER BY CASE WHEN LOWER(file_name) = LOWER($${base + 1}) THEN 0 WHEN LOWER(file_name) LIKE LOWER($${base + 2}) THEN 1 ELSE 2 END, file_name ASC`;
+      } else {
+        orderClause = 'ORDER BY file_name ASC';
+      }
+
+      queryParams.push(limit);
       const fileResult = await db.query(
-        `SELECT * FROM media_assets
-         WHERE file_name ILIKE $1 ESCAPE '\\'
-         ORDER BY
-           CASE WHEN LOWER(file_name) = LOWER($2) THEN 0
-                WHEN LOWER(file_name) LIKE LOWER($3) THEN 1
-                ELSE 2 END,
-           file_name ASC
-         LIMIT $4`,
-        [likePattern, trimmed, `${escapedTerm}%`, limit]
+        `SELECT * FROM media_assets ${whereClause} ${orderClause} LIMIT $${queryParams.length}`,
+        queryParams
       );
 
-      const rootPath = resolveLibraryPath(null);
-      const folders = await collectMatchingFolders(rootPath, trimmed.toLowerCase(), limit);
+      // Only search folders when there's a text term (folders have no media type)
+      const folders = trimmed.length > 0 && !mediaType
+        ? await collectMatchingFolders(scopedPath ?? resolveLibraryPath(null), trimmed.toLowerCase(), folderSearchLimit)
+        : [];
 
       return {
         files: fileResult.rows.map(mapMediaAssetRow),
@@ -628,19 +715,20 @@ export const resolvers = {
 
       const asset = result.rows[0];
       const oldPath = asset.file_path;
+      const newPath = resolveLibraryPath(args.newPath);
 
       // Move the file
-      await fs.rename(oldPath, args.newPath);
+      await fs.rename(oldPath, newPath);
 
       // Update database
       await db.query(
         'UPDATE media_assets SET file_path = $1, updated_at = NOW() WHERE id = $2',
-        [args.newPath, args.id]
+        [newPath, args.id]
       );
 
       await logAudit(context.user.id, 'MOVE_ASSET', 'media_asset', parseInt(args.id, 10), {
         oldPath,
-        newPath: args.newPath
+        newPath
       });
 
       const updated = await db.query('SELECT * FROM media_assets WHERE id = $1', [args.id]);
@@ -664,13 +752,21 @@ export const resolvers = {
         throw new Error('Admin or Editor access required');
       }
 
+      if (!args.newName || !args.newName.trim() || /[/\\]/.test(args.newName) || args.newName.includes('..') || args.newName.startsWith('.')) {
+        throw new Error('Invalid file name');
+      }
+
       const result = await db.query('SELECT * FROM media_assets WHERE id = $1', [args.id]);
-      
+
       if (result.rows.length === 0) throw new Error('Media asset not found');
 
       const asset = result.rows[0];
       const oldPath = asset.file_path;
       const newPath = path.join(path.dirname(oldPath), args.newName);
+      const rootPath = path.resolve(config.mediaLibraryPath);
+      if (!newPath.startsWith(`${rootPath}${path.sep}`)) {
+        throw new Error('Invalid file path');
+      }
 
       // Rename the file
       await fs.rename(oldPath, newPath);
@@ -700,6 +796,50 @@ export const resolvers = {
         createdAt: row.created_at.toISOString(),
         updatedAt: row.updated_at.toISOString()
       };
+    },
+
+    duplicateMediaAsset: async (
+      _: any,
+      args: { id: string; destinationFolder?: string | null },
+      context: GraphQLContext
+    ) => {
+      if (!context.user || !['admin', 'editor'].includes(context.user.role)) {
+        throw new Error('Admin or Editor access required');
+      }
+
+      const result = await db.query('SELECT * FROM media_assets WHERE id = $1', [args.id]);
+      if (result.rows.length === 0) throw new Error('Media asset not found');
+
+      const asset = result.rows[0];
+      const sourcePath = path.resolve(asset.file_path);
+      const rootPath = resolveLibraryPath(null);
+      if (sourcePath !== rootPath && !sourcePath.startsWith(`${rootPath}${path.sep}`)) {
+        throw new Error('Invalid source file path');
+      }
+
+      const destinationDir = args.destinationFolder
+        ? resolveLibraryPath(args.destinationFolder)
+        : path.dirname(sourcePath);
+      const destinationStat = await fs.stat(destinationDir);
+      if (!destinationStat.isDirectory()) {
+        throw new Error('Destination must be a folder');
+      }
+
+      const duplicatePath = await buildDuplicatePath(destinationDir, asset.file_name, { preserveExtension: true });
+      await fs.copyFile(sourcePath, duplicatePath);
+      await indexFile(duplicatePath);
+
+      const copied = await db.query('SELECT * FROM media_assets WHERE file_path = $1', [duplicatePath]);
+      if (copied.rows.length === 0) {
+        throw new Error('Duplicate was created but could not be indexed');
+      }
+
+      await logAudit(context.user.id, 'DUPLICATE_ASSET', 'media_asset', parseInt(args.id, 10), {
+        sourcePath,
+        duplicatePath
+      });
+
+      return mapMediaAssetRow(copied.rows[0]);
     },
 
     deleteMediaAsset: async (_: any, args: { id: string }, context: GraphQLContext) => {
@@ -763,6 +903,9 @@ export const resolvers = {
         } else if (asset.mime_type.startsWith('video/')) {
           await compressVideo(asset.file_path, tempPath);
           await fs.rename(tempPath, outputPath);
+        } else if (canCompressFile(asset.file_name, asset.mime_type)) {
+          await compressPdfAdvanced(asset.file_path, tempPath, { quality });
+          await fs.rename(tempPath, outputPath);
         } else {
           throw new Error('Unsupported media type for compression');
         }
@@ -776,6 +919,8 @@ export const resolvers = {
           await compressImage(asset.file_path, outputPath, quality);
         } else if (asset.mime_type.startsWith('video/')) {
           await compressVideo(asset.file_path, outputPath);
+        } else if (canCompressFile(asset.file_name, asset.mime_type)) {
+          await compressPdfAdvanced(asset.file_path, outputPath, { quality });
         } else {
           throw new Error('Unsupported media type for compression');
         }
@@ -904,11 +1049,9 @@ export const resolvers = {
         if (hasUsableThumbnail) continue;
 
         const filePath = row.file_path as string;
-        const ext = path.extname(filePath).toLowerCase();
-        if (!SUPPORTED_FORMATS.has(ext)) continue;
-
         const mimeType = (row.mime_type as string | null) ?? '';
-        const isVideo = mimeType.startsWith('video/') || SUPPORTED_VIDEO_FORMATS.includes(ext);
+        if (!canThumbnailFile(filePath, mimeType)) continue;
+        const isVideo = mimeType.startsWith('video/');
 
         try {
           await addToThumbnailQueue({
@@ -974,6 +1117,10 @@ export const resolvers = {
         } else if (asset.mime_type.startsWith('video/')) {
           await compressVideoAdvanced(asset.file_path, previewPath, {
             resolution: args.options.resolution,
+            quality: args.options.quality
+          });
+        } else if (canCompressFile(asset.file_name, asset.mime_type)) {
+          await compressPdfAdvanced(asset.file_path, previewPath, {
             quality: args.options.quality
           });
         } else {
@@ -1185,6 +1332,184 @@ export const resolvers = {
       });
 
       return true;
+    },
+
+    renameFolder: async (
+      _: any,
+      args: { path: string; newName: string },
+      context: GraphQLContext
+    ) => {
+      if (!context.user || !['admin', 'editor'].includes(context.user.role)) {
+        throw new Error('Admin or Editor access required');
+      }
+
+      if (!args.newName || /[/\\]/.test(args.newName) || args.newName.startsWith('.')) {
+        throw new Error('Invalid folder name');
+      }
+
+      const targetPath = resolveLibraryPath(args.path);
+      const targetStat = await fs.stat(targetPath);
+      if (!targetStat.isDirectory()) {
+        throw new Error('Path is not a directory');
+      }
+      const rootPath = path.resolve(config.mediaLibraryPath);
+
+      if (targetPath === rootPath) {
+        throw new Error('Cannot rename the root library folder');
+      }
+
+      const parentDir = path.dirname(targetPath);
+      const newFolderPath = path.join(parentDir, args.newName);
+
+      if (!newFolderPath.startsWith(`${rootPath}${path.sep}`)) {
+        throw new Error('Invalid directory path');
+      }
+
+      await fs.rename(targetPath, newFolderPath);
+
+      const assetsResult = await db.query(
+        'SELECT id, file_path FROM media_assets WHERE file_path LIKE $1',
+        [`${targetPath}${path.sep}%`]
+      );
+
+      for (const asset of assetsResult.rows) {
+        const newAssetPath = newFolderPath + asset.file_path.slice(targetPath.length);
+        await db.query(
+          'UPDATE media_assets SET file_path = $1, updated_at = NOW() WHERE id = $2',
+          [newAssetPath, asset.id]
+        );
+      }
+
+      await logAudit(context.user.id, 'RENAME_FOLDER', 'directory', undefined, {
+        oldPath: targetPath,
+        newPath: newFolderPath,
+        assetsUpdated: assetsResult.rows.length
+      });
+
+      return {
+        name: args.newName,
+        path: newFolderPath,
+        type: 'directory',
+        children: []
+      };
+    },
+
+    moveFolder: async (
+      _: any,
+      args: { path: string; destinationFolder: string },
+      context: GraphQLContext
+    ) => {
+      if (!context.user || !['admin', 'editor'].includes(context.user.role)) {
+        throw new Error('Admin or Editor access required');
+      }
+
+      const sourcePath = resolveLibraryPath(args.path);
+      const sourceStat = await fs.stat(sourcePath);
+      if (!sourceStat.isDirectory()) {
+        throw new Error('Path is not a directory');
+      }
+
+      const destParent = resolveLibraryPath(args.destinationFolder);
+      const destStat = await fs.stat(destParent);
+      if (!destStat.isDirectory()) {
+        throw new Error('Destination is not a directory');
+      }
+
+      const rootPath = path.resolve(config.mediaLibraryPath);
+      if (sourcePath === rootPath) {
+        throw new Error('Cannot move the root library folder');
+      }
+
+      const folderName = path.basename(sourcePath);
+      const newFolderPath = path.join(destParent, folderName);
+
+      if (newFolderPath === sourcePath || newFolderPath.startsWith(`${sourcePath}${path.sep}`)) {
+        throw new Error('Cannot move folder into itself');
+      }
+      if (!newFolderPath.startsWith(`${rootPath}${path.sep}`)) {
+        throw new Error('Invalid destination path');
+      }
+
+      await fs.rename(sourcePath, newFolderPath);
+
+      const assetsResult = await db.query(
+        'SELECT id, file_path FROM media_assets WHERE file_path LIKE $1',
+        [`${sourcePath}${path.sep}%`]
+      );
+
+      for (const asset of assetsResult.rows) {
+        const newAssetPath = newFolderPath + asset.file_path.slice(sourcePath.length);
+        await db.query(
+          'UPDATE media_assets SET file_path = $1, updated_at = NOW() WHERE id = $2',
+          [newAssetPath, asset.id]
+        );
+      }
+
+      await logAudit(context.user.id, 'MOVE_FOLDER', 'directory', undefined, {
+        oldPath: sourcePath,
+        newPath: newFolderPath,
+        assetsUpdated: assetsResult.rows.length
+      });
+
+      return {
+        name: folderName,
+        path: newFolderPath,
+        type: 'directory',
+        children: []
+      };
+    },
+
+    duplicateFolder: async (
+      _: any,
+      args: { path: string; destinationFolder?: string | null },
+      context: GraphQLContext
+    ) => {
+      if (!context.user || !['admin', 'editor'].includes(context.user.role)) {
+        throw new Error('Admin or Editor access required');
+      }
+
+      const sourcePath = resolveLibraryPath(args.path);
+      const sourceStat = await fs.stat(sourcePath);
+      if (!sourceStat.isDirectory()) {
+        throw new Error('Path is not a directory');
+      }
+
+      const rootPath = path.resolve(config.mediaLibraryPath);
+      if (sourcePath === rootPath) {
+        throw new Error('Cannot duplicate the root library folder');
+      }
+
+      const destinationDir = args.destinationFolder
+        ? resolveLibraryPath(args.destinationFolder)
+        : path.dirname(sourcePath);
+      const destinationStat = await fs.stat(destinationDir);
+      if (!destinationStat.isDirectory()) {
+        throw new Error('Destination is not a directory');
+      }
+
+      const duplicatePath = await buildDuplicatePath(destinationDir, path.basename(sourcePath), { preserveExtension: false });
+      if (duplicatePath === sourcePath || duplicatePath.startsWith(`${sourcePath}${path.sep}`)) {
+        throw new Error('Cannot duplicate folder into itself');
+      }
+
+      await fs.cp(sourcePath, duplicatePath, {
+        recursive: true,
+        errorOnExist: true,
+        force: false,
+      });
+
+      const copiedFiles = await collectIndexableFiles(duplicatePath);
+      for (const filePath of copiedFiles) {
+        await indexFile(filePath);
+      }
+
+      await logAudit(context.user.id, 'DUPLICATE_FOLDER', 'directory', undefined, {
+        sourcePath,
+        duplicatePath,
+        filesCopied: copiedFiles.length
+      });
+
+      return buildDirectoryNode(duplicatePath);
     },
 
     applyTagsToAssets: async (

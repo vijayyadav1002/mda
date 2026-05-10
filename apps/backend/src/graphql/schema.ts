@@ -80,7 +80,7 @@ export const schema = `
     tags: [Tag!]!
     mediaAssetsByTag(tagName: String!, limit: Int, offset: Int): [MediaAsset!]!
     cacheStats: CacheStats!
-    search(term: String!, limit: Int): SearchResults!
+    search(term: String, mediaType: String, sortBy: String, limit: Int, minSize: Float, maxSize: Float, path: String): SearchResults!
   }
 
   type Mutation {
@@ -94,6 +94,7 @@ export const schema = `
     
     moveMediaAsset(id: ID!, newPath: String!): MediaAsset!
     renameMediaAsset(id: ID!, newName: String!): MediaAsset!
+    duplicateMediaAsset(id: ID!, destinationFolder: String): MediaAsset!
     deleteMediaAsset(id: ID!): Boolean!
     compressMediaAsset(id: ID!, quality: Int, overwrite: Boolean): MediaAsset!
     refreshMediaLibrary: String!
@@ -106,6 +107,9 @@ export const schema = `
 
     createFolder(parentPath: String, name: String!): DirectoryNode!
     deleteFolder(path: String!): Boolean!
+    renameFolder(path: String!, newName: String!): DirectoryNode!
+    moveFolder(path: String!, destinationFolder: String!): DirectoryNode!
+    duplicateFolder(path: String!, destinationFolder: String): DirectoryNode!
 
     applyTagsToAssets(assetIds: [ID!]!, tagNames: [String!]!): [MediaAsset!]!
     removeTagFromAsset(assetId: ID!, tagName: String!): MediaAsset!

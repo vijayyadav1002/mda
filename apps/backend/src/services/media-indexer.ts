@@ -4,10 +4,7 @@ import { db } from '../db/index.js';
 import { config } from '../config.js';
 import { addToThumbnailQueue } from './queue.js';
 import { cleanupDeletedAssetCaches } from './media-cleanup.js';
-
-const SUPPORTED_IMAGE_FORMATS = ['.jpg', '.jpeg', '.png', '.heic', '.gif', '.webp', '.bmp'];
-const SUPPORTED_VIDEO_FORMATS = ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.m4v'];
-const SUPPORTED_FORMATS = [...SUPPORTED_IMAGE_FORMATS, ...SUPPORTED_VIDEO_FORMATS];
+import { classifyFile } from './file-types.js';
 
 type IndexFileResult = 'indexed' | 'up_to_date' | 'thumbnail_requeued' | 'unsupported';
 type IndexOptions = {
@@ -107,11 +104,8 @@ async function scanDirectory(dir: string, maxDepth: number = 20, currentDepth: n
             const subFiles = await scanDirectory(fullPath, maxDepth, currentDepth + 1, visited);
             files.push(...subFiles);
           }
-        } else if (stats.isFile()) {
-          const ext = path.extname(entry.name).toLowerCase();
-          if (SUPPORTED_FORMATS.includes(ext)) {
-            files.push(fullPath);
-          }
+        } else if (stats.isFile() && !entry.name.startsWith('.')) {
+          files.push(fullPath);
         }
       } catch (entryError) {
         console.warn(`Error processing entry ${fullPath}: ${entryError instanceof Error ? entryError.message : String(entryError)}`);
@@ -140,13 +134,7 @@ export async function indexFile(filePath: string, options: IndexOptions = {}): P
     }
 
     const fileName = path.basename(filePath);
-    const ext = path.extname(fileName).toLowerCase();
-
-    // Validate file format
-    if (!SUPPORTED_FORMATS.includes(ext)) {
-      console.log(`Skipping unsupported format: ${ext}`);
-      return 'unsupported';
-    }
+    const classification = classifyFile(fileName);
 
     // Check if already indexed and up to date
     const existing = await db.query(
@@ -171,13 +159,14 @@ export async function indexFile(filePath: string, options: IndexOptions = {}): P
 
         if (!hasUsableThumbnail && requeueMissingThumbnails) {
           try {
-            const isVideoFile = SUPPORTED_VIDEO_FORMATS.includes(ext);
-            await addToThumbnailQueue({ 
-              filePath, 
-              assetId: String(existing.rows[0].id),
-              mediaType: isVideoFile ? 'video' : 'image'
-            });
-            return 'thumbnail_requeued';
+            if (classification.canThumbnail) {
+              await addToThumbnailQueue({
+                filePath,
+                assetId: String(existing.rows[0].id),
+                mediaType: classification.category === 'video' ? 'video' : 'image'
+              });
+              return 'thumbnail_requeued';
+            }
           } catch (e: any) {
             console.warn(`⚠️  Failed to re-queue thumbnail job for ${path.basename(filePath)}: ${e?.message ?? String(e)}`);
             return 'up_to_date';
@@ -204,37 +193,24 @@ export async function indexFile(filePath: string, options: IndexOptions = {}): P
       await db.query('DELETE FROM media_assets WHERE id = $1', [existing.rows[0].id]);
     }
 
-    // Determine mime type
-    let mimeType = 'application/octet-stream';
-    const isVideo = SUPPORTED_VIDEO_FORMATS.includes(ext);
-
-    if (SUPPORTED_IMAGE_FORMATS.includes(ext)) {
-      mimeType = `image/${ext.slice(1)}`;
-      if (ext === '.jpg' || ext === '.jpeg') mimeType = 'image/jpeg';
-      if (ext === '.heic') mimeType = 'image/heic';
-    } else if (isVideo) {
-      mimeType = `video/${ext.slice(1)}`;
-      if (ext === '.mp4') mimeType = 'video/mp4';
-    }
-
     // Insert into database (without transcoded path - will be generated on-demand)
     const result = await db.query(
       `INSERT INTO media_assets 
        (file_path, file_name, file_size, mime_type, thumbnail_path) 
        VALUES ($1, $2, $3, $4, $5)
        RETURNING id`,
-      [filePath, fileName, stats.size, mimeType, null]
+      [filePath, fileName, stats.size, classification.mimeType, null]
     );
 
     const assetId = result.rows[0].id;
 
     // Queue thumbnail generation with priority (images first, videos second)
-    if (queueThumbnails) {
+    if (queueThumbnails && classification.canThumbnail) {
       try {
         await addToThumbnailQueue({ 
           filePath, 
           assetId,
-          mediaType: isVideo ? 'video' : 'image'
+          mediaType: classification.category === 'video' ? 'video' : 'image'
         });
       } catch (e: any) {
         console.warn(`⚠️  Failed to queue thumbnail job for ${fileName}: ${e?.message ?? String(e)}`);
