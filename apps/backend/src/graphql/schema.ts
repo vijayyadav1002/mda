@@ -117,6 +117,7 @@ export const schema = `
     renameTag(oldName: String!, newName: String!): Tag!
     deleteTag(name: String!): Boolean!
     clearCache(type: String!): CacheStats!
+    clearAuditLogs(startDate: String!, endDate: String!): Int!
   }
 
   input CompressOptionsInput {

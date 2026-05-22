@@ -2,9 +2,10 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "@remix-run/react";
 import { createGraphQLClient, getAuthToken, clearAuthToken } from "~/lib/api";
 import { useActiveQueueCount } from "~/lib/useActiveQueueCount";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "~/components/ui/dialog";
 import {
   ScrollText, Folder, ListTodo, Users,
-  LogOut, User, Moon, Sun, ChevronLeft, ChevronRight, ChevronDown, ChevronUp,
+  LogOut, User, Moon, Sun, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Trash2,
 } from "lucide-react";
 
 const PAGE_SIZE = 50;
@@ -31,6 +32,12 @@ const AUDIT_LOGS_QUERY = `
 const AUDIT_LOGS_COUNT_QUERY = `
   query AuditLogsCount($userId: ID, $action: String, $resourceType: String, $startDate: String, $endDate: String) {
     auditLogsCount(userId: $userId, action: $action, resourceType: $resourceType, startDate: $startDate, endDate: $endDate)
+  }
+`;
+
+const CLEAR_AUDIT_LOGS_MUTATION = `
+  mutation ClearAuditLogs($startDate: String!, $endDate: String!) {
+    clearAuditLogs(startDate: $startDate, endDate: $endDate)
   }
 `;
 
@@ -139,6 +146,12 @@ export default function AuditPage() {
   const [appliedFilters, setAppliedFilters] = useState<{
     action: string; resourceType: string; userId: string; startDate: string; endDate: string;
   }>({ action: "", resourceType: "", userId: "", startDate: "", endDate: "" });
+
+  const [clearStartDate, setClearStartDate] = useState("");
+  const [clearEndDate, setClearEndDate] = useState("");
+  const [showClearDialog, setShowClearDialog] = useState(false);
+  const [clearResult, setClearResult] = useState("");
+  const [clearing, setClearing] = useState(false);
 
   const [darkMode, setDarkMode] = useState(() => {
     if (typeof window !== "undefined") {
@@ -255,6 +268,30 @@ export default function AuditPage() {
   const handleLogout = () => {
     clearAuthToken();
     navigate("/login");
+  };
+
+  const handleClearLogs = async () => {
+    setClearing(true);
+    setClearResult("");
+    try {
+      const token = getAuthToken();
+      if (!token) return;
+      const client = createGraphQLClient(token);
+      const data: any = await client.request(CLEAR_AUDIT_LOGS_MUTATION, {
+        startDate: clearStartDate,
+        endDate: clearEndDate,
+      });
+      const count: number = data.clearAuditLogs;
+      setClearResult(`Deleted ${count} log ${count === 1 ? "entry" : "entries"}.`);
+      setShowClearDialog(false);
+      setPage(0);
+      setExpandedDetails(new Set());
+      fetchLogs();
+    } catch (err: any) {
+      setClearResult(err.message || "Failed to clear logs");
+    } finally {
+      setClearing(false);
+    }
   };
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -431,6 +468,44 @@ export default function AuditPage() {
           </div>
         </div>
 
+        {/* Clear Logs panel */}
+        <div className="px-6 md:px-10 pb-6">
+          <div className="bg-card rounded-2xl p-5 border border-destructive/20">
+            <p className="font-manrope font-semibold text-sm text-destructive mb-3">Clear Logs by Date Range</p>
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="space-y-1">
+                <label className="label-meta">From</label>
+                <input
+                  type="date"
+                  value={clearStartDate}
+                  onChange={e => { setClearStartDate(e.target.value); setClearResult(""); }}
+                  className="px-3 py-2.5 rounded-xl bg-muted border border-border/20 text-foreground text-sm outline-none focus:border-destructive/60"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="label-meta">To</label>
+                <input
+                  type="date"
+                  value={clearEndDate}
+                  onChange={e => { setClearEndDate(e.target.value); setClearResult(""); }}
+                  className="px-3 py-2.5 rounded-xl bg-muted border border-border/20 text-foreground text-sm outline-none focus:border-destructive/60"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowClearDialog(true)}
+                disabled={!clearStartDate || !clearEndDate}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-destructive/10 text-destructive text-sm font-medium hover:bg-destructive/20 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                <Trash2 className="w-4 h-4" /> Clear Logs
+              </button>
+            </div>
+            {clearResult && (
+              <p className="mt-3 text-sm text-muted-foreground">{clearResult}</p>
+            )}
+          </div>
+        </div>
+
         {/* Table */}
         <div className="px-6 md:px-10 pb-10">
           {error && (
@@ -551,6 +626,39 @@ export default function AuditPage() {
           )}
         </div>
       </div>
+
+      {/* Confirm clear dialog */}
+      <Dialog open={showClearDialog} onOpenChange={setShowClearDialog}>
+        <DialogContent className="bg-card border-border/20 shadow-ambient rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="font-manrope text-foreground">Clear Audit Logs</DialogTitle>
+          </DialogHeader>
+          <div className="mt-2 space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Delete all audit logs from <span className="font-medium text-foreground">{clearStartDate}</span> to <span className="font-medium text-foreground">{clearEndDate}</span>?
+              <br />
+              <span className="text-destructive font-medium">This cannot be undone.</span>
+            </p>
+            <div className="flex gap-2 justify-end pt-1">
+              <button
+                type="button"
+                onClick={() => setShowClearDialog(false)}
+                className="px-4 py-2 rounded-xl text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleClearLogs}
+                disabled={clearing}
+                className="px-4 py-2 rounded-xl bg-destructive text-destructive-foreground text-sm font-medium hover:bg-destructive/90 transition-colors disabled:opacity-50"
+              >
+                {clearing ? "Deleting…" : "Delete Logs"}
+              </button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

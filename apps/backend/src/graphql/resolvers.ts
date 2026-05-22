@@ -1656,6 +1656,19 @@ export const resolvers = {
       return mapTagRow({ ...updated, asset_count: 0 });
     },
 
+    clearAuditLogs: async (_: any, args: { startDate: string; endDate: string }, context: GraphQLContext) => {
+      if (!context.user || context.user.role !== 'admin') {
+        throw new Error('Admin access required');
+      }
+      const result = await db.query(
+        `DELETE FROM audit_logs
+         WHERE created_at >= $1::date
+           AND created_at < ($2::date + interval '1 day')`,
+        [args.startDate, args.endDate]
+      );
+      return result.rowCount ?? 0;
+    },
+
     clearCache: async (_: any, args: { type: string }, context: GraphQLContext) => {
       if (!context.user || context.user.role !== 'admin') {
         throw new Error('Admin access required');
