@@ -14,7 +14,7 @@ import {
   Menu, X, ImagePlus, ArrowUpDown, Minimize2,
   Upload, LogOut, Download, FolderPlus, ListTodo,
   Moon, Sun, User, Tag as TagIcon, Pencil, HardDrive, FolderOpen,
-  Copy,
+  Copy, ScrollText,
 } from "lucide-react";
 
 const API_URL = getApiUrl();
@@ -1935,6 +1935,9 @@ export default function Dashboard() {
           {user?.role === "admin" && (
             <SidebarNavItem icon={Users} label="Users" onClick={() => navigate("/users")} />
           )}
+          {user?.role === "admin" && (
+            <SidebarNavItem icon={ScrollText} label="Audit" onClick={() => navigate("/audit")} />
+          )}
         </nav>
 
         {/* Bottom */}
@@ -2093,6 +2096,9 @@ export default function Dashboard() {
               )}
               {user?.role === "admin" && (
                 <SidebarNavItem icon={Users} label="Users" onClick={() => { navigate("/users"); setMobileMenuOpen(false); }} />
+              )}
+              {user?.role === "admin" && (
+                <SidebarNavItem icon={ScrollText} label="Audit" onClick={() => { navigate("/audit"); setMobileMenuOpen(false); }} />
               )}
               <div className="pt-4 space-y-2">
                 <button

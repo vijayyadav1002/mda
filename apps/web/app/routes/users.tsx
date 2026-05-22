@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "~/components/u
 import { SearchBar } from "~/components/SearchBar";
 import {
   UserPlus, Trash2, Edit, Key, ArrowLeft,
-  Users, Folder, ListTodo,
+  Users, Folder, ListTodo, ScrollText,
   LogOut, User, Moon, Sun,
 } from "lucide-react";
 
@@ -297,6 +297,7 @@ export default function UsersPage() {
             badge={activeQueueCount || undefined}
           />
           <SidebarNavItem icon={Users} label="Users" active />
+          <SidebarNavItem icon={ScrollText} label="Audit" onClick={() => navigate("/audit")} />
         </nav>
 
         <div className="px-3 pb-6 space-y-3">

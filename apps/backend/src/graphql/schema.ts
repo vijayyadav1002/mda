@@ -75,7 +75,8 @@ export const schema = `
     mediaAsset(id: ID!): MediaAsset
     directoryTree: DirectoryNode!
     directoryNode(path: String): DirectoryNode!
-    auditLogs(limit: Int, offset: Int): [AuditLog!]!
+    auditLogs(limit: Int, offset: Int, userId: ID, action: String, resourceType: String, startDate: String, endDate: String): [AuditLog!]!
+    auditLogsCount(userId: ID, action: String, resourceType: String, startDate: String, endDate: String): Int!
     hasAdminUser: Boolean!
     tags: [Tag!]!
     mediaAssetsByTag(tagName: String!, limit: Int, offset: Int): [MediaAsset!]!
