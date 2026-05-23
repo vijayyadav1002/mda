@@ -7,6 +7,7 @@ import { MediaAssetViewer } from "~/components/MediaAssetViewer";
 import { CompressDialog } from "~/components/CompressDialog";
 import { CompressQueuePanel, type CompressJob } from "~/components/CompressQueuePanel";
 import { TagDialog, type TagSuggestion } from "~/components/TagDialog";
+import { ConfirmDialog } from "~/components/ConfirmDialog";
 import { SearchBar } from "~/components/SearchBar";
 import {
   Folder, File, FileImage, FileText, Table2, ArrowLeft, ChevronDown, ChevronRight,
@@ -480,6 +481,14 @@ export default function Dashboard() {
   const [isRenamingFolder, setIsRenamingFolder] = useState(false);
   const [cacheStats, setCacheStats] = useState<CacheStats | null>(null);
   const [showCachePanel, setShowCachePanel] = useState(false);
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean;
+    title: string;
+    description: string;
+    warning?: string;
+    confirmLabel?: string;
+    onConfirm: () => Promise<void>;
+  }>({ open: false, title: "", description: "", onConfirm: async () => {} });
   const [searchQuery, setSearchQuery] = useState<{ term: string; mediaType: string } | null>(null);
   const [searchAssets, setSearchAssets] = useState<MediaAsset[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -678,6 +687,16 @@ export default function Dashboard() {
     }
   }, [activeTagFilter, currentPath, loadTagFilterAssets, refreshTagSuggestions]);
 
+  const openConfirm = useCallback((opts: {
+    title: string;
+    description: string;
+    warning?: string;
+    confirmLabel?: string;
+    onConfirm: () => Promise<void>;
+  }) => {
+    setConfirmDialog({ ...opts, open: true });
+  }, []);
+
   const handleRenameTag = useCallback(async (oldName: string) => {
     const input = window.prompt(`Rename #${oldName} to:`, oldName);
     if (input == null) return;
@@ -702,24 +721,30 @@ export default function Dashboard() {
     }
   }, [activeTagFilter, currentPath, loadTagFilterAssets, refreshTagSuggestions]);
 
-  const handleDeleteTag = useCallback(async (name: string) => {
-    if (!window.confirm(`Delete #${name} from every file in the library? This cannot be undone.`)) return;
-    const token = getAuthToken();
-    if (!token) return;
-    try {
-      const client = createGraphQLClient(token);
-      await client.request(DELETE_TAG_MUTATION, { name });
-      await refreshTagSuggestions();
-      if (currentPath) await loadDirectoryIntoCache(currentPath);
-      if (activeTagFilter === name) {
-        setActiveTagFilter(null);
-        setTagFilterAssets([]);
-      }
-    } catch (err: any) {
-      console.error("Failed to delete tag:", err);
-      alert(`Failed to delete tag: ${err.message || "Unknown error"}`);
-    }
-  }, [activeTagFilter, currentPath, refreshTagSuggestions]);
+  const handleDeleteTag = useCallback((name: string) => {
+    openConfirm({
+      title: "Delete Tag",
+      description: `Delete #${name} from every file in the library?`,
+      warning: "This cannot be undone.",
+      onConfirm: async () => {
+        const token = getAuthToken();
+        if (!token) return;
+        try {
+          const client = createGraphQLClient(token);
+          await client.request(DELETE_TAG_MUTATION, { name });
+          await refreshTagSuggestions();
+          if (currentPath) await loadDirectoryIntoCache(currentPath);
+          if (activeTagFilter === name) {
+            setActiveTagFilter(null);
+            setTagFilterAssets([]);
+          }
+        } catch (err: any) {
+          console.error("Failed to delete tag:", err);
+          alert(`Failed to delete tag: ${err.message || "Unknown error"}`);
+        }
+      },
+    });
+  }, [openConfirm, activeTagFilter, currentPath, refreshTagSuggestions]);
 
   const handleLogout = () => {
     clearAuthToken();
@@ -980,63 +1005,76 @@ export default function Dashboard() {
     window.location.href = url;
   };
 
-  const handleClearCache = async (type: string) => {
-    if (!window.confirm(`Clear ${type === "all" ? "all caches" : `${type} cache`}? This cannot be undone.`)) return;
-    try {
-      const token = getAuthToken();
-      if (!token) return;
-      const client = createGraphQLClient(token);
-      const data = await client.request<{ clearCache: CacheStats }>(CLEAR_CACHE_MUTATION, { type });
-      setCacheStats(data.clearCache);
-      // Flush stale directory state so thumbnailUrl/transcodedUrl reflect the nulled DB rows
-      setDirectoryCache({});
-      if (rootPath) await loadDirectoryIntoCache(rootPath);
-      if (currentPath && currentPath !== rootPath) await loadDirectoryIntoCache(currentPath);
-    } catch (err) {
-      console.error("Failed to clear cache:", err);
-      alert("Failed to clear cache. Please try again.");
-    }
+  const handleClearCache = (type: string) => {
+    openConfirm({
+      title: "Clear Cache",
+      description: `Clear ${type === "all" ? "all caches" : `${type} cache`}?`,
+      warning: "This cannot be undone.",
+      confirmLabel: "Clear",
+      onConfirm: async () => {
+        try {
+          const token = getAuthToken();
+          if (!token) return;
+          const client = createGraphQLClient(token);
+          const data = await client.request<{ clearCache: CacheStats }>(CLEAR_CACHE_MUTATION, { type });
+          setCacheStats(data.clearCache);
+          // Flush stale directory state so thumbnailUrl/transcodedUrl reflect the nulled DB rows
+          setDirectoryCache({});
+          if (rootPath) await loadDirectoryIntoCache(rootPath);
+          if (currentPath && currentPath !== rootPath) await loadDirectoryIntoCache(currentPath);
+        } catch (err) {
+          console.error("Failed to clear cache:", err);
+          alert("Failed to clear cache. Please try again.");
+        }
+      },
+    });
   };
 
-  const handleDeleteSelected = async () => {
+  const handleDeleteSelected = () => {
     if (selectedAssetIds.size === 0) return;
-    const confirmDelete = window.confirm(
-      `Are you sure you want to delete ${selectedAssetIds.size} item(s)? This action cannot be undone.`
-    );
-    if (!confirmDelete) return;
-    try {
-      const token = getAuthToken();
-      if (!token) return;
-      const client = createGraphQLClient(token);
-      await Promise.all(
-        Array.from(selectedAssetIds).map((id) => client.request(DELETE_MEDIA_ASSET_MUTATION, { id }))
-      );
-      setSelectedAssetIds(new Set());
-      setSelectionMode(false);
-      if (rootPath) await loadDirectoryIntoCache(rootPath);
-      if (currentPath && currentPath !== rootPath) await loadDirectoryIntoCache(currentPath);
-    } catch (err) {
-      console.error("Failed to delete assets:", err);
-      alert("Failed to delete some assets. Please try again.");
-    }
+    const count = selectedAssetIds.size;
+    const ids = Array.from(selectedAssetIds);
+    openConfirm({
+      title: "Delete Items",
+      description: `Delete ${count} selected item${count === 1 ? "" : "s"}?`,
+      warning: "This cannot be undone.",
+      onConfirm: async () => {
+        try {
+          const token = getAuthToken();
+          if (!token) return;
+          const client = createGraphQLClient(token);
+          await Promise.all(ids.map((id) => client.request(DELETE_MEDIA_ASSET_MUTATION, { id })));
+          setSelectedAssetIds(new Set());
+          setSelectionMode(false);
+          if (rootPath) await loadDirectoryIntoCache(rootPath);
+          if (currentPath && currentPath !== rootPath) await loadDirectoryIntoCache(currentPath);
+        } catch (err) {
+          console.error("Failed to delete assets:", err);
+          alert("Failed to delete some assets. Please try again.");
+        }
+      },
+    });
   };
 
-  const handleDeleteSingle = async (assetId: string, fileName: string) => {
-    const confirmDelete = window.confirm(
-      `Are you sure you want to delete "${fileName}"? This action cannot be undone.`
-    );
-    if (!confirmDelete) return;
-    try {
-      const token = getAuthToken();
-      if (!token) return;
-      const client = createGraphQLClient(token);
-      await client.request(DELETE_MEDIA_ASSET_MUTATION, { id: assetId });
-      if (rootPath) await loadDirectoryIntoCache(rootPath);
-      if (currentPath && currentPath !== rootPath) await loadDirectoryIntoCache(currentPath);
-    } catch (err) {
-      console.error("Failed to delete asset:", err);
-      alert("Failed to delete asset. Please try again.");
-    }
+  const handleDeleteSingle = (assetId: string, fileName: string) => {
+    openConfirm({
+      title: "Delete File",
+      description: `Delete "${fileName}"?`,
+      warning: "This cannot be undone.",
+      onConfirm: async () => {
+        try {
+          const token = getAuthToken();
+          if (!token) return;
+          const client = createGraphQLClient(token);
+          await client.request(DELETE_MEDIA_ASSET_MUTATION, { id: assetId });
+          if (rootPath) await loadDirectoryIntoCache(rootPath);
+          if (currentPath && currentPath !== rootPath) await loadDirectoryIntoCache(currentPath);
+        } catch (err) {
+          console.error("Failed to delete asset:", err);
+          alert("Failed to delete asset. Please try again.");
+        }
+      },
+    });
   };
 
   // Keep queue ref in sync so confirmCompressJob can read current jobs without stale closures
@@ -1219,32 +1257,35 @@ export default function Dashboard() {
     }
   };
 
-  const handleDeleteFolder = async (folderPath: string, folderName: string) => {
-    const confirmed = window.confirm(
-      `Delete folder "${folderName}" and all its contents? This cannot be undone.`
-    );
-    if (!confirmed) return;
-    try {
-      const token = getAuthToken();
-      if (!token) return;
-      const client = createGraphQLClient(token);
-      await client.request(DELETE_FOLDER_MUTATION, { path: folderPath });
-      // Remove deleted folder from cache
-      setDirectoryCache((prev) => {
-        const next = { ...prev };
-        for (const key of Object.keys(next)) {
-          if (key === folderPath || key.startsWith(`${folderPath}/`)) delete next[key];
+  const handleDeleteFolder = (folderPath: string, folderName: string) => {
+    openConfirm({
+      title: "Delete Folder",
+      description: `Delete folder "${folderName}" and all its contents?`,
+      warning: "This cannot be undone.",
+      onConfirm: async () => {
+        try {
+          const token = getAuthToken();
+          if (!token) return;
+          const client = createGraphQLClient(token);
+          await client.request(DELETE_FOLDER_MUTATION, { path: folderPath });
+          // Remove deleted folder from cache
+          setDirectoryCache((prev) => {
+            const next = { ...prev };
+            for (const key of Object.keys(next)) {
+              if (key === folderPath || key.startsWith(`${folderPath}/`)) delete next[key];
+            }
+            return next;
+          });
+          if (currentPath === folderPath) {
+            await handleBackClick();
+          } else {
+            if (currentPath) await loadDirectoryIntoCache(currentPath);
+          }
+        } catch (err: any) {
+          alert(`Failed to delete folder: ${err.message || 'Unknown error'}`);
         }
-        return next;
-      });
-      if (currentPath === folderPath) {
-        await handleBackClick();
-      } else {
-        if (currentPath) await loadDirectoryIntoCache(currentPath);
-      }
-    } catch (err: any) {
-      alert(`Failed to delete folder: ${err.message || 'Unknown error'}`);
-    }
+      },
+    });
   };
 
   const allAvailableFolders = useMemo(() => {
@@ -3339,6 +3380,16 @@ export default function Dashboard() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={confirmDialog.open}
+        onOpenChange={(open) => setConfirmDialog((prev) => ({ ...prev, open }))}
+        title={confirmDialog.title}
+        description={confirmDialog.description}
+        warning={confirmDialog.warning}
+        confirmLabel={confirmDialog.confirmLabel}
+        onConfirm={confirmDialog.onConfirm}
+      />
 
       {/* Logout Confirmation */}
       {showLogoutConfirm && (
