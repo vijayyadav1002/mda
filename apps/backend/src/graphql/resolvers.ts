@@ -328,21 +328,33 @@ export const resolvers = {
       return buildDirectoryNode(targetPath);
     },
 
-    auditLogs: async (_: any, args: { limit?: number; offset?: number }, context: GraphQLContext) => {
+    auditLogs: async (_: any, args: { limit?: number; offset?: number; userId?: string; action?: string; resourceType?: string; startDate?: string; endDate?: string }, context: GraphQLContext) => {
       if (!context.user || context.user.role !== 'admin') {
         throw new Error('Admin access required');
       }
 
+      const conditions: string[] = [];
+      const params: any[] = [];
+
+      if (args.userId) { params.push(args.userId); conditions.push(`al.user_id = $${params.length}`); }
+      if (args.action) { params.push(args.action); conditions.push(`al.action = $${params.length}`); }
+      if (args.resourceType) { params.push(args.resourceType); conditions.push(`al.resource_type = $${params.length}`); }
+      if (args.startDate) { params.push(args.startDate); conditions.push(`al.created_at >= $${params.length}`); }
+      if (args.endDate) { params.push(args.endDate); conditions.push(`al.created_at < ($${params.length}::date + interval '1 day')`); }
+
+      const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
       const limit = args.limit || 50;
       const offset = args.offset || 0;
+      params.push(limit, offset);
 
       const result = await db.query(
-        `SELECT al.*, u.username, u.role 
-         FROM audit_logs al 
-         LEFT JOIN users u ON al.user_id = u.id 
-         ORDER BY al.created_at DESC 
-         LIMIT $1 OFFSET $2`,
-        [limit, offset]
+        `SELECT al.*, u.username, u.role
+         FROM audit_logs al
+         LEFT JOIN users u ON al.user_id = u.id
+         ${where}
+         ORDER BY al.created_at DESC
+         LIMIT $${params.length - 1} OFFSET $${params.length}`,
+        params
       );
 
       return result.rows.map(row => ({
@@ -359,6 +371,30 @@ export const resolvers = {
         details: row.details ? JSON.stringify(row.details) : null,
         createdAt: row.created_at.toISOString()
       }));
+    },
+
+    auditLogsCount: async (_: any, args: { userId?: string; action?: string; resourceType?: string; startDate?: string; endDate?: string }, context: GraphQLContext) => {
+      if (!context.user || context.user.role !== 'admin') {
+        throw new Error('Admin access required');
+      }
+
+      const conditions: string[] = [];
+      const params: any[] = [];
+
+      if (args.userId) { params.push(args.userId); conditions.push(`al.user_id = $${params.length}`); }
+      if (args.action) { params.push(args.action); conditions.push(`al.action = $${params.length}`); }
+      if (args.resourceType) { params.push(args.resourceType); conditions.push(`al.resource_type = $${params.length}`); }
+      if (args.startDate) { params.push(args.startDate); conditions.push(`al.created_at >= $${params.length}`); }
+      if (args.endDate) { params.push(args.endDate); conditions.push(`al.created_at < ($${params.length}::date + interval '1 day')`); }
+
+      const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+      const result = await db.query(
+        `SELECT COUNT(*) FROM audit_logs al ${where}`,
+        params
+      );
+
+      return parseInt(result.rows[0].count, 10);
     },
 
     tags: async (_: any, __: any, context: GraphQLContext) => {
@@ -1618,6 +1654,19 @@ export const resolvers = {
       });
 
       return mapTagRow({ ...updated, asset_count: 0 });
+    },
+
+    clearAuditLogs: async (_: any, args: { startDate: string; endDate: string }, context: GraphQLContext) => {
+      if (!context.user || context.user.role !== 'admin') {
+        throw new Error('Admin access required');
+      }
+      const result = await db.query(
+        `DELETE FROM audit_logs
+         WHERE created_at >= $1::date
+           AND created_at < ($2::date + interval '1 day')`,
+        [args.startDate, args.endDate]
+      );
+      return result.rowCount ?? 0;
     },
 
     clearCache: async (_: any, args: { type: string }, context: GraphQLContext) => {

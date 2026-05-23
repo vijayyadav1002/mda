@@ -4,10 +4,11 @@ import { createGraphQLClient, getAuthToken, clearAuthToken } from "~/lib/api";
 import { useActiveQueueCount } from "~/lib/useActiveQueueCount";
 import { Input } from "~/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "~/components/ui/dialog";
+import { ConfirmDialog } from "~/components/ConfirmDialog";
 import { SearchBar } from "~/components/SearchBar";
 import {
   UserPlus, Trash2, Edit, Key, ArrowLeft,
-  Users, Folder, ListTodo,
+  Users, Folder, ListTodo, ScrollText,
   LogOut, User, Moon, Sun,
 } from "lucide-react";
 
@@ -126,6 +127,7 @@ export default function UsersPage() {
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showResetPasswordDialog, setShowResetPasswordDialog] = useState(false);
   const [showChangeMyPasswordDialog, setShowChangeMyPasswordDialog] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; userId: string }>({ open: false, userId: "" });
   const [selectedUser, setSelectedUser] = useState<UserData | null>(null);
   const [formData, setFormData] = useState({ username: "", password: "", role: "readonly" });
   const [newPassword, setNewPassword] = useState("");
@@ -202,17 +204,8 @@ export default function UsersPage() {
     }
   };
 
-  const handleDeleteUser = async (userId: string) => {
-    if (!confirm("Are you sure you want to delete this user?")) return;
-    try {
-      const token = getAuthToken();
-      if (!token) return;
-      const client = createGraphQLClient(token);
-      await client.request(DELETE_USER_MUTATION, { id: userId });
-      loadUsers();
-    } catch (err: any) {
-      setError(err.message || "Failed to delete user");
-    }
+  const handleDeleteUser = (userId: string) => {
+    setDeleteConfirm({ open: true, userId });
   };
 
   const handleResetPassword = async (e: React.FormEvent) => {
@@ -297,6 +290,7 @@ export default function UsersPage() {
             badge={activeQueueCount || undefined}
           />
           <SidebarNavItem icon={Users} label="Users" active />
+          <SidebarNavItem icon={ScrollText} label="Audit" onClick={() => navigate("/audit")} />
         </nav>
 
         <div className="px-3 pb-6 space-y-3">
@@ -645,6 +639,20 @@ export default function UsersPage() {
           </form>
         </DialogContent>
       </Dialog>
+      <ConfirmDialog
+        open={deleteConfirm.open}
+        onOpenChange={(open) => setDeleteConfirm((prev) => ({ ...prev, open }))}
+        title="Delete User"
+        description="Are you sure you want to delete this user?"
+        warning="This cannot be undone."
+        onConfirm={async () => {
+          const token = getAuthToken();
+          if (!token) return;
+          const client = createGraphQLClient(token);
+          await client.request(DELETE_USER_MUTATION, { id: deleteConfirm.userId });
+          loadUsers();
+        }}
+      />
     </div>
   );
 }
