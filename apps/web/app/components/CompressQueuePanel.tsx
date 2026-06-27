@@ -24,6 +24,7 @@ export interface CompressJob {
   progress: Record<string, { percent: number; etaSeconds: number | null }>;
   currentFileId: string | null;
   previews: CompressPreviewResult[];
+  fileStatuses: Record<string, "pending" | "confirming" | "confirmed" | "discarded" | "error">;
   addedAt: number;
   errorMessage?: string;
 }

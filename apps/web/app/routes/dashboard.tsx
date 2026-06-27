@@ -1094,6 +1094,12 @@ export default function Dashboard() {
             ...job,
             progress: {},
             currentFileId: null,
+            fileStatuses: job.fileStatuses ?? Object.fromEntries(
+              (job.assets ?? []).map(a => [
+                a.id,
+                job.status === "done" ? "confirmed" as const : "pending" as const,
+              ])
+            ),
             status: (
               job.status === "compressing" ? "pending"       // BullMQ retries the job
               : job.status === "confirming" ? "preview_ready" // let user retry confirm
@@ -1114,7 +1120,20 @@ export default function Dashboard() {
     const intervalId = setInterval(() => {
       fetch(`${API_URL}/api/queue-state`, { headers: { Authorization: `Bearer ${token}` } })
         .then(r => r.json())
-        .then(({ queue }) => { if (Array.isArray(queue)) setCompressQueue(queue as CompressJob[]); })
+        .then(({ queue }) => {
+          if (!Array.isArray(queue)) return;
+          setCompressQueue(prev =>
+            (queue as CompressJob[]).map(serverJob => {
+              const local = prev.find(j => j.id === serverJob.id);
+              return {
+                ...serverJob,
+                fileStatuses: local?.fileStatuses ?? Object.fromEntries(
+                  (serverJob.assets ?? []).map(a => [a.id, "pending" as const])
+                ),
+              };
+            })
+          );
+        })
         .catch(() => {});
     }, 5000);
     return () => clearInterval(intervalId);
@@ -1139,6 +1158,7 @@ export default function Dashboard() {
         progress: {},
         currentFileId: null,
         previews: [],
+        fileStatuses: Object.fromEntries(assets.map(a => [a.id, "pending" as const])),
         addedAt: Date.now(),
       }]);
       setShowQueuePanel(true);
