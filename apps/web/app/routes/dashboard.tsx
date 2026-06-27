@@ -1180,38 +1180,120 @@ export default function Dashboard() {
   const confirmCompressJob = useCallback(async (jobId: string) => {
     const job = compressQueueRef.current.find(j => j.id === jobId);
     if (!job) return;
-    setCompressQueue(prev => prev.map(j => j.id === jobId ? { ...j, status: "confirming" as const } : j));
+    const pendingIds = job.assets
+      .filter(a => (job.fileStatuses?.[a.id] ?? "pending") === "pending")
+      .map(a => a.id);
+    if (pendingIds.length === 0) return;
+
+    setCompressQueue(prev => prev.map(j => j.id !== jobId ? j : {
+      ...j,
+      status: "confirming" as const,
+      fileStatuses: {
+        ...j.fileStatuses,
+        ...Object.fromEntries(pendingIds.map(id => [id, "confirming" as const])),
+      },
+    }));
     try {
       const token = getAuthToken();
       if (!token) throw new Error("Not authenticated");
-      const client = createGraphQLClient(token);
-      await client.request(CONFIRM_COMPRESS_MUTATION, { ids: job.assets.map(a => a.id) });
-      const updated = compressQueueRef.current.map(j => j.id === jobId ? { ...j, status: "done" as const } : j);
+      await createGraphQLClient(token).request(CONFIRM_COMPRESS_MUTATION, { ids: pendingIds });
+      const updated = compressQueueRef.current.map(j => j.id !== jobId ? j : {
+        ...j,
+        status: "done" as const,
+        fileStatuses: {
+          ...j.fileStatuses,
+          ...Object.fromEntries(pendingIds.map(id => [id, "confirmed" as const])),
+        },
+      });
       setCompressQueue(updated);
       saveQueueToServer(updated);
       if (currentPath) await loadDirectoryIntoCache(currentPath);
       if (rootPath && rootPath !== currentPath) await loadDirectoryIntoCache(rootPath);
     } catch (err: any) {
-      setCompressQueue(prev => prev.map(j => j.id === jobId
-        ? { ...j, status: "error" as const, errorMessage: err.message || "Failed to apply compression" }
-        : j));
+      setCompressQueue(prev => prev.map(j => j.id !== jobId ? j : {
+        ...j,
+        status: "error" as const,
+        fileStatuses: {
+          ...j.fileStatuses,
+          ...Object.fromEntries(pendingIds.map(id => [id, "pending" as const])),
+        },
+        errorMessage: err.message || "Failed to apply compression",
+      }));
     }
   }, [currentPath, rootPath, saveQueueToServer]);
 
   const dismissCompressJob = useCallback((jobId: string) => {
     const job = compressQueueRef.current.find(j => j.id === jobId);
     if (!job) return;
-    // Clean up preview files via GraphQL cancel if previews exist
-    if (job.previews.length > 0) {
+    const pendingIds = job.assets
+      .filter(a => (job.fileStatuses?.[a.id] ?? "pending") === "pending")
+      .map(a => a.id);
+    if (pendingIds.length > 0) {
       const token = getAuthToken();
       if (token) {
         createGraphQLClient(token)
-          .request(CANCEL_COMPRESS_MUTATION, { ids: job.assets.map(a => a.id) })
+          .request(CANCEL_COMPRESS_MUTATION, { ids: pendingIds })
           .catch(() => {});
       }
     }
     setCompressQueue(prev => {
       const updated = prev.filter(j => j.id !== jobId);
+      saveQueueToServer(updated);
+      return updated;
+    });
+  }, [saveQueueToServer]);
+
+  const confirmSingleCompressFile = useCallback(async (jobId: string, assetId: string) => {
+    setCompressQueue(prev => prev.map(j => j.id !== jobId ? j : {
+      ...j,
+      fileStatuses: { ...j.fileStatuses, [assetId]: "confirming" as const },
+    }));
+    try {
+      const token = getAuthToken();
+      if (!token) throw new Error("Not authenticated");
+      await createGraphQLClient(token).request(CONFIRM_COMPRESS_MUTATION, { ids: [assetId] });
+      setCompressQueue(prev => {
+        const updated = prev.map(j => {
+          if (j.id !== jobId) return j;
+          const newStatuses = { ...j.fileStatuses, [assetId]: "confirmed" as const };
+          const allDecided = Object.values(newStatuses).every(
+            s => s === "confirmed" || s === "discarded" || s === "error"
+          );
+          return { ...j, fileStatuses: newStatuses, status: allDecided ? "done" as const : j.status };
+        });
+        saveQueueToServer(updated);
+        return updated;
+      });
+      if (currentPath) await loadDirectoryIntoCache(currentPath);
+      if (rootPath && rootPath !== currentPath) await loadDirectoryIntoCache(rootPath);
+    } catch (err: any) {
+      setCompressQueue(prev => prev.map(j => j.id !== jobId ? j : {
+        ...j,
+        fileStatuses: { ...j.fileStatuses, [assetId]: "error" as const },
+      }));
+    }
+  }, [currentPath, rootPath, saveQueueToServer]);
+
+  const discardSingleCompressFile = useCallback(async (jobId: string, assetId: string) => {
+    try {
+      const token = getAuthToken();
+      if (token) {
+        await createGraphQLClient(token).request(CANCEL_COMPRESS_MUTATION, { ids: [assetId] });
+      }
+    } catch {
+      // best-effort preview cleanup — don't block the UI update
+    }
+    setCompressQueue(prev => {
+      const updated = prev.map(j => {
+        if (j.id !== jobId) return j;
+        const newStatuses = { ...j.fileStatuses, [assetId]: "discarded" as const };
+        const allDecided = Object.values(newStatuses).every(
+          s => s === "confirmed" || s === "discarded" || s === "error"
+        );
+        const anyConfirmed = Object.values(newStatuses).some(s => s === "confirmed");
+        if (allDecided && !anyConfirmed) return null; // all skipped → remove job
+        return { ...j, fileStatuses: newStatuses, status: allDecided ? "done" as const : j.status };
+      }).filter((j): j is CompressJob => j !== null);
       saveQueueToServer(updated);
       return updated;
     });
@@ -3018,6 +3100,8 @@ export default function Dashboard() {
         onDismiss={dismissCompressJob}
         onCancel={cancelCompressJob}
         onClearCompleted={clearCompletedJobs}
+        onConfirmFile={confirmSingleCompressFile}
+        onDiscardFile={discardSingleCompressFile}
         apiUrl={API_URL}
       />
 

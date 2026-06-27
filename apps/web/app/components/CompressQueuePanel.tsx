@@ -37,6 +37,8 @@ interface CompressQueuePanelProps {
   readonly onDismiss: (jobId: string) => void;
   readonly onCancel: (jobId: string) => void;
   readonly onClearCompleted: () => void;
+  readonly onConfirmFile?: (jobId: string, assetId: string) => void;
+  readonly onDiscardFile?: (jobId: string, assetId: string) => void;
   readonly apiUrl: string;
 }
 
@@ -82,7 +84,8 @@ function StatusIcon({ status }: { status: CompressJob["status"] }) {
 }
 
 export function CompressQueuePanel({
-  isOpen, onClose, jobs, onConfirm, onDismiss, onCancel, onClearCompleted, apiUrl,
+  isOpen, onClose, jobs, onConfirm, onDismiss, onCancel, onClearCompleted,
+  onConfirmFile, onDiscardFile, apiUrl,
 }: CompressQueuePanelProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [previewAssetId, setPreviewAssetId] = useState<string | null>(null);
