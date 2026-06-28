@@ -20,3 +20,4 @@ graphify-out
 mempalace.yaml
 entities.json
 .claude/commands
+.prompts
