@@ -24,6 +24,7 @@ export interface CompressJob {
   progress: Record<string, { percent: number; etaSeconds: number | null }>;
   currentFileId: string | null;
   previews: CompressPreviewResult[];
+  fileStatuses: Record<string, "pending" | "confirming" | "confirmed" | "discarded" | "error">;
   addedAt: number;
   errorMessage?: string;
 }
@@ -36,6 +37,8 @@ interface CompressQueuePanelProps {
   readonly onDismiss: (jobId: string) => void;
   readonly onCancel: (jobId: string) => void;
   readonly onClearCompleted: () => void;
+  readonly onConfirmFile: (jobId: string, assetId: string) => void;
+  readonly onDiscardFile: (jobId: string, assetId: string) => void;
   readonly apiUrl: string;
 }
 
@@ -81,7 +84,8 @@ function StatusIcon({ status }: { status: CompressJob["status"] }) {
 }
 
 export function CompressQueuePanel({
-  isOpen, onClose, jobs, onConfirm, onDismiss, onCancel, onClearCompleted, apiUrl,
+  isOpen, onClose, jobs, onConfirm, onDismiss, onCancel, onClearCompleted,
+  onConfirmFile, onDiscardFile, apiUrl,
 }: CompressQueuePanelProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [previewAssetId, setPreviewAssetId] = useState<string | null>(null);
@@ -230,28 +234,73 @@ export function CompressQueuePanel({
 
                         {/* Results table */}
                         <div className="bg-muted rounded-xl overflow-hidden">
-                          <div className="grid grid-cols-[1fr_68px_68px_52px_32px] gap-1 px-3 py-2">
-                            {["File", "Before", "After", "Saved", ""].map(h => (
-                              <span key={h} className={`label-meta ${h && h !== "File" ? "text-right" : ""}`}>{h}</span>
+                          <div className="grid grid-cols-[1fr_68px_68px_52px_28px_96px] gap-1 px-3 py-2">
+                            {["File", "Before", "After", "Saved", "", ""].map((h, i) => (
+                              <span key={i} className={`label-meta ${h && h !== "File" ? "text-right" : ""}`}>{h}</span>
                             ))}
                           </div>
                           <div className="max-h-44 overflow-auto divide-y divide-border/10">
                             {job.previews.map(p => {
                               const asset = job.assets.find(a => a.id === p.assetId);
+                              const fileStatus = job.fileStatuses?.[p.assetId] ?? "pending";
+                              const isPending = fileStatus === "pending";
+                              const isConfirming = fileStatus === "confirming";
+                              const isConfirmed = fileStatus === "confirmed";
+                              const isDiscarded = fileStatus === "discarded";
                               return (
-                                <div key={p.assetId} className="grid grid-cols-[1fr_68px_68px_52px_32px] gap-1 px-3 py-2 items-center text-xs">
-                                  <span className="truncate text-foreground">{asset?.fileName ?? p.assetId}</span>
+                                <div
+                                  key={p.assetId}
+                                  className={`grid grid-cols-[1fr_68px_68px_52px_28px_96px] gap-1 px-3 py-2 items-center text-xs transition-opacity ${
+                                    isConfirmed ? "opacity-50" : isDiscarded ? "opacity-30" : ""
+                                  }`}
+                                >
+                                  <span className={`truncate text-foreground ${isDiscarded ? "line-through text-muted-foreground" : ""}`}>
+                                    {asset?.fileName ?? p.assetId}
+                                  </span>
                                   <span className="text-right text-muted-foreground">{fmt(p.originalSize)}</span>
                                   <span className="text-right text-foreground">{fmt(p.compressedSize)}</span>
                                   <span className="text-right text-emerald-400 font-medium">{savings(p.originalSize, p.compressedSize)}</span>
                                   <button
                                     type="button"
                                     onClick={() => setPreviewAssetId(previewAssetId === p.assetId ? null : p.assetId)}
-                                    className="p-1 hover:bg-accent rounded-lg transition-colors flex justify-center"
+                                    disabled={isDiscarded}
+                                    className="p-1 hover:bg-accent rounded-lg transition-colors flex justify-center disabled:opacity-30"
                                     title="Preview"
                                   >
                                     <Eye className="w-3 h-3 text-brand-primary" />
                                   </button>
+                                  <div className="flex justify-end gap-1">
+                                    {isConfirmed && (
+                                      <span className="text-emerald-400 text-[10px] flex items-center gap-0.5">
+                                        <Check className="w-3 h-3" /> Kept
+                                      </span>
+                                    )}
+                                    {isDiscarded && (
+                                      <span className="text-muted-foreground text-[10px]">Skipped</span>
+                                    )}
+                                    {(isPending || isConfirming) && (
+                                      <>
+                                        <button
+                                          type="button"
+                                          onClick={() => onConfirmFile(job.id, p.assetId)}
+                                          disabled={isConfirming || job.status === "confirming"}
+                                          className="px-1.5 py-0.5 text-[10px] rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 disabled:opacity-40 transition-colors"
+                                          title="Keep this file"
+                                        >
+                                          {isConfirming ? "…" : "Keep"}
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => onDiscardFile(job.id, p.assetId)}
+                                          disabled={isConfirming || job.status === "confirming"}
+                                          className="px-1.5 py-0.5 text-[10px] rounded-lg bg-muted hover:bg-accent text-muted-foreground disabled:opacity-40 transition-colors"
+                                          title="Skip this file"
+                                        >
+                                          Skip
+                                        </button>
+                                      </>
+                                    )}
+                                  </div>
                                 </div>
                               );
                             })}
@@ -295,27 +344,36 @@ export function CompressQueuePanel({
                           );
                         })()}
 
-                        <div className="flex gap-2 justify-end">
-                          <button
-                            type="button"
-                            onClick={() => onDismiss(job.id)}
-                            disabled={job.status === "confirming"}
-                            className="px-3 py-2 rounded-xl text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-all disabled:opacity-40"
-                          >
-                            Discard
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => onConfirm(job.id)}
-                            disabled={job.status === "confirming"}
-                            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-manrope font-bold text-sm transition-colors disabled:opacity-50"
-                          >
-                            {job.status === "confirming"
-                              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              : <Check className="w-3.5 h-3.5" />}
-                            Confirm &amp; Replace
-                          </button>
-                        </div>
+                        {(() => {
+                          const pendingCount = job.previews.filter(
+                            p => (job.fileStatuses?.[p.assetId] ?? "pending") === "pending"
+                          ).length;
+                          const allPending = pendingCount === job.previews.length;
+                          const hasPending = pendingCount > 0;
+                          return (
+                            <div className="flex gap-2 justify-end">
+                              <button
+                                type="button"
+                                onClick={() => onDismiss(job.id)}
+                                disabled={job.status === "confirming" || !hasPending}
+                                className="px-3 py-2 rounded-xl text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-all disabled:opacity-40"
+                              >
+                                {allPending ? "Discard All" : `Skip Remaining (${pendingCount})`}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => onConfirm(job.id)}
+                                disabled={job.status === "confirming" || !hasPending}
+                                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-manrope font-bold text-sm transition-colors disabled:opacity-50"
+                              >
+                                {job.status === "confirming"
+                                  ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                  : <Check className="w-3.5 h-3.5" />}
+                                {allPending ? "Keep All" : `Keep Remaining (${pendingCount})`}
+                              </button>
+                            </div>
+                          );
+                        })()}
                       </div>
                     )}
 
