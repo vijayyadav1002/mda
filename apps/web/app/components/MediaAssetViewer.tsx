@@ -1,4 +1,4 @@
-import { Download, File, Maximize2, Minimize2, X, ListTodo, Tag as TagIcon, Plus, Pencil, FolderOpen, Save, Copy } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, File, Maximize2, Minimize2, X, ListTodo, Tag as TagIcon, Plus, Pencil, FolderOpen, Save, Copy } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import Hls from "hls.js";
 import ReactMarkdown from "react-markdown";
@@ -46,6 +46,9 @@ interface MediaAssetViewerProps {
   readonly onMove?: () => void;
   readonly onDuplicate?: () => void;
   readonly onAssetUpdated?: (updates: Partial<Pick<MediaAsset, "fileSize" | "updatedAt">>) => void;
+  readonly onNavigate?: (direction: 1 | -1) => void;
+  readonly hasPrev?: boolean;
+  readonly hasNext?: boolean;
 }
 
 type FileCategory = "image" | "video" | "pdf" | "word" | "excel" | "text" | "markdown" | "other";
@@ -113,6 +116,9 @@ export function MediaAssetViewer({
   onMove,
   onDuplicate,
   onAssetUpdated,
+  onNavigate,
+  hasPrev = false,
+  hasNext = false,
 }: Readonly<MediaAssetViewerProps>) {
   const canEdit = userRole === "admin" || userRole === "editor";
   const canEditTags = canEdit;
@@ -318,26 +324,34 @@ export function MediaAssetViewer({
 
   useEffect(() => {
     if (!isOpen && currentVideoId) {
-      // Only clean up transient MP4 transcode cache; keep HLS segments for fast re-open.
-      if (videoSourceKindRef.current === "mp4") {
-        fetch(`${apiUrl}/video/${currentVideoId}/cleanup`, { method: "DELETE" }).catch(() => {});
-      }
+      // Transcoded MP4s are kept on disk (evicted only by the size-based
+      // cache limit), so closing the viewer no longer deletes them.
       videoSourceKindRef.current = null;
       setCurrentVideoId(null);
     }
   }, [isOpen, currentVideoId, apiUrl]);
 
-  // Close on Escape
+  // Close on Escape; navigate with arrow keys
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         if (isFullscreen) setIsFullscreen(false);
         else onClose();
+        return;
+      }
+      // Don't hijack arrows while typing in a rename field or document editor
+      if (isRenaming || isEditingDocument) return;
+      if (e.key === "ArrowLeft" && onNavigate && hasPrev) {
+        e.preventDefault();
+        onNavigate(-1);
+      } else if (e.key === "ArrowRight" && onNavigate && hasNext) {
+        e.preventDefault();
+        onNavigate(1);
       }
     };
     if (isOpen) document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
-  }, [isOpen, isFullscreen, onClose]);
+  }, [isOpen, isFullscreen, onClose, onNavigate, hasPrev, hasNext, isRenaming, isEditingDocument]);
 
   if (!asset || !isOpen) return null;
 
@@ -393,11 +407,59 @@ export function MediaAssetViewer({
     setImageDimensions({ width: img.naturalWidth, height: img.naturalHeight });
   };
 
+  // Prev/next chevrons + mobile tap zones, overlaid on the media area
+  const navigationOverlay = onNavigate ? (
+    <>
+      {/* Mobile tap zones (images only, so video controls stay usable) */}
+      {isImage && (
+        <>
+          {hasPrev && (
+            <button
+              type="button"
+              aria-label="Previous"
+              onClick={(e) => { e.stopPropagation(); onNavigate(-1); }}
+              className="md:hidden absolute left-0 top-0 h-full w-1/4 z-10 focus:outline-none"
+            />
+          )}
+          {hasNext && (
+            <button
+              type="button"
+              aria-label="Next"
+              onClick={(e) => { e.stopPropagation(); onNavigate(1); }}
+              className="md:hidden absolute right-0 top-0 h-full w-1/4 z-10 focus:outline-none"
+            />
+          )}
+        </>
+      )}
+      {hasPrev && (
+        <button
+          type="button"
+          aria-label="Previous"
+          onClick={(e) => { e.stopPropagation(); onNavigate(-1); }}
+          className="absolute left-3 top-1/2 -translate-y-1/2 z-20 p-2.5 rounded-full bg-black/40 hover:bg-black/70 text-white backdrop-blur-sm transition-all opacity-100 md:opacity-0 md:group-hover:opacity-100"
+        >
+          <ChevronLeft className="w-6 h-6" />
+        </button>
+      )}
+      {hasNext && (
+        <button
+          type="button"
+          aria-label="Next"
+          onClick={(e) => { e.stopPropagation(); onNavigate(1); }}
+          className="absolute right-3 top-1/2 -translate-y-1/2 z-20 p-2.5 rounded-full bg-black/40 hover:bg-black/70 text-white backdrop-blur-sm transition-all opacity-100 md:opacity-0 md:group-hover:opacity-100"
+        >
+          <ChevronRight className="w-6 h-6" />
+        </button>
+      )}
+    </>
+  ) : null;
+
   // ── Fullscreen overlay ────────────────────────────────────────────
   if (isFullscreen) {
     return (
-      <div className="fixed inset-0 z-50 bg-black flex items-center justify-center">
-        <div className="absolute top-4 right-4 z-10 flex gap-2">
+      <div className="fixed inset-0 z-50 bg-black flex items-center justify-center group">
+        {navigationOverlay}
+        <div className="absolute top-4 right-4 z-30 flex gap-2">
           <button
             type="button"
             onClick={() => setIsFullscreen(false)}
@@ -486,6 +548,7 @@ export function MediaAssetViewer({
 
         {/* Left — media preview */}
         <div className="relative flex-1 bg-[#060e20] flex items-center justify-center group min-h-[220px] md:min-h-[400px]">
+          {navigationOverlay}
           {isImage && (
             <img
               src={originalImageUrl}

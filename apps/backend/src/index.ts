@@ -11,10 +11,11 @@ import { buildContext } from './graphql/context.js';
 import { db } from './db/index.js';
 import { ensureAdminExists } from './services/auth.js';
 import { indexMediaLibrary } from './services/media-indexer.js';
+import { backfillCaptureDates } from './services/capture-date.js';
 import { startMediaWatcher } from './services/media-watcher.js';
-import { startWorkers, addToCompressionQueue, encodingQueue, compressionQueue, activeCompressionAborts } from './services/queue.js';
+import { startWorkers, addToCompressionQueue, addToTranscodeQueue, encodingQueue, compressionQueue, activeCompressionAborts } from './services/queue.js';
 import { redis } from './services/redis.js';
-import { getWebCompatibleVideo, markTranscodeAccessed, startTranscodeCleanup, deleteTranscodedVideo, ensureHLS, checkVideoCompatibility } from './services/video-transcode.js';
+import { getWebCompatibleVideo, markTranscodeAccessed, deleteTranscodedVideo, ensureHLS, checkVideoCompatibility } from './services/video-transcode.js';
 import { startCacheMaintenance } from './services/cache-maintenance.js';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -497,14 +498,19 @@ fastify.get('/video/:id/prepare', async (request, reply) => {
 
   try {
     const result = await db.query(
-      'SELECT file_path, mime_type FROM media_assets WHERE id = $1',
+      'SELECT file_path, mime_type, transcoded_path FROM media_assets WHERE id = $1',
       [id]
     );
     if (result.rows.length === 0) return reply.code(404).send({ error: 'Video not found' });
 
-    const { file_path, mime_type } = result.rows[0];
+    const { file_path, mime_type, transcoded_path } = result.rows[0];
     if (!mime_type || !mime_type.startsWith('video/')) {
       return reply.code(400).send({ error: 'Not a video file' });
+    }
+
+    // Fast path: a batch/background transcode already produced a cached MP4.
+    if (transcoded_path && fs.existsSync(transcoded_path)) {
+      return reply.send({ type: 'mp4', url: `/video/${id}` });
     }
 
     try {
@@ -934,6 +940,68 @@ fastify.post('/api/compress/enqueue', async (request, reply) => {
   return reply.send({ jobId, skippedCount: allAssets.length - assets.length });
 });
 
+// Enqueue a batch video-transcode job (shares the queue panel + cancel endpoint
+// with compression jobs via the same per-user Redis queue)
+fastify.post('/api/transcode/enqueue', async (request, reply) => {
+  const authHeader = request.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) {
+    return reply.code(401).send({ error: 'Unauthorized' });
+  }
+  const token = authHeader.slice(7);
+  let userId: string;
+  try {
+    const decoded = fastify.jwt.verify<any>(token);
+    userId = String(decoded.id);
+    const userResult = await db.query('SELECT role FROM users WHERE id = $1', [userId]);
+    if (userResult.rows.length === 0 || !['admin', 'editor'].includes(userResult.rows[0].role)) {
+      return reply.code(403).send({ error: 'Forbidden' });
+    }
+  } catch {
+    return reply.code(401).send({ error: 'Invalid token' });
+  }
+
+  const { ids } = request.body as { ids: string[] };
+  if (!ids?.length) return reply.code(400).send({ error: 'No asset IDs provided' });
+
+  const rows = await Promise.all(
+    ids.map(id =>
+      db.query('SELECT id, file_name, file_size, mime_type, file_path FROM media_assets WHERE id = $1', [id])
+        .then(r => r.rows[0] ?? null)
+    )
+  );
+  const allAssets = rows.filter(Boolean).map(r => ({
+    id: String(r.id),
+    fileName: r.file_name as string,
+    fileSize: String(r.file_size),
+    mimeType: r.mime_type as string,
+    filePath: r.file_path as string,
+  }));
+  const assets = allAssets.filter((asset) => asset.mimeType.startsWith('video/'));
+
+  if (assets.length === 0) return reply.code(400).send({ error: 'No video assets found' });
+
+  const jobId = crypto.randomUUID();
+  const queueKey = `compress_queue:${userId}`;
+  const raw = await redis.get(queueKey);
+  const queue: any[] = raw ? JSON.parse(raw) : [];
+
+  const newJob = {
+    id: jobId,
+    kind: 'transcode',
+    assets: assets.map(({ filePath: _fp, ...a }) => a),
+    status: 'pending',
+    progress: {},
+    currentFileId: null,
+    previews: [],
+    addedAt: Date.now(),
+  };
+  queue.push(newJob);
+  await redis.set(queueKey, JSON.stringify(queue), 'EX', 604800);
+
+  await addToTranscodeQueue({ userId, jobId, assets });
+  return reply.send({ jobId, skippedCount: allAssets.length - assets.length });
+});
+
 // Cancel an active or pending compression job
 fastify.post('/api/compress/cancel', async (request, reply) => {
   const authHeader = request.headers.authorization;
@@ -1154,12 +1222,17 @@ const start = async () => {
     await indexMediaLibrary();
     fastify.log.info('Initial media library indexed');
 
+    // Backfill capture dates for assets indexed before the timeline feature (non-blocking)
+    void backfillCaptureDates().catch((error) => {
+      fastify.log.error({ err: error }, 'Capture date backfill failed');
+    });
+
     // Start file system watcher
     fastify.log.info('Starting media file watcher...');
     startMediaWatcher();
 
-    // Start transcode cleanup service
-    startTranscodeCleanup();
+    // Transcoded videos are intentionally persistent: no inactivity cleanup.
+    // Eviction is size-based only, handled by cache maintenance.
 
     // Start cache maintenance service
     cacheMaintenanceTimer = startCacheMaintenance();

@@ -15,7 +15,7 @@ import {
   Menu, X, ImagePlus, ArrowUpDown, Minimize2,
   Upload, LogOut, Download, FolderPlus, ListTodo,
   Moon, Sun, User, Tag as TagIcon, Pencil, HardDrive, FolderOpen,
-  Copy, ScrollText,
+  Copy, ScrollText, CalendarDays,
 } from "lucide-react";
 
 const API_URL = getApiUrl();
@@ -271,6 +271,21 @@ const CLEAR_CACHE_MUTATION = `
   }
 `;
 
+const CACHE_SETTINGS_FIELDS = `
+  thumbnailCacheMaxMb previewCacheMaxMb hlsCacheMaxMb transcodedCacheMaxMb
+  previewCacheMaxAgeDays hlsCacheMaxAgeHours
+`;
+
+const CACHE_SETTINGS_QUERY = `
+  query CacheSettings { cacheSettings { ${CACHE_SETTINGS_FIELDS} } }
+`;
+
+const UPDATE_CACHE_SETTINGS_MUTATION = `
+  mutation UpdateCacheSettings($input: CacheSettingsInput!) {
+    updateCacheSettings(input: $input) { ${CACHE_SETTINGS_FIELDS} }
+  }
+`;
+
 const SEARCH_RESULTS_QUERY = `
   query SearchResults($term: String, $mediaType: String, $sortBy: String, $limit: Int, $minSize: Float, $maxSize: Float, $path: String) {
     search(term: $term, mediaType: $mediaType, sortBy: $sortBy, limit: $limit, minSize: $minSize, maxSize: $maxSize, path: $path) {
@@ -325,6 +340,15 @@ interface CacheStats {
   totalBytes: number;
 }
 
+interface CacheSettingsData {
+  thumbnailCacheMaxMb: number;
+  previewCacheMaxMb: number;
+  hlsCacheMaxMb: number;
+  transcodedCacheMaxMb: number;
+  previewCacheMaxAgeDays: number;
+  hlsCacheMaxAgeHours: number;
+}
+
 function formatBytes(bytes: string | number) {
   const n = typeof bytes === "string" ? parseInt(bytes) : bytes;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
@@ -377,6 +401,143 @@ function FileTypeIcon({ asset, className }: { asset: MediaAsset; className: stri
   }
   if (category === "image" || category === "video") return <FileImage className={className} />;
   return <File className={className} />;
+}
+
+const CACHE_LIMIT_FIELDS: Array<{ key: keyof CacheSettingsData; label: string; unit: string }> = [
+  { key: "thumbnailCacheMaxMb", label: "Thumbnails", unit: "MB" },
+  { key: "previewCacheMaxMb", label: "Previews", unit: "MB" },
+  { key: "hlsCacheMaxMb", label: "HLS", unit: "MB" },
+  { key: "transcodedCacheMaxMb", label: "Transcoded", unit: "MB" },
+  { key: "previewCacheMaxAgeDays", label: "Preview age", unit: "days" },
+  { key: "hlsCacheMaxAgeHours", label: "HLS age", unit: "hrs" },
+];
+
+function CachePanelBody({
+  cacheStats,
+  cacheSettings,
+  onClear,
+  onSaveSettings,
+}: Readonly<{
+  cacheStats: CacheStats;
+  cacheSettings: CacheSettingsData | null;
+  onClear: (type: "thumbnails" | "previews" | "hls" | "transcoded" | "all") => void;
+  onSaveSettings: (input: Partial<CacheSettingsData>) => Promise<void>;
+}>) {
+  const [showLimits, setShowLimits] = useState(false);
+  const [draft, setDraft] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  const openEditor = () => {
+    if (!showLimits && cacheSettings) {
+      setDraft(Object.fromEntries(CACHE_LIMIT_FIELDS.map(({ key }) => [key, String(cacheSettings[key])])));
+      setSaveError(null);
+    }
+    setShowLimits((p) => !p);
+  };
+
+  const handleSave = async () => {
+    const input: Partial<CacheSettingsData> = {};
+    for (const { key } of CACHE_LIMIT_FIELDS) {
+      const value = Number.parseInt(draft[key] ?? "", 10);
+      if (!Number.isFinite(value) || value <= 0) {
+        setSaveError("All values must be positive numbers");
+        return;
+      }
+      input[key] = value;
+    }
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await onSaveSettings(input);
+      setShowLimits(false);
+    } catch (err: any) {
+      setSaveError(err?.response?.errors?.[0]?.message ?? err?.message ?? "Failed to save");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="px-3 pb-3 pt-2 space-y-2 border-t border-border/20">
+      {(["thumbnails", "previews", "hls", "transcoded"] as const).map((key) => {
+        const s = cacheStats[key];
+        const usage = s.maxBytes > 0 ? Math.min(100, (s.bytes / s.maxBytes) * 100) : 0;
+        return (
+          <div key={key} className="space-y-1">
+            <div className="flex items-center justify-between gap-2 text-xs">
+              <span className="text-muted-foreground truncate">{s.label}</span>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <span className="font-mono text-foreground">
+                  {formatBytes(s.bytes)}
+                  <span className="text-muted-foreground"> / {formatBytes(s.maxBytes)}</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onClear(key)}
+                  className="text-destructive hover:underline"
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+            <div className="h-1 rounded-full bg-muted/60 overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-[width] duration-500 ${usage > 90 ? "bg-destructive" : "gradient-brand"}`}
+                style={{ width: `${Math.max(usage, 2)}%` }}
+              />
+            </div>
+          </div>
+        );
+      })}
+
+      {cacheSettings && (
+        <button
+          type="button"
+          onClick={openEditor}
+          className="w-full text-xs text-muted-foreground border border-border/40 rounded-lg py-1.5 hover:text-foreground hover:bg-accent transition-colors"
+        >
+          {showLimits ? "Hide limits" : "Configure limits"}
+        </button>
+      )}
+
+      {showLimits && cacheSettings && (
+        <div className="space-y-2 pt-1">
+          <div className="grid grid-cols-2 gap-2">
+            {CACHE_LIMIT_FIELDS.map(({ key, label, unit }) => (
+              <label key={key} className="text-[10px] text-muted-foreground space-y-0.5 block">
+                <span className="block truncate">{label} ({unit})</span>
+                <input
+                  type="number"
+                  min={1}
+                  value={draft[key] ?? ""}
+                  onChange={(e) => setDraft((prev) => ({ ...prev, [key]: e.target.value }))}
+                  className="w-full px-2 py-1 rounded-lg bg-background border border-border/40 text-xs font-mono text-foreground focus:outline-none focus:border-brand-primary"
+                />
+              </label>
+            ))}
+          </div>
+          {saveError && <p className="text-[10px] text-destructive">{saveError}</p>}
+          <button
+            type="button"
+            onClick={() => void handleSave()}
+            disabled={saving}
+            className="w-full text-xs font-semibold gradient-brand text-[#060e20] rounded-lg py-1.5 hover:opacity-90 transition-opacity disabled:opacity-50"
+          >
+            {saving ? "Saving…" : "Save Limits"}
+          </button>
+        </div>
+      )}
+
+      <button
+        type="button"
+        onClick={() => onClear("all")}
+        className="w-full text-xs text-destructive border border-destructive/40 rounded-lg py-1.5 hover:bg-destructive/10 transition-colors"
+      >
+        Clear All
+      </button>
+    </div>
+  );
 }
 
 function SidebarNavItem({
@@ -480,6 +641,7 @@ export default function Dashboard() {
   const [renameFolderValue, setRenameFolderValue] = useState('');
   const [isRenamingFolder, setIsRenamingFolder] = useState(false);
   const [cacheStats, setCacheStats] = useState<CacheStats | null>(null);
+  const [cacheSettings, setCacheSettings] = useState<CacheSettingsData | null>(null);
   const [showCachePanel, setShowCachePanel] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState<{
     open: boolean;
@@ -1102,6 +1264,7 @@ export default function Dashboard() {
             ),
             status: (
               job.status === "compressing" ? "pending"       // BullMQ retries the job
+              : job.status === "transcoding" ? "pending"     // BullMQ retries the job
               : job.status === "confirming" ? "preview_ready" // let user retry confirm
               : job.status
             ) as CompressJob["status"],
@@ -1112,7 +1275,7 @@ export default function Dashboard() {
   }, [user?.username]);
 
   // Poll for queue updates every 5 s when jobs are active
-  const hasActiveJobs = compressQueue.some(j => j.status === "pending" || j.status === "compressing");
+  const hasActiveJobs = compressQueue.some(j => j.status === "pending" || j.status === "compressing" || j.status === "transcoding");
   useEffect(() => {
     if (!hasActiveJobs || !user) return;
     const token = getAuthToken();
@@ -1804,6 +1967,27 @@ export default function Dashboard() {
     return selectedAssets.filter(canCompressAsset);
   }, [selectedAssets]);
 
+  // Ordered list of files in the current view, used for viewer prev/next navigation
+  const viewerNavAssets = useMemo(() => {
+    return sortedFolderChildren
+      .filter((node) => node.type === "file" && node.mediaAsset)
+      .map((node) => node.mediaAsset!);
+  }, [sortedFolderChildren]);
+
+  const viewerNavIndex = useMemo(() => {
+    if (!selectedAsset) return -1;
+    return viewerNavAssets.findIndex((a) => a.id === selectedAsset.id);
+  }, [selectedAsset, viewerNavAssets]);
+
+  const handleViewerNavigate = useCallback((direction: 1 | -1) => {
+    setSelectedAsset((prev) => {
+      if (!prev) return prev;
+      const idx = viewerNavAssets.findIndex((a) => a.id === prev.id);
+      if (idx === -1) return prev;
+      return viewerNavAssets[idx + direction] ?? prev;
+    });
+  }, [viewerNavAssets]);
+
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (sortMenuRef.current && !sortMenuRef.current.contains(e.target as Node)) {
@@ -1846,6 +2030,29 @@ export default function Dashboard() {
     const id = window.setInterval(fetchCacheStats, 10_000);
     return () => window.clearInterval(id);
   }, [user?.role, fetchCacheStats]);
+
+  useEffect(() => {
+    if (user?.role !== "admin") return;
+    const token = getAuthToken();
+    if (!token) return;
+    const client = createGraphQLClient(token);
+    client
+      .request<{ cacheSettings: CacheSettingsData }>(CACHE_SETTINGS_QUERY)
+      .then((data) => setCacheSettings(data.cacheSettings))
+      .catch(() => { /* non-critical */ });
+  }, [user?.role]);
+
+  const handleSaveCacheSettings = useCallback(async (input: Partial<CacheSettingsData>) => {
+    const token = getAuthToken();
+    if (!token) throw new Error("Not authenticated");
+    const client = createGraphQLClient(token);
+    const data = await client.request<{ updateCacheSettings: CacheSettingsData }>(
+      UPDATE_CACHE_SETTINGS_MUTATION,
+      { input }
+    );
+    setCacheSettings(data.updateCacheSettings);
+    void fetchCacheStats();
+  }, [fetchCacheStats]);
 
   useEffect(() => {
     if (!currentPath) return;
@@ -2067,6 +2274,7 @@ export default function Dashboard() {
         {/* Nav */}
         <nav className="flex-1 px-3 space-y-0.5">
           <SidebarNavItem icon={Folder} label="Collections" active onClick={() => { setCurrentPath(rootPath); setFolderHistory([]); }} />
+          <SidebarNavItem icon={CalendarDays} label="Timeline" onClick={() => navigate("/timeline")} />
           {(user?.role === "admin" || user?.role === "editor") && (
             <SidebarNavItem
               icon={ListTodo}
@@ -2112,33 +2320,12 @@ export default function Dashboard() {
                 </span>
               </button>
               {showCachePanel && (
-                <div className="px-3 pb-3 pt-2 space-y-2 border-t border-border/20">
-                  {(["thumbnails", "previews", "hls", "transcoded"] as const).map((key) => {
-                    const s = cacheStats[key];
-                    return (
-                      <div key={key} className="flex items-center justify-between gap-2 text-xs">
-                        <span className="text-muted-foreground truncate">{s.label}</span>
-                        <div className="flex items-center gap-2 flex-shrink-0">
-                          <span className="font-mono text-foreground">{formatBytes(s.bytes)}</span>
-                          <button
-                            type="button"
-                            onClick={() => void handleClearCache(key)}
-                            className="text-destructive hover:underline"
-                          >
-                            Clear
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                  <button
-                    type="button"
-                    onClick={() => void handleClearCache("all")}
-                    className="w-full text-xs text-destructive border border-destructive/40 rounded-lg py-1.5 hover:bg-destructive/10 transition-colors"
-                  >
-                    Clear All
-                  </button>
-                </div>
+                <CachePanelBody
+                  cacheStats={cacheStats}
+                  cacheSettings={cacheSettings}
+                  onClear={(type) => void handleClearCache(type)}
+                  onSaveSettings={handleSaveCacheSettings}
+                />
               )}
             </div>
           )}
@@ -2229,6 +2416,7 @@ export default function Dashboard() {
             <div className="absolute inset-0 bg-black/50" onClick={() => setMobileMenuOpen(false)} />
             <div className="relative w-64 bg-card h-full flex flex-col p-4 space-y-1 shadow-ambient">
               <SidebarNavItem icon={Folder} label="Collections" active onClick={() => { setCurrentPath(rootPath); setFolderHistory([]); setMobileMenuOpen(false); }} />
+              <SidebarNavItem icon={CalendarDays} label="Timeline" onClick={() => { navigate("/timeline"); setMobileMenuOpen(false); }} />
               {(user?.role === "admin" || user?.role === "editor") && (
                 <SidebarNavItem
                   icon={ListTodo}
@@ -2315,33 +2503,12 @@ export default function Dashboard() {
                       </span>
                     </button>
                     {showCachePanel && (
-                      <div className="px-3 pb-3 pt-2 space-y-2 border-t border-border/20">
-                        {(["thumbnails", "previews", "hls", "transcoded"] as const).map((key) => {
-                          const s = cacheStats[key];
-                          return (
-                            <div key={key} className="flex items-center justify-between gap-2 text-xs">
-                              <span className="text-muted-foreground truncate">{s.label}</span>
-                              <div className="flex items-center gap-2 flex-shrink-0">
-                                <span className="font-mono text-foreground">{formatBytes(s.bytes)}</span>
-                                <button
-                                  type="button"
-                                  onClick={() => void handleClearCache(key)}
-                                  className="text-destructive hover:underline"
-                                >
-                                  Clear
-                                </button>
-                              </div>
-                            </div>
-                          );
-                        })}
-                        <button
-                          type="button"
-                          onClick={() => void handleClearCache("all")}
-                          className="w-full text-xs text-destructive border border-destructive/40 rounded-lg py-1.5 hover:bg-destructive/10 transition-colors"
-                        >
-                          Clear All
-                        </button>
-                      </div>
+                      <CachePanelBody
+                        cacheStats={cacheStats}
+                        cacheSettings={cacheSettings}
+                        onClear={(type) => void handleClearCache(type)}
+                        onSaveSettings={handleSaveCacheSettings}
+                      />
                     )}
                   </div>
                 )}
@@ -3014,6 +3181,9 @@ export default function Dashboard() {
         onClose={handleCloseViewer}
         apiUrl={API_URL}
         userRole={user?.role}
+        onNavigate={handleViewerNavigate}
+        hasPrev={viewerNavIndex > 0}
+        hasNext={viewerNavIndex >= 0 && viewerNavIndex < viewerNavAssets.length - 1}
         onCompress={selectedAsset && canCompressAsset(selectedAsset) ? () => {
           if (selectedAsset) {
             setCompressDialogAssets([selectedAsset]);

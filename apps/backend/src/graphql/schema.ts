@@ -22,7 +22,20 @@ export const schema = `
     indexedAt: String!
     createdAt: String!
     updatedAt: String!
+    capturedAt: String
+    capturedAtPrecision: String
     tags: [Tag!]!
+  }
+
+  type TimelineBucket {
+    period: String!
+    count: Int!
+    coverAssets: [MediaAsset!]!
+  }
+
+  type TimelineAssetsResult {
+    assets: [MediaAsset!]!
+    totalCount: Int!
   }
 
   type Tag {
@@ -82,6 +95,9 @@ export const schema = `
     mediaAssetsByTag(tagName: String!, limit: Int, offset: Int): [MediaAsset!]!
     cacheStats: CacheStats!
     search(term: String, mediaType: String, sortBy: String, limit: Int, minSize: Float, maxSize: Float, path: String): SearchResults!
+    timelineBuckets(granularity: String!, coverLimit: Int): [TimelineBucket!]!
+    timelineAssets(from: String!, to: String!, limit: Int, offset: Int): TimelineAssetsResult!
+    cacheSettings: CacheSettings!
   }
 
   type Mutation {
@@ -100,7 +116,7 @@ export const schema = `
     compressMediaAsset(id: ID!, quality: Int, overwrite: Boolean): MediaAsset!
     refreshMediaLibrary: String!
     generateThumbnailsForPath(path: String): Int!
-    generateThumbnailsForAssets(ids: [ID!]!, sessionId: String): Int!
+    generateThumbnailsForAssets(ids: [ID!]!, sessionId: String, force: Boolean): Int!
     cancelThumbnailJobsForSession(sessionId: String!): Int!
     previewCompressAssets(ids: [ID!]!, options: CompressOptionsInput!): [CompressPreviewResult!]!
     confirmCompressReplace(ids: [ID!]!): [MediaAsset!]!
@@ -118,6 +134,25 @@ export const schema = `
     deleteTag(name: String!): Boolean!
     clearCache(type: String!): CacheStats!
     clearAuditLogs(startDate: String!, endDate: String!): Int!
+    updateCacheSettings(input: CacheSettingsInput!): CacheSettings!
+  }
+
+  type CacheSettings {
+    thumbnailCacheMaxMb: Int!
+    previewCacheMaxMb: Int!
+    hlsCacheMaxMb: Int!
+    transcodedCacheMaxMb: Int!
+    previewCacheMaxAgeDays: Int!
+    hlsCacheMaxAgeHours: Int!
+  }
+
+  input CacheSettingsInput {
+    thumbnailCacheMaxMb: Int
+    previewCacheMaxMb: Int
+    hlsCacheMaxMb: Int
+    transcodedCacheMaxMb: Int
+    previewCacheMaxAgeDays: Int
+    hlsCacheMaxAgeHours: Int
   }
 
   input CompressOptionsInput {
