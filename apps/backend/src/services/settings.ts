@@ -76,6 +76,57 @@ export async function updateCacheSettings(input: Partial<CacheSettings>): Promis
   return next;
 }
 
+/* ── Timeline settings ─────────────────────────────────────────── */
+
+export type TimelineDateSource = 'folder' | 'exif' | 'created' | 'modified';
+
+export type TimelineSettings = {
+  dateSource: TimelineDateSource;
+};
+
+const TIMELINE_SETTINGS_KEY = 'timeline_settings';
+const TIMELINE_DATE_SOURCES: TimelineDateSource[] = ['folder', 'exif', 'created', 'modified'];
+const TIMELINE_DEFAULTS: TimelineSettings = { dateSource: 'folder' };
+
+let cachedTimeline: TimelineSettings | null = null;
+
+export async function getTimelineSettings(): Promise<TimelineSettings> {
+  if (cachedTimeline) return cachedTimeline;
+  try {
+    const result = await db.query('SELECT value FROM app_settings WHERE key = $1', [TIMELINE_SETTINGS_KEY]);
+    const stored = result.rows.length > 0 ? result.rows[0].value : {};
+    const dateSource = TIMELINE_DATE_SOURCES.includes(stored?.dateSource)
+      ? (stored.dateSource as TimelineDateSource)
+      : TIMELINE_DEFAULTS.dateSource;
+    cachedTimeline = { dateSource };
+    return cachedTimeline;
+  } catch (error) {
+    console.warn('[Settings] Could not load timeline settings, using defaults:', error);
+    return TIMELINE_DEFAULTS;
+  }
+}
+
+export async function updateTimelineSettings(input: Partial<TimelineSettings>): Promise<TimelineSettings> {
+  const current = await getTimelineSettings();
+  const next = { ...current };
+
+  if (input.dateSource !== undefined) {
+    if (!TIMELINE_DATE_SOURCES.includes(input.dateSource)) {
+      throw new Error(`dateSource must be one of: ${TIMELINE_DATE_SOURCES.join(', ')}`);
+    }
+    next.dateSource = input.dateSource;
+  }
+
+  await db.query(
+    `INSERT INTO app_settings (key, value, updated_at) VALUES ($1, $2, NOW())
+     ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = NOW()`,
+    [TIMELINE_SETTINGS_KEY, JSON.stringify(next)]
+  );
+
+  cachedTimeline = next;
+  return next;
+}
+
 /** Effective byte/ms values for cache maintenance, honoring DB overrides. */
 export async function getEffectiveCacheLimits() {
   const s = await getCacheSettings();

@@ -59,7 +59,7 @@ mda/
 ### Backend flow
 - Entry: `src/index.ts` (Fastify server, port 4000)
 - GraphQL: `src/graphql/schema.ts` + `src/graphql/resolvers.ts` via Mercurius
-- Services: `media-indexer`, `thumbnail` (sharp + libheif-js + FFmpeg), `video-transcode`, `queue` (BullMQ: thumbnails, compression, batch transcode), `auth` (bcrypt + JWT), `audit`, `media-watcher` (chokidar), `cache-maintenance`, `capture-date` (timeline dates from folder/filename/mtime), `settings` (DB-backed cache settings)
+- Services: `media-indexer`, `thumbnail` (sharp + libheif-js + FFmpeg), `video-transcode`, `queue` (BullMQ: thumbnails, compression, batch transcode), `auth` (bcrypt + JWT), `audit`, `media-watcher` (chokidar), `cache-maintenance`, `capture-date` (timeline dates from folder/filename/mtime; admin-selectable source: folder | created | modified), `settings` (DB-backed cache + timeline settings)
 - DB: raw `pg` client; migrations in `src/db/migrate.ts`
 
 ### Frontend flow

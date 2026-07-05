@@ -98,6 +98,11 @@ export const schema = `
     timelineBuckets(granularity: String!, coverLimit: Int): [TimelineBucket!]!
     timelineAssets(from: String!, to: String!, limit: Int, offset: Int): TimelineAssetsResult!
     cacheSettings: CacheSettings!
+    timelineSettings: TimelineSettings!
+  }
+
+  type TimelineSettings {
+    dateSource: String!
   }
 
   type Mutation {
@@ -135,6 +140,7 @@ export const schema = `
     clearCache(type: String!): CacheStats!
     clearAuditLogs(startDate: String!, endDate: String!): Int!
     updateCacheSettings(input: CacheSettingsInput!): CacheSettings!
+    updateTimelineDateSource(dateSource: String!): TimelineSettings!
   }
 
   type CacheSettings {
