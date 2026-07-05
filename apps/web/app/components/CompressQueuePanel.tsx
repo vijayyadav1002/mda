@@ -18,9 +18,10 @@ interface CompressPreviewResult {
 
 export interface CompressJob {
   id: string;
+  kind?: "compress" | "transcode";
   assets: MediaAsset[];
-  options: { resolution: string; quality: number };
-  status: "pending" | "compressing" | "preview_ready" | "confirming" | "done" | "error" | "cancelled";
+  options?: { resolution: string; quality: number };
+  status: "pending" | "compressing" | "transcoding" | "preview_ready" | "confirming" | "done" | "error" | "cancelled";
   progress: Record<string, { percent: number; etaSeconds: number | null }>;
   currentFileId: string | null;
   previews: CompressPreviewResult[];
@@ -65,6 +66,7 @@ function eta(s: number | null): string {
 const STATUS: Record<CompressJob["status"], { label: string; color: string; bg: string; spin?: boolean }> = {
   pending:       { label: "Pending",        color: "text-muted-foreground", bg: "bg-muted" },
   compressing:   { label: "Compressing",    color: "text-brand-primary",    bg: "bg-brand-primary/10", spin: true },
+  transcoding:   { label: "Transcoding",    color: "text-brand-primary",    bg: "bg-brand-primary/10", spin: true },
   preview_ready: { label: "Review Needed",  color: "text-amber-400",        bg: "bg-amber-400/10" },
   confirming:    { label: "Applying",       color: "text-brand-primary",    bg: "bg-brand-primary/10", spin: true },
   done:          { label: "Done",           color: "text-emerald-400",      bg: "bg-emerald-400/10" },
@@ -140,8 +142,9 @@ export function CompressQueuePanel({
                       {job.assets.length === 1 ? job.assets[0].fileName : `${job.assets.length} files`}
                     </p>
                     <p className={`text-xs mt-0.5 ${cfg.color}`}>
+                      {job.kind === "transcode" && "Transcode · "}
                       {cfg.label}
-                      {job.status === "compressing" && currentAsset && ` · ${currentAsset.fileName}`}
+                      {(job.status === "compressing" || job.status === "transcoding") && currentAsset && ` · ${currentAsset.fileName}`}
                       {(job.status === "done" || job.status === "preview_ready") && job.previews.length > 0 && (
                         <span className="text-emerald-400"> · {savings(totalOrig.toString(), totalComp.toString())} saved</span>
                       )}
@@ -161,8 +164,11 @@ export function CompressQueuePanel({
                       <div className="pt-3 flex items-center justify-between gap-3">
                         <p className="text-xs text-muted-foreground">
                           Waiting · {job.assets.length} file{job.assets.length !== 1 ? "s" : ""}
-                          {" · "}Quality {job.options.quality}%
-                          {job.options.resolution !== "original" ? ` · ${job.options.resolution}` : ""}
+                          {job.kind === "transcode"
+                            ? " · Transcode to web format"
+                            : job.options
+                              ? ` · Quality ${job.options.quality}%${job.options.resolution !== "original" ? ` · ${job.options.resolution}` : ""}`
+                              : ""}
                         </p>
                         <button
                           type="button"
@@ -176,8 +182,8 @@ export function CompressQueuePanel({
                       </div>
                     )}
 
-                    {/* COMPRESSING */}
-                    {job.status === "compressing" && (
+                    {/* COMPRESSING / TRANSCODING */}
+                    {(job.status === "compressing" || job.status === "transcoding") && (
                       <div className="pt-3 space-y-3">
                         <div className="flex justify-end">
                           <button
@@ -377,8 +383,20 @@ export function CompressQueuePanel({
                       </div>
                     )}
 
+                    {/* DONE (transcode) */}
+                    {job.status === "done" && job.kind === "transcode" && (
+                      <div className="pt-3 flex items-center justify-between gap-3">
+                        <p className="text-xs text-emerald-400">
+                          Transcoding complete — videos now play instantly from the cache.
+                        </p>
+                        <button type="button" onClick={() => onDismiss(job.id)} className="text-xs text-muted-foreground hover:text-foreground transition-colors flex-shrink-0">
+                          Dismiss
+                        </button>
+                      </div>
+                    )}
+
                     {/* DONE */}
-                    {job.status === "done" && job.previews.length > 0 && (
+                    {job.status === "done" && job.kind !== "transcode" && job.previews.length > 0 && (
                       <div className="pt-3 flex items-center justify-between">
                         <p className="text-xs text-emerald-400">
                           Saved {savings(totalOrig.toString(), totalComp.toString())}

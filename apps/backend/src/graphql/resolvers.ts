@@ -4,8 +4,10 @@ import { logAudit } from '../services/audit.js';
 import { compressImage, compressVideo, compressImageAdvanced, compressVideoAdvanced, compressPdfAdvanced } from '../services/thumbnail.js';
 import { enqueueMediaRefresh, addToThumbnailQueue, cancelThumbnailSession } from '../services/queue.js';
 import { cleanupDeletedAssetCaches } from '../services/media-cleanup.js';
-import { getCacheStats, clearCacheByType } from '../services/cache-maintenance.js';
+import { getCacheStats, clearCacheByType, runCacheMaintenanceOnce } from '../services/cache-maintenance.js';
+import { getCacheSettings, updateCacheSettings as updateCacheSettingsService } from '../services/settings.js';
 import { indexFile } from '../services/media-indexer.js';
+import { updateCaptureDateForAsset } from '../services/capture-date.js';
 import { canCompressFile, canThumbnailFile } from '../services/file-types.js';
 import {
   normalizeTagName,
@@ -39,7 +41,9 @@ const mapMediaAssetRow = (row: any) => ({
   transcodedUrl: row.transcoded_path ? `/transcoded/${path.basename(row.transcoded_path)}` : null,
   indexedAt: row.indexed_at.toISOString(),
   createdAt: row.created_at.toISOString(),
-  updatedAt: row.updated_at.toISOString()
+  updatedAt: row.updated_at.toISOString(),
+  capturedAt: row.captured_at ? row.captured_at.toISOString() : null,
+  capturedAtPrecision: row.captured_at_precision ?? null
 });
 
 const mapTagRow = (row: any) => ({
@@ -422,6 +426,91 @@ export const resolvers = {
       return getCacheStats();
     },
 
+    cacheSettings: async (_: any, __: any, context: GraphQLContext) => {
+      if (!context.user || context.user.role !== 'admin') {
+        throw new Error('Admin access required');
+      }
+      return getCacheSettings();
+    },
+
+    timelineBuckets: async (
+      _: any,
+      args: { granularity: string; coverLimit?: number },
+      context: GraphQLContext
+    ) => {
+      if (!context.user) throw new Error('Unauthorized');
+
+      const granularity = ['year', 'month', 'day'].includes(args.granularity) ? args.granularity : 'month';
+      const coverLimit = Math.min(Math.max(args.coverLimit ?? 0, 0), 12);
+
+      const buckets = await db.query(
+        `SELECT date_trunc('${granularity}', captured_at) AS period, COUNT(*)::int AS count
+         FROM media_assets
+         WHERE captured_at IS NOT NULL
+           AND (mime_type LIKE 'image/%' OR mime_type LIKE 'video/%')
+         GROUP BY period
+         ORDER BY period DESC`
+      );
+
+      const results = [];
+      for (const bucket of buckets.rows) {
+        let coverAssets: any[] = [];
+        if (coverLimit > 0) {
+          const covers = await db.query(
+            `SELECT * FROM media_assets
+             WHERE captured_at IS NOT NULL
+               AND (mime_type LIKE 'image/%' OR mime_type LIKE 'video/%')
+               AND date_trunc('${granularity}', captured_at) = $1
+             ORDER BY thumbnail_path IS NULL, captured_at DESC, file_name ASC
+             LIMIT $2`,
+            [bucket.period, coverLimit]
+          );
+          coverAssets = covers.rows.map(mapMediaAssetRow);
+        }
+        results.push({
+          period: bucket.period.toISOString(),
+          count: bucket.count,
+          coverAssets
+        });
+      }
+      return results;
+    },
+
+    timelineAssets: async (
+      _: any,
+      args: { from: string; to: string; limit?: number; offset?: number },
+      context: GraphQLContext
+    ) => {
+      if (!context.user) throw new Error('Unauthorized');
+
+      const from = new Date(args.from);
+      const to = new Date(args.to);
+      if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+        throw new Error('Invalid date range');
+      }
+      const limit = Math.min(args.limit ?? 200, 500);
+      const offset = args.offset ?? 0;
+
+      const where = `captured_at >= $1 AND captured_at < $2
+           AND (mime_type LIKE 'image/%' OR mime_type LIKE 'video/%')`;
+
+      const [assets, total] = await Promise.all([
+        db.query(
+          `SELECT * FROM media_assets
+           WHERE ${where}
+           ORDER BY captured_at DESC, file_name ASC
+           LIMIT $3 OFFSET $4`,
+          [from, to, limit, offset]
+        ),
+        db.query(`SELECT COUNT(*)::int AS count FROM media_assets WHERE ${where}`, [from, to])
+      ]);
+
+      return {
+        assets: assets.rows.map(mapMediaAssetRow),
+        totalCount: total.rows[0].count
+      };
+    },
+
     search: async (
       _: any,
       args: { term?: string; mediaType?: string; sortBy?: string; limit?: number; minSize?: number; maxSize?: number; path?: string },
@@ -761,6 +850,7 @@ export const resolvers = {
         'UPDATE media_assets SET file_path = $1, updated_at = NOW() WHERE id = $2',
         [newPath, args.id]
       );
+      await updateCaptureDateForAsset(args.id, newPath);
 
       await logAudit(context.user.id, 'MOVE_ASSET', 'media_asset', parseInt(args.id, 10), {
         oldPath,
@@ -812,6 +902,7 @@ export const resolvers = {
         'UPDATE media_assets SET file_path = $1, file_name = $2, updated_at = NOW() WHERE id = $3',
         [newPath, args.newName, args.id]
       );
+      await updateCaptureDateForAsset(args.id, newPath);
 
       await logAudit(context.user.id, 'RENAME_ASSET', 'media_asset', parseInt(args.id, 10), {
         oldName: asset.file_name,
@@ -1045,7 +1136,7 @@ export const resolvers = {
       return queuedCount;
     },
 
-    generateThumbnailsForAssets: async (_: any, args: { ids: string[]; sessionId?: string | null }, context: GraphQLContext) => {
+    generateThumbnailsForAssets: async (_: any, args: { ids: string[]; sessionId?: string | null; force?: boolean | null }, context: GraphQLContext) => {
       if (!context.user) throw new Error('Unauthorized');
 
       const numericIds = Array.from(
@@ -1072,17 +1163,20 @@ export const resolvers = {
 
       let queuedCount = 0;
       for (const row of result.rows) {
-        const thumbPath = row.thumbnail_path as string | null;
-        let hasUsableThumbnail = false;
-        if (thumbPath) {
-          try {
-            const thumbStat = await fs.stat(thumbPath);
-            hasUsableThumbnail = thumbStat.size > 0;
-          } catch {
-            hasUsableThumbnail = false;
+        // force=true regenerates even when a usable thumbnail already exists
+        if (!args.force) {
+          const thumbPath = row.thumbnail_path as string | null;
+          let hasUsableThumbnail = false;
+          if (thumbPath) {
+            try {
+              const thumbStat = await fs.stat(thumbPath);
+              hasUsableThumbnail = thumbStat.size > 0;
+            } catch {
+              hasUsableThumbnail = false;
+            }
           }
+          if (hasUsableThumbnail) continue;
         }
-        if (hasUsableThumbnail) continue;
 
         const filePath = row.file_path as string;
         const mimeType = (row.mime_type as string | null) ?? '';
@@ -1414,6 +1508,7 @@ export const resolvers = {
           'UPDATE media_assets SET file_path = $1, updated_at = NOW() WHERE id = $2',
           [newAssetPath, asset.id]
         );
+        await updateCaptureDateForAsset(asset.id, newAssetPath);
       }
 
       await logAudit(context.user.id, 'RENAME_FOLDER', 'directory', undefined, {
@@ -1479,6 +1574,7 @@ export const resolvers = {
           'UPDATE media_assets SET file_path = $1, updated_at = NOW() WHERE id = $2',
           [newAssetPath, asset.id]
         );
+        await updateCaptureDateForAsset(asset.id, newAssetPath);
       }
 
       await logAudit(context.user.id, 'MOVE_FOLDER', 'directory', undefined, {
@@ -1677,6 +1773,23 @@ export const resolvers = {
       if (!allowed.includes(args.type)) throw new Error(`Unknown cache type: ${args.type}`);
       await clearCacheByType(args.type as 'thumbnails' | 'previews' | 'hls' | 'transcoded' | 'all');
       return getCacheStats();
+    },
+
+    updateCacheSettings: async (
+      _: any,
+      args: { input: Partial<import('../services/settings.js').CacheSettings> },
+      context: GraphQLContext
+    ) => {
+      if (!context.user || context.user.role !== 'admin') {
+        throw new Error('Admin access required');
+      }
+      const updated = await updateCacheSettingsService(args.input);
+      await logAudit(context.user.id, 'UPDATE_CACHE_SETTINGS', 'settings', undefined, { ...args.input });
+      // Apply new limits right away so shrinking a cache takes effect immediately.
+      void runCacheMaintenanceOnce().catch((error) => {
+        console.error('[CacheMaintenance] Post-settings-update run failed:', error);
+      });
+      return updated;
     }
   }
 };
