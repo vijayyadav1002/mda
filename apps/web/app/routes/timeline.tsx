@@ -1,7 +1,7 @@
 import type { MetaFunction } from "@remix-run/node";
 import { useNavigate } from "@remix-run/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, CalendarDays, CheckSquare, Film, ImageIcon, ListTodo, Minus, Play, Plus, RefreshCw, Square, Tag as TagIcon, X } from "lucide-react";
+import { ArrowLeft, CalendarDays, Check, CheckSquare, Film, ImageIcon, ListTodo, Minus, Play, Plus, RefreshCw, Settings, Square, Tag as TagIcon, X } from "lucide-react";
 import { MediaAssetViewer } from "~/components/MediaAssetViewer";
 import { CompressDialog } from "~/components/CompressDialog";
 import { TagDialog, type TagSuggestion } from "~/components/TagDialog";
@@ -50,6 +50,23 @@ const APPLY_TAGS_MUTATION = `
     applyTagsToAssets(assetIds: $assetIds, tagNames: $tagNames) { id tags { id name } }
   }
 `;
+
+const TIMELINE_SETTINGS_QUERY = `
+  query TimelineSettings { timelineSettings { dateSource } }
+`;
+
+const UPDATE_TIMELINE_DATE_SOURCE_MUTATION = `
+  mutation UpdateTimelineDateSource($dateSource: String!) {
+    updateTimelineDateSource(dateSource: $dateSource) { dateSource }
+  }
+`;
+
+const DATE_SOURCE_OPTIONS: Array<{ value: string; label: string; description: string }> = [
+  { value: "folder", label: "Folder & file names", description: "Dates from folder names like 2022-02, then filename patterns (default)" },
+  { value: "exif", label: "Embedded metadata (EXIF)", description: "Capture date written inside the file by the camera; falls back to folder & file names when missing. Slower to re-index" },
+  { value: "created", label: "File creation time", description: "When the file was created on disk" },
+  { value: "modified", label: "File modified time", description: "When the file was last changed" },
+];
 
 /* ── Types ──────────────────────────────────────────────────────── */
 
@@ -224,6 +241,10 @@ export default function Timeline() {
   const [tagSuggestions, setTagSuggestions] = useState<TagSuggestion[]>([]);
   const [isCompressDialogOpen, setIsCompressDialogOpen] = useState(false);
   const [toast, setToast] = useState<{ message: string; queueLink?: boolean } | null>(null);
+  const [showSettingsMenu, setShowSettingsMenu] = useState(false);
+  const [dateSource, setDateSource] = useState<string>("folder");
+  const [dateSourceSaving, setDateSourceSaving] = useState(false);
+  const settingsMenuRef = useRef<HTMLDivElement>(null);
 
   const gridRef = useRef<HTMLDivElement>(null);
   const sectionObserverRef = useRef<IntersectionObserver | null>(null);
@@ -693,6 +714,67 @@ export default function Timeline() {
     }
   };
 
+  /* ── Timeline settings (admin) ── */
+
+  // Load current date source when the settings menu is first opened
+  useEffect(() => {
+    if (!showSettingsMenu) return;
+    const token = getAuthToken();
+    if (!token) return;
+    createGraphQLClient(token)
+      .request<{ timelineSettings: { dateSource: string } }>(TIMELINE_SETTINGS_QUERY)
+      .then((data) => setDateSource(data.timelineSettings.dateSource))
+      .catch(() => {});
+  }, [showSettingsMenu]);
+
+  // Close the settings menu on outside click
+  useEffect(() => {
+    if (!showSettingsMenu) return;
+    const handler = (e: MouseEvent) => {
+      if (settingsMenuRef.current && !settingsMenuRef.current.contains(e.target as Node)) {
+        setShowSettingsMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [showSettingsMenu]);
+
+  const reloadTimeline = useCallback(() => {
+    const token = getAuthToken();
+    if (!token) return;
+    setSections({});
+    setVisibleMonths(new Set());
+    setYearBuckets(null);
+    setMonthCovers(null);
+    createGraphQLClient(token)
+      .request<{ timelineBuckets: Bucket[] }>(TIMELINE_BUCKETS_QUERY, { granularity: "month", coverLimit: 0 })
+      .then((data) => setMonthBuckets(data.timelineBuckets))
+      .catch(() => {});
+  }, []);
+
+  const handleChangeDateSource = async (value: string) => {
+    if (value === dateSource || dateSourceSaving) return;
+    const token = getAuthToken();
+    if (!token) return;
+    setDateSourceSaving(true);
+    try {
+      const data = await createGraphQLClient(token).request<{ updateTimelineDateSource: { dateSource: string } }>(
+        UPDATE_TIMELINE_DATE_SOURCE_MUTATION,
+        { dateSource: value }
+      );
+      setDateSource(data.updateTimelineDateSource.dateSource);
+      setShowSettingsMenu(false);
+      showToast("Date source updated — re-dating library in the background…");
+      // Give the backend a moment to recompute, then reload. Large libraries
+      // may keep reshuffling for a while; scrolling refetches as needed.
+      window.setTimeout(reloadTimeline, 4000);
+    } catch (err: any) {
+      showToast(`Failed to update date source: ${err?.response?.errors?.[0]?.message ?? err.message}`);
+    } finally {
+      setDateSourceSaving(false);
+    }
+  };
+
   const handleRegenerateThumbnails = async () => {
     const token = getAuthToken();
     if (!token || selectedAssets.length === 0) return;
@@ -846,6 +928,55 @@ export default function Timeline() {
           </div>
 
           <div className="flex items-center gap-2">
+          {/* Timeline settings (admin only) */}
+          {userRole === "admin" && (
+            <div className="relative" ref={settingsMenuRef}>
+              <button
+                type="button"
+                onClick={() => setShowSettingsMenu((p) => !p)}
+                className={`p-2 rounded-xl border transition-all ${
+                  showSettingsMenu
+                    ? "bg-accent border-border/50 text-foreground"
+                    : "bg-card border-border/30 text-muted-foreground hover:text-foreground"
+                }`}
+                title="Timeline settings"
+              >
+                <Settings className="w-4 h-4" />
+              </button>
+              {showSettingsMenu && (
+                <div className="absolute right-0 top-full mt-2 w-72 rounded-2xl bg-card border border-border/30 shadow-ambient p-3 z-40">
+                  <p className="text-xs font-manrope font-semibold text-foreground px-1 pb-2">
+                    Timeline date source
+                  </p>
+                  <div className="space-y-1">
+                    {DATE_SOURCE_OPTIONS.map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => void handleChangeDateSource(option.value)}
+                        disabled={dateSourceSaving}
+                        className={`w-full flex items-start gap-2 px-2 py-2 rounded-xl text-left transition-colors disabled:opacity-50 ${
+                          dateSource === option.value ? "bg-accent" : "hover:bg-accent/50"
+                        }`}
+                      >
+                        <span className="w-4 pt-0.5 flex-shrink-0">
+                          {dateSource === option.value && <Check className="w-4 h-4 text-brand-primary" />}
+                        </span>
+                        <span>
+                          <span className="block text-xs font-medium text-foreground">{option.label}</span>
+                          <span className="block text-[10px] text-muted-foreground mt-0.5">{option.description}</span>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[10px] text-muted-foreground px-1 pt-2 border-t border-border/20 mt-2">
+                    Changing this re-dates the whole library in the background.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Select toggle */}
           {canEdit && isGridLevel && (
             <button

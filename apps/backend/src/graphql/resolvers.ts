@@ -5,9 +5,9 @@ import { compressImage, compressVideo, compressImageAdvanced, compressVideoAdvan
 import { enqueueMediaRefresh, addToThumbnailQueue, cancelThumbnailSession } from '../services/queue.js';
 import { cleanupDeletedAssetCaches } from '../services/media-cleanup.js';
 import { getCacheStats, clearCacheByType, runCacheMaintenanceOnce } from '../services/cache-maintenance.js';
-import { getCacheSettings, updateCacheSettings as updateCacheSettingsService } from '../services/settings.js';
+import { getCacheSettings, updateCacheSettings as updateCacheSettingsService, getTimelineSettings, updateTimelineSettings, type TimelineDateSource } from '../services/settings.js';
 import { indexFile } from '../services/media-indexer.js';
-import { updateCaptureDateForAsset } from '../services/capture-date.js';
+import { updateCaptureDateForAsset, recomputeAllCaptureDates } from '../services/capture-date.js';
 import { canCompressFile, canThumbnailFile } from '../services/file-types.js';
 import {
   normalizeTagName,
@@ -431,6 +431,11 @@ export const resolvers = {
         throw new Error('Admin access required');
       }
       return getCacheSettings();
+    },
+
+    timelineSettings: async (_: any, __: any, context: GraphQLContext) => {
+      if (!context.user) throw new Error('Unauthorized');
+      return getTimelineSettings();
     },
 
     timelineBuckets: async (
@@ -1788,6 +1793,26 @@ export const resolvers = {
       // Apply new limits right away so shrinking a cache takes effect immediately.
       void runCacheMaintenanceOnce().catch((error) => {
         console.error('[CacheMaintenance] Post-settings-update run failed:', error);
+      });
+      return updated;
+    },
+
+    updateTimelineDateSource: async (
+      _: any,
+      args: { dateSource: string },
+      context: GraphQLContext
+    ) => {
+      if (!context.user || context.user.role !== 'admin') {
+        throw new Error('Admin access required');
+      }
+      const updated = await updateTimelineSettings({ dateSource: args.dateSource as TimelineDateSource });
+      await logAudit(context.user.id, 'UPDATE_TIMELINE_DATE_SOURCE', 'settings', undefined, {
+        dateSource: updated.dateSource
+      });
+      // Re-date the whole library in the background; the timeline reflects
+      // the new ordering as batches complete.
+      void recomputeAllCaptureDates().catch((error) => {
+        console.error('[CaptureDate] Recompute after date-source change failed:', error);
       });
       return updated;
     }

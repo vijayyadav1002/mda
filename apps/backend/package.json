@@ -21,6 +21,7 @@
     "bullmq": "^5.67.2",
     "chokidar": "^4.0.3",
     "dotenv": "^16.4.5",
+    "exifr": "^7.1.3",
     "fastify": "^5.1.0",
     "fluent-ffmpeg": "^2.1.3",
     "graphql": "^16.9.0",

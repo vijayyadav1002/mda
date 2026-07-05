@@ -5,7 +5,7 @@ A full-stack file library for media, documents, and general files, built with a 
 ## Features
 
 - 📁 **File Library Management** - Index and manage all regular non-hidden files under the library path
-- 🗓️ **Timeline View** - iOS-Photos-style timeline of photos and videos with Years / Months / Grid / Dense zoom levels (pinch, Ctrl+wheel, or on-screen controls), virtualized scrolling, a year scrubber, and multi-select actions. Dates come from folder names (`2022-02`, `2022/02`, `2021-12-25`), filename patterns (`IMG_20240115...`), or file modified time
+- 🗓️ **Timeline View** - iOS-Photos-style timeline of photos and videos with Years / Months / Grid / Dense zoom levels (pinch, Ctrl+wheel, or on-screen controls), virtualized scrolling, a year scrubber, and multi-select actions. By default dates come from folder names (`2022-02`, `2022/02`, `2021-12-25`), filename patterns (`IMG_20240115...`), or file modified time; admins can switch the timeline date source to embedded EXIF metadata (camera capture date, with folder-name fallback), file creation time, or file modified time from the timeline's settings menu (the whole library is re-dated in the background)
 - 🖼️ **Thumbnail Generation** - On-demand thumbnail generation for images, videos, PDFs, Word, Excel, text, and Markdown files, plus force-regeneration from the timeline
 - 📄 **Document Preview** - Preview PDFs, `.docx`, `.xlsx`, `.txt`, and `.md` files inside the app
 - ✏️ **Text Editing** - Edit `.txt` and Markdown files in place

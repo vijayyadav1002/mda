@@ -5,7 +5,7 @@ import { config } from '../config.js';
 import { addToThumbnailQueue } from './queue.js';
 import { cleanupDeletedAssetCaches } from './media-cleanup.js';
 import { classifyFile } from './file-types.js';
-import { resolveCaptureDate, updateCaptureDateForAsset } from './capture-date.js';
+import { resolveCaptureDateAuto, updateCaptureDateForAsset } from './capture-date.js';
 
 type IndexFileResult = 'indexed' | 'up_to_date' | 'thumbnail_requeued' | 'unsupported';
 type IndexOptions = {
@@ -199,7 +199,7 @@ export async function indexFile(filePath: string, options: IndexOptions = {}): P
     }
 
     // Insert into database (without transcoded path - will be generated on-demand)
-    const captureDate = resolveCaptureDate(filePath, stats.mtime);
+    const captureDate = await resolveCaptureDateAuto(filePath, { mtime: stats.mtime, birthtime: stats.birthtime });
     const result = await db.query(
       `INSERT INTO media_assets
        (file_path, file_name, file_size, mime_type, thumbnail_path, captured_at, captured_at_precision, captured_at_source)

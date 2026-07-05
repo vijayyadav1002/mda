@@ -111,10 +111,16 @@ npm start
 - `created_at` - Record creation timestamp
 - `updated_at` - Last update timestamp
 
-Capture dates are derived at index time with folder names taking priority
+Capture dates are derived at index time. The default source is folder names
 (`2022-02`, `2022/02`, `2021-12-25`), then filename patterns
-(`IMG_20240115_093000`), then file modified time. They are recomputed on
-move/rename and backfilled on startup for previously indexed assets.
+(`IMG_20240115_093000`), then file modified time. Admins can switch the
+timeline date source (`updateTimelineDateSource` mutation, exposed in the
+timeline's settings menu) to embedded EXIF metadata (images via exifr, videos
+via ffprobe `creation_time`, falling back to the folder cascade when a file
+has none), file creation time, or file modified time; changing it recomputes
+the whole library in the background. Dates are
+also recomputed on move/rename and backfilled on startup for previously
+indexed assets.
 
 ### App Settings
 - `key` - Setting key (e.g. `cache_settings`)
