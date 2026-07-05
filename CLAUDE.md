@@ -59,21 +59,21 @@ mda/
 ### Backend flow
 - Entry: `src/index.ts` (Fastify server, port 4000)
 - GraphQL: `src/graphql/schema.ts` + `src/graphql/resolvers.ts` via Mercurius
-- Services: `media-indexer`, `thumbnail` (sharp + libheif-js + FFmpeg), `video-transcode`, `queue` (BullMQ), `auth` (bcrypt + JWT), `audit`, `media-watcher` (chokidar), `cache-maintenance`
+- Services: `media-indexer`, `thumbnail` (sharp + libheif-js + FFmpeg), `video-transcode`, `queue` (BullMQ: thumbnails, compression, batch transcode), `auth` (bcrypt + JWT), `audit`, `media-watcher` (chokidar), `cache-maintenance`, `capture-date` (timeline dates from folder/filename/mtime), `settings` (DB-backed cache settings)
 - DB: raw `pg` client; migrations in `src/db/migrate.ts`
 
 ### Frontend flow
 - Remix file-based routing under `app/routes/`
 - GraphQL client: `graphql-request` configured in `app/lib/api.ts`
-- Main route: `dashboard.tsx` (media browser, ~50KB)
-- Auth route: `login.tsx`; admin route: `users.tsx`
+- Main route: `dashboard.tsx` (media browser, ~50KB); `timeline.tsx` (zoomable date-based timeline with multi-select)
+- Auth route: `login.tsx`; admin routes: `users.tsx`, `audit.tsx`
 - UI: Tailwind CSS + shadcn components in `app/components/ui/`
 
 ## Key Conventions
 
 **Environment setup**: every app has `.env.example`. Copy and edit before running. Critical vars: `DATABASE_URL`, `JWT_SECRET`, `MEDIA_LIBRARY_PATH`, `THUMBNAIL_CACHE_PATH`, `VITE_API_URL`.
 
-**Media handling**: `MEDIA_LIBRARY_PATH` points to host media root. In Docker it mounts to `/data/media`. Thumbnail/preview cache is controlled by `*_CACHE_MAX_AGE_*`, `*_CACHE_MAX_MB`, `THUMBNAIL_SIZE`, `THUMBNAILS_ON_DEMAND`, and `LOW_STORAGE_MODE` env vars.
+**Media handling**: `MEDIA_LIBRARY_PATH` points to host media root. In Docker it mounts to `/data/media`. Thumbnail/preview cache is controlled by `*_CACHE_MAX_MB`, `PREVIEW_CACHE_MAX_AGE_DAYS`, `HLS_CACHE_MAX_AGE_HOURS`, `THUMBNAIL_SIZE`, `THUMBNAILS_ON_DEMAND`, and `LOW_STORAGE_MODE` env vars. Thumbnails and transcoded videos have no age-based expiry — size-cap eviction only, oldest first. Env values are defaults; admins override cache limits at runtime via the `app_settings` table (`services/settings.ts`, `updateCacheSettings` mutation). Cache eviction also clears stale `thumbnail_path`/`transcoded_path` DB references.
 
 **DB migrations**: `init-db.sql` is used only for Docker initialization. For development, use `npm run db:migrate`.
 

@@ -5,7 +5,8 @@ A full-stack file library for media, documents, and general files, built with a 
 ## Features
 
 - 📁 **File Library Management** - Index and manage all regular non-hidden files under the library path
-- 🖼️ **Thumbnail Generation** - On-demand thumbnail generation for images, videos, PDFs, Word, Excel, text, and Markdown files
+- 🗓️ **Timeline View** - iOS-Photos-style timeline of photos and videos with Years / Months / Grid / Dense zoom levels (pinch, Ctrl+wheel, or on-screen controls), virtualized scrolling, a year scrubber, and multi-select actions. Dates come from folder names (`2022-02`, `2022/02`, `2021-12-25`), filename patterns (`IMG_20240115...`), or file modified time
+- 🖼️ **Thumbnail Generation** - On-demand thumbnail generation for images, videos, PDFs, Word, Excel, text, and Markdown files, plus force-regeneration from the timeline
 - 📄 **Document Preview** - Preview PDFs, `.docx`, `.xlsx`, `.txt`, and `.md` files inside the app
 - ✏️ **Text Editing** - Edit `.txt` and Markdown files in place
 - 📋 **Copy and Move** - Move, rename, delete, duplicate, upload, and download files and folders
@@ -17,6 +18,8 @@ A full-stack file library for media, documents, and general files, built with a 
 - 🔐 **JWT Authentication** - Secure token-based authentication
 - 📝 **Audit Logging** - Track operations such as move, delete, rename, duplicate, and tagging
 - 🗜️ **Compression Queue** - Compress images, videos, and PDFs with preview/confirm/cancel flow
+- 🎞️ **Transcode Queue** - Batch-transcode selected videos to web-compatible MP4; finished transcodes persist on disk and play instantly (evicted only when the size cap is exceeded, oldest first)
+- ⚙️ **In-App Cache Settings** - Admins can adjust per-cache size limits and retention from the Cache panel; changes are stored in the database and applied immediately
 - 🏷️ **Tags and Search** - Apply tags, filter by tag, and search files/folders
 - ⚙️ **Monorepo Structure** - Turborepo for efficient build caching and task orchestration
 
@@ -194,6 +197,32 @@ query {
     }
   }
 }
+
+# Timeline: photo/video counts per year, month, or day (with optional covers)
+query {
+  timelineBuckets(granularity: "month", coverLimit: 4) {
+    period
+    count
+    coverAssets { id thumbnailUrl }
+  }
+}
+
+# Timeline: assets within a date range
+query {
+  timelineAssets(from: "2022-02-01", to: "2022-03-01", limit: 200, offset: 0) {
+    totalCount
+    assets { id fileName capturedAt capturedAtPrecision thumbnailUrl }
+  }
+}
+
+# Cache settings (admin): read and update runtime cache limits
+query { cacheSettings { thumbnailCacheMaxMb transcodedCacheMaxMb } }
+
+mutation {
+  updateCacheSettings(input: { thumbnailCacheMaxMb: 500 }) {
+    thumbnailCacheMaxMb
+  }
+}
 ```
 
 ### File Mutations (Admin or Editor)
@@ -256,8 +285,9 @@ mutation {
 - `GET /file-preview/:id/pdf` - Stream a PDF inline.
 - `GET /file-preview/:id/content` - Return preview content for `.txt`, `.md`, `.docx`, and `.xlsx`.
 - `PUT /file-preview/:id/content` - Save edits to `.txt` and Markdown files in place.
-- `GET /video/:id/prepare` and related `/video` endpoints - Prepare web playback and HLS.
+- `GET /video/:id/prepare` and related `/video` endpoints - Prepare web playback and HLS. Prefers a cached transcode when one exists.
 - `/api/compress/*` and `/api/queue-state` - Compression preview queue support.
+- `POST /api/transcode/enqueue` - Queue selected videos for background transcoding to web-compatible MP4 (shares the queue panel and cancel endpoint with compression jobs).
 
 ## Project Structure
 
@@ -277,11 +307,13 @@ backend/
 │   ├── services/
 │   │   ├── auth.ts           # Authentication logic
 │   │   ├── audit.ts          # Audit logging
-│   │   ├── cache-maintenance.ts
+│   │   ├── cache-maintenance.ts  # Size/age eviction + stale DB reference sweeps
+│   │   ├── capture-date.ts   # Timeline capture dates (folder name → filename → mtime)
 │   │   ├── file-types.ts     # File classification and capabilities
 │   │   ├── media-indexer.ts  # Media library indexing
 │   │   ├── media-watcher.ts  # Filesystem watcher
-│   │   ├── queue.ts          # BullMQ queues and workers
+│   │   ├── queue.ts          # BullMQ queues and workers (thumbnails, compression, transcode)
+│   │   ├── settings.ts       # DB-backed runtime cache settings (env values as defaults)
 │   │   ├── tags.ts           # Tag management
 │   │   ├── thumbnail.ts      # Thumbnail, document snapshots, compression helpers
 │   │   └── video-transcode.ts
@@ -309,6 +341,8 @@ web/
 │   │   ├── _index.tsx       # Home route
 │   │   ├── login.tsx        # Login page
 │   │   ├── dashboard.tsx    # Main file library dashboard
+│   │   ├── timeline.tsx     # Date-based timeline view (zoomable grid + multi-select)
+│   │   ├── audit.tsx        # Audit log viewer
 │   │   └── users.tsx        # User administration
 │   ├── styles/
 │   │   └── globals.css      # Global styles
@@ -364,7 +398,10 @@ npm start
 - `THUMBNAIL_SIZE` / `THUMBNAIL_QUALITY` - Thumbnail size and JPEG quality
 - `PREVIEW_MAX_DIMENSION` / `PREVIEW_QUALITY` - Preview image size and quality
 - `CACHE_CLEANUP_INTERVAL_MINUTES` - Cache cleanup interval
-- `*_CACHE_MAX_AGE_*` / `*_CACHE_MAX_MB` - TTL and size caps for thumbnail/preview/HLS/transcoded caches
+- `*_CACHE_MAX_MB` - Size caps for thumbnail/preview/HLS/transcoded caches
+- `PREVIEW_CACHE_MAX_AGE_DAYS` / `HLS_CACHE_MAX_AGE_HOURS` - Age limits for previews and HLS only
+
+Thumbnails and transcoded videos are never expired by age — once generated they stay until their size cap is exceeded, then the oldest files are evicted first. Cache limits set via env are defaults only; admins can override them at runtime from the app (sidebar → Cache → Configure limits), and overrides are persisted in the `app_settings` table.
 
 ### Frontend
 
