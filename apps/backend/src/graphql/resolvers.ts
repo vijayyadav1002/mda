@@ -8,6 +8,7 @@ import { getCacheStats, clearCacheByType, runCacheMaintenanceOnce } from '../ser
 import { getCacheSettings, updateCacheSettings as updateCacheSettingsService, getTimelineSettings, updateTimelineSettings, type TimelineDateSource } from '../services/settings.js';
 import { indexFile } from '../services/media-indexer.js';
 import { updateCaptureDateForAsset, recomputeAllCaptureDates } from '../services/capture-date.js';
+import { parseSearchTerm, toLikePattern, toDirLikePattern, buildNameMatcher } from '../services/search-query.js';
 import { canCompressFile, canThumbnailFile } from '../services/file-types.js';
 import {
   normalizeTagName,
@@ -152,7 +153,7 @@ const SEARCH_HARD_CAP = 2000;
 
 const collectMatchingFolders = async (
   rootDir: string,
-  needleLower: string,
+  matches: (folderName: string) => boolean,
   limit: number
 ): Promise<{ name: string; path: string; parentPath: string | null }[]> => {
   const results: { name: string; path: string; parentPath: string | null }[] = [];
@@ -174,7 +175,7 @@ const collectMatchingFolders = async (
       if (!entry.isDirectory()) continue;
 
       const fullPath = path.join(dir, entry.name);
-      if (entry.name.toLowerCase().includes(needleLower)) {
+      if (matches(entry.name)) {
         results.push({ name: entry.name, path: fullPath, parentPath: dir });
       }
       await walk(fullPath, depth + 1, dir);
@@ -184,6 +185,7 @@ const collectMatchingFolders = async (
   await walk(rootDir, 0, null);
   return results;
 };
+
 
 const buildDirectoryNode = async (dirPath: string): Promise<any> => {
   const stats = await fs.stat(dirPath);
@@ -523,16 +525,22 @@ export const resolvers = {
     ) => {
       if (!context.user) throw new Error('Unauthorized');
 
-      const trimmed = (args.term ?? '').trim();
-      const mediaType = args.mediaType === 'image' || args.mediaType === 'video' ? args.mediaType : null;
+      const parsed = parseSearchTerm((args.term ?? '').trim());
+
+      // In-field operators take precedence over UI-level filters
+      const mediaType = parsed.type
+        ?? (args.mediaType === 'image' || args.mediaType === 'video' ? args.mediaType : null);
       const sortBy = ['size-asc', 'size-desc', 'date-asc', 'date-desc'].includes(args.sortBy ?? '')
         ? args.sortBy!
         : null;
 
-      const minSize = typeof args.minSize === 'number' && args.minSize > 0 ? Math.floor(args.minSize) : null;
-      const maxSize = typeof args.maxSize === 'number' && args.maxSize > 0 ? Math.floor(args.maxSize) : null;
+      const minSize = parsed.minSize
+        ?? (typeof args.minSize === 'number' && args.minSize > 0 ? Math.floor(args.minSize) : null);
+      const maxSize = parsed.maxSize
+        ?? (typeof args.maxSize === 'number' && args.maxSize > 0 ? Math.floor(args.maxSize) : null);
 
-      if (trimmed.length === 0 && !mediaType && !minSize && !maxSize) {
+      const hasNamePattern = parsed.nameTerm !== null || parsed.dirTerms.length > 0;
+      if (!hasNamePattern && !mediaType && !minSize && !maxSize && !parsed.tag && !parsed.ext) {
         return { files: [], folders: [] };
       }
 
@@ -545,10 +553,29 @@ export const resolvers = {
       const queryParams: unknown[] = [];
       const conditions: string[] = [];
 
-      if (trimmed.length > 0) {
-        const escapedTerm = trimmed.replace(/[\\%_]/g, (ch) => `\\${ch}`);
-        queryParams.push(`%${escapedTerm}%`);
+      if (parsed.nameTerm) {
+        queryParams.push(toLikePattern(parsed.nameTerm));
         conditions.push(`file_name ILIKE $${queryParams.length} ESCAPE '\\'`);
+      }
+
+      // Each dir term must appear as (part of) a folder component in the path
+      for (const dirTerm of parsed.dirTerms) {
+        queryParams.push(toDirLikePattern(dirTerm));
+        conditions.push(`file_path ILIKE $${queryParams.length} ESCAPE '\\'`);
+      }
+
+      if (parsed.ext) {
+        queryParams.push(`%.${parsed.ext.replace(/[\\%_]/g, (ch) => `\\${ch}`)}`);
+        conditions.push(`file_name ILIKE $${queryParams.length} ESCAPE '\\'`);
+      }
+
+      if (parsed.tag) {
+        queryParams.push(parsed.tag);
+        conditions.push(`EXISTS (
+          SELECT 1 FROM media_asset_tags mat
+          JOIN tags t ON t.id = mat.tag_id
+          WHERE mat.media_asset_id = media_assets.id AND t.name = $${queryParams.length}
+        )`);
       }
 
       if (mediaType) {
@@ -583,10 +610,10 @@ export const resolvers = {
         orderClause = 'ORDER BY created_at ASC';
       } else if (sortBy === 'date-desc') {
         orderClause = 'ORDER BY created_at DESC';
-      } else if (trimmed.length > 0) {
-        const escapedTerm = trimmed.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+      } else if (parsed.nameTerm && !/[*?]/.test(parsed.nameTerm)) {
+        const escapedTerm = parsed.nameTerm.replace(/[\\%_]/g, (ch) => `\\${ch}`);
         const base = queryParams.length;
-        queryParams.push(trimmed, `${escapedTerm}%`);
+        queryParams.push(parsed.nameTerm, `${escapedTerm}%`);
         orderClause = `ORDER BY CASE WHEN LOWER(file_name) = LOWER($${base + 1}) THEN 0 WHEN LOWER(file_name) LIKE LOWER($${base + 2}) THEN 1 ELSE 2 END, file_name ASC`;
       } else {
         orderClause = 'ORDER BY file_name ASC';
@@ -598,9 +625,19 @@ export const resolvers = {
         queryParams
       );
 
-      // Only search folders when there's a text term (folders have no media type)
-      const folders = trimmed.length > 0 && !mediaType
-        ? await collectMatchingFolders(scopedPath ?? resolveLibraryPath(null), trimmed.toLowerCase(), folderSearchLimit)
+      // Folders are searched whenever any name/folder pattern exists — even
+      // with a media-type filter active, so switching Images/Videos in the UI
+      // never hides matching folders.
+      const folderTerms = [
+        ...(parsed.nameTerm ? [parsed.nameTerm] : []),
+        ...parsed.dirTerms
+      ];
+      const folders = folderTerms.length > 0
+        ? await collectMatchingFolders(
+            scopedPath ?? resolveLibraryPath(null),
+            buildNameMatcher(folderTerms),
+            folderSearchLimit
+          )
         : [];
 
       return {

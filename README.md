@@ -20,7 +20,7 @@ A full-stack file library for media, documents, and general files, built with a 
 - 🗜️ **Compression Queue** - Compress images, videos, and PDFs with preview/confirm/cancel flow
 - 🎞️ **Transcode Queue** - Batch-transcode selected videos to web-compatible MP4; finished transcodes persist on disk and play instantly (evicted only when the size cap is exceeded, oldest first)
 - ⚙️ **In-App Cache Settings** - Admins can adjust per-cache size limits and retention from the Cache panel; changes are stored in the database and applied immediately
-- 🏷️ **Tags and Search** - Apply tags, filter by tag, and search files/folders
+- 🏷️ **Tags and Search** - Apply tags, filter by tag, and search files/folders with in-field query syntax: wildcards (`IMG_20*`, `*.mp4`), folder scoping (`vacation/beach`, `in:"summer trip"`), and parameters (`type:video`, `tag:family`, `ext:heic`, `size:>10mb`). Folder matches appear alongside files and persist when switching between the All/Images/Videos tabs
 - ⚙️ **Monorepo Structure** - Turborepo for efficient build caching and task orchestration
 
 ## Architecture
