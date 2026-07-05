@@ -653,6 +653,7 @@ export default function Dashboard() {
   }>({ open: false, title: "", description: "", onConfirm: async () => {} });
   const [searchQuery, setSearchQuery] = useState<{ term: string; mediaType: string } | null>(null);
   const [searchAssets, setSearchAssets] = useState<MediaAsset[]>([]);
+  const [searchFolders, setSearchFolders] = useState<{ name: string; path: string; parentPath?: string | null }[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchLimit, setSearchLimit] = useState<25 | 50 | 100 | 250 | 0>(25);
   const [minSizeBytes, setMinSizeBytes] = useState<number>(0); // 0 = no filter
@@ -1761,6 +1762,12 @@ export default function Dashboard() {
       toggleFolderSelection(folder.path);
       return;
     }
+    // Opening a folder from search results exits search and navigates into it
+    if (searchQuery) {
+      setSearchQuery(null);
+      setSearchAssets([]);
+      setSearchFolders([]);
+    }
     if (currentPath) setFolderHistory((prev) => [...prev, currentPath]);
     setCurrentPath(folder.path);
     const cachedNode = directoryCache[folder.path];
@@ -1811,6 +1818,7 @@ export default function Dashboard() {
     if (!trimmed && mediaType === "all") {
       setSearchQuery(null);
       setSearchAssets([]);
+      setSearchFolders([]);
       return;
     }
     setSearchQuery({ term: trimmed, mediaType });
@@ -1827,9 +1835,11 @@ export default function Dashboard() {
       if (currentPath && currentPath !== rootPath) vars.path = currentPath;
       const data: any = await client.request(SEARCH_RESULTS_QUERY, vars);
       setSearchAssets((data?.search?.files ?? []) as MediaAsset[]);
+      setSearchFolders(data?.search?.folders ?? []);
     } catch (err) {
       console.error("Search failed:", err);
       setSearchAssets([]);
+      setSearchFolders([]);
     } finally {
       setSearchLoading(false);
     }
@@ -1838,6 +1848,7 @@ export default function Dashboard() {
   const handleClearSearch = useCallback(() => {
     setSearchQuery(null);
     setSearchAssets([]);
+    setSearchFolders([]);
     setMinSizeBytes(0);
   }, []);
 
@@ -1928,14 +1939,21 @@ export default function Dashboard() {
   }, [tagFilterAssets]);
 
   const searchResultNodes = useMemo<DirectoryNode[]>(() => {
-    return searchAssets.map((asset) => ({
+    const folderNodes: DirectoryNode[] = searchFolders.map((folder) => ({
+      name: folder.name,
+      path: folder.path,
+      type: "directory",
+      children: null,
+    }));
+    const fileNodes: DirectoryNode[] = searchAssets.map((asset) => ({
       name: asset.fileName,
       path: asset.filePath,
       type: "file",
       children: null,
       mediaAsset: asset,
     }));
-  }, [searchAssets]);
+    return [...folderNodes, ...fileNodes];
+  }, [searchAssets, searchFolders]);
 
   const sortedFolderChildren = useMemo(() => {
     const baseChildren = searchQuery
