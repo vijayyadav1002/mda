@@ -15,7 +15,7 @@ import {
   Menu, X, ImagePlus, ArrowUpDown, Minimize2,
   Upload, LogOut, Download, FolderPlus, ListTodo,
   Moon, Sun, User, Tag as TagIcon, Pencil, HardDrive, FolderOpen,
-  Copy, ScrollText, CalendarDays,
+  Copy, ScrollText, CalendarDays, Film, RefreshCw,
 } from "lucide-react";
 
 const API_URL = getApiUrl();
@@ -45,8 +45,8 @@ const GENERATE_THUMBNAILS_FOR_PATH_MUTATION = `
 `;
 
 const GENERATE_THUMBNAILS_FOR_ASSETS_MUTATION = `
-  mutation GenerateThumbnailsForAssets($ids: [ID!]!, $sessionId: String) {
-    generateThumbnailsForAssets(ids: $ids, sessionId: $sessionId)
+  mutation GenerateThumbnailsForAssets($ids: [ID!]!, $sessionId: String, $force: Boolean) {
+    generateThumbnailsForAssets(ids: $ids, sessionId: $sessionId, force: $force)
   }
 `;
 
@@ -1985,6 +1985,83 @@ export default function Dashboard() {
     return selectedAssets.filter(canCompressAsset);
   }, [selectedAssets]);
 
+  const selectedVideoAssets = useMemo(() => {
+    return selectedAssets.filter((a) => a.mimeType.startsWith("video/"));
+  }, [selectedAssets]);
+
+  const selectedThumbableAssets = useMemo(() => {
+    return selectedAssets.filter(
+      (a) => a.mimeType.startsWith("image/") || a.mimeType.startsWith("video/")
+    );
+  }, [selectedAssets]);
+
+  // Force-regenerate thumbnails for the selected assets (works in folder,
+  // search, and tag-filter views — mirrors the timeline action)
+  const handleRegenerateThumbnailsSelected = useCallback(async () => {
+    const thumbable = selectedAssets.filter(
+      (a) => a.mimeType.startsWith("image/") || a.mimeType.startsWith("video/")
+    );
+    if (thumbable.length === 0) return;
+    const token = getAuthToken();
+    if (!token) return;
+    try {
+      const client = createGraphQLClient(token);
+      await client.request(GENERATE_THUMBNAILS_FOR_ASSETS_MUTATION, {
+        ids: thumbable.map((a) => a.id),
+        sessionId: thumbnailSessionIdRef.current,
+        force: true,
+      });
+      setSelectionMode(false);
+      setSelectedAssetIds(new Set());
+      // Pick up the fresh thumbnails once the queue has had a moment to work
+      window.setTimeout(() => {
+        if (searchQuery) {
+          void handleSearch(searchQuery.term, searchQuery.mediaType);
+        } else if (currentPath) {
+          void loadDirectoryIntoCache(currentPath);
+        }
+      }, 6000);
+    } catch (err: any) {
+      console.error("Failed to queue thumbnail regeneration:", err.message);
+      alert(`Failed to queue thumbnails: ${err.message}`);
+    }
+  }, [selectedAssets, searchQuery, currentPath, handleSearch]);
+
+  const handleTranscodeSelected = useCallback(async () => {
+    if (selectedVideoAssets.length === 0) return;
+    const token = getAuthToken();
+    if (!token) return;
+    try {
+      const res = await fetch(`${API_URL}/api/transcode/enqueue`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ ids: selectedVideoAssets.map((a) => a.id) }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error ?? `Server error ${res.status}`);
+      }
+      const { jobId } = await res.json();
+      setCompressQueue(prev => [...prev, {
+        id: jobId,
+        kind: "transcode" as const,
+        assets: selectedVideoAssets,
+        status: "pending" as const,
+        progress: {},
+        currentFileId: null,
+        previews: [],
+        fileStatuses: Object.fromEntries(selectedVideoAssets.map(a => [a.id, "pending" as const])),
+        addedAt: Date.now(),
+      }]);
+      setShowQueuePanel(true);
+      setSelectionMode(false);
+      setSelectedAssetIds(new Set());
+    } catch (err: any) {
+      console.error("Failed to enqueue transcode job:", err.message);
+      alert(`Failed to queue transcode: ${err.message}`);
+    }
+  }, [selectedVideoAssets]);
+
   // Ordered list of files in the current view, used for viewer prev/next navigation
   const viewerNavAssets = useMemo(() => {
     return sortedFolderChildren
@@ -2657,6 +2734,32 @@ export default function Dashboard() {
                         <Minimize2 className="w-4 h-4" />
                         <span className="hidden sm:inline">Compress</span>
                         <span className="text-xs">({selectedCompressibleAssets.length})</span>
+                      </button>
+                    )}
+                    {(user?.role === "admin" || user?.role === "editor") && selectedAssetIds.size > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => void handleTranscodeSelected()}
+                        disabled={selectedVideoAssets.length === 0}
+                        title={selectedVideoAssets.length === 0 ? "No videos selected" : "Transcode selected videos to web format"}
+                        className="flex items-center gap-1 px-2.5 py-2 rounded-xl text-sm text-brand-primary hover:bg-accent transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        <Film className="w-4 h-4" />
+                        <span className="hidden sm:inline">Transcode</span>
+                        <span className="text-xs">({selectedVideoAssets.length})</span>
+                      </button>
+                    )}
+                    {selectedAssetIds.size > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => void handleRegenerateThumbnailsSelected()}
+                        disabled={selectedThumbableAssets.length === 0}
+                        title={selectedThumbableAssets.length === 0 ? "No selected files support thumbnails" : "Regenerate thumbnails for selected items"}
+                        className="flex items-center gap-1 px-2.5 py-2 rounded-xl text-sm text-brand-primary hover:bg-accent transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        <RefreshCw className="w-4 h-4" />
+                        <span className="hidden sm:inline">Thumbnails</span>
+                        <span className="text-xs">({selectedThumbableAssets.length})</span>
                       </button>
                     )}
                     {selectedAssetIds.size > 0 && (

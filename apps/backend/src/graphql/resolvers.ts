@@ -27,6 +27,15 @@ import fs from 'fs/promises';
 import path from 'path';
 import { config } from '../config.js';
 
+// Thumbnail filenames are derived from the file path, so a regenerated
+// thumbnail keeps the same URL. Version the URL with the row's updated_at
+// (bumped on every thumbnail save) so browsers fetch the fresh image.
+const buildThumbnailUrl = (row: any): string | null => {
+  if (!row.thumbnail_path) return null;
+  const version = row.updated_at instanceof Date ? `?v=${row.updated_at.getTime()}` : '';
+  return `/thumbnails/${path.basename(row.thumbnail_path)}${version}`;
+};
+
 const mapMediaAssetRow = (row: any) => ({
   id: row.id,
   filePath: row.file_path,
@@ -37,7 +46,7 @@ const mapMediaAssetRow = (row: any) => ({
   height: row.height,
   duration: row.duration,
   thumbnailPath: row.thumbnail_path,
-  thumbnailUrl: row.thumbnail_path ? `/thumbnails/${path.basename(row.thumbnail_path)}` : null,
+  thumbnailUrl: buildThumbnailUrl(row),
   transcodedPath: row.transcoded_path,
   transcodedUrl: row.transcoded_path ? `/transcoded/${path.basename(row.transcoded_path)}` : null,
   indexedAt: row.indexed_at.toISOString(),
@@ -908,7 +917,7 @@ export const resolvers = {
         fileName: row.file_name,
         fileSize: row.file_size.toString(),
         mimeType: row.mime_type,
-        thumbnailUrl: row.thumbnail_path ? `/thumbnails/${path.basename(row.thumbnail_path)}` : null,
+        thumbnailUrl: buildThumbnailUrl(row),
         indexedAt: row.indexed_at.toISOString(),
         createdAt: row.created_at.toISOString(),
         updatedAt: row.updated_at.toISOString()
@@ -960,7 +969,7 @@ export const resolvers = {
         fileName: row.file_name,
         fileSize: row.file_size.toString(),
         mimeType: row.mime_type,
-        thumbnailUrl: row.thumbnail_path ? `/thumbnails/${path.basename(row.thumbnail_path)}` : null,
+        thumbnailUrl: buildThumbnailUrl(row),
         indexedAt: row.indexed_at.toISOString(),
         createdAt: row.created_at.toISOString(),
         updatedAt: row.updated_at.toISOString()
@@ -1118,7 +1127,7 @@ export const resolvers = {
         fileName: row.file_name,
         fileSize: row.file_size.toString(),
         mimeType: row.mime_type,
-        thumbnailUrl: row.thumbnail_path ? `/thumbnails/${path.basename(row.thumbnail_path)}` : null,
+        thumbnailUrl: buildThumbnailUrl(row),
         indexedAt: row.indexed_at.toISOString(),
         createdAt: row.created_at.toISOString(),
         updatedAt: row.updated_at.toISOString()
@@ -1205,8 +1214,15 @@ export const resolvers = {
 
       let queuedCount = 0;
       for (const row of result.rows) {
-        // force=true regenerates even when a usable thumbnail already exists
-        if (!args.force) {
+        if (args.force) {
+          // Force-regenerate: remove the existing thumbnail file first —
+          // the generator returns early when one already exists on disk.
+          const thumbPath = row.thumbnail_path as string | null;
+          if (thumbPath) {
+            await fs.unlink(thumbPath).catch(() => {});
+            await db.query('UPDATE media_assets SET thumbnail_path = NULL WHERE id = $1', [row.id]);
+          }
+        } else {
           const thumbPath = row.thumbnail_path as string | null;
           let hasUsableThumbnail = false;
           if (thumbPath) {
