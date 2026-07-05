@@ -110,6 +110,15 @@ const monthLabel = (key: string) => {
   });
 };
 
+const formatBytes = (bytes: string | number) => {
+  const n = typeof bytes === "string" ? parseInt(bytes) : bytes;
+  if (!Number.isFinite(n)) return "";
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
+  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
+  return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`;
+};
+
 const formatDuration = (seconds: number) => {
   const s = Math.round(seconds);
   const m = Math.floor(s / 60);
@@ -179,6 +188,9 @@ function AssetTile({
           {asset.duration ? formatDuration(asset.duration) : ""}
         </span>
       )}
+      <span className="absolute bottom-1 left-1 px-1 py-0.5 rounded bg-black/60 text-white text-[10px] font-mono leading-none">
+        {formatBytes(asset.fileSize)}
+      </span>
     </button>
   );
 }
