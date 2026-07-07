@@ -385,7 +385,8 @@ export function MediaAssetViewer({
   const isVideo = fileCategory === "video";
   const isPdf = fileCategory === "pdf";
   const isEditableDocument = fileCategory === "text" || fileCategory === "markdown";
-  const canFullscreen = isImage || isVideo || isPdf;
+  const isDocument = ["text", "markdown", "word", "excel"].includes(fileCategory);
+  const canFullscreen = isImage || isVideo || isPdf || isDocument;
   const token = getAuthToken();
   const pdfPreviewUrl = `${apiUrl}/file-preview/${asset.id}/pdf${token ? `?token=${encodeURIComponent(token)}` : ""}`;
   const originalDocumentText =
@@ -479,7 +480,9 @@ export function MediaAssetViewer({
   ) : null;
 
   // ── Fullscreen overlay ────────────────────────────────────────────
-  if (isFullscreen) {
+  // Documents go fullscreen in place (the media pane expands to cover the
+  // viewport) so the editor/preview state carries over seamlessly.
+  if (isFullscreen && !isDocument) {
     return (
       <div className="fixed inset-0 z-50 bg-black flex items-center justify-center group">
         {navigationOverlay}
@@ -570,8 +573,14 @@ export function MediaAssetViewer({
     >
       <div className="relative w-full max-w-5xl max-h-[90vh] rounded-2xl overflow-hidden flex flex-col md:flex-row bg-card shadow-ambient border border-border/10">
 
-        {/* Left — media preview */}
-        <div className="relative flex-1 bg-[#060e20] flex items-center justify-center group min-h-[220px] md:min-h-[400px]">
+        {/* Left — media preview (expands over the whole viewport for fullscreen documents) */}
+        <div
+          className={
+            isFullscreen && isDocument
+              ? "fixed inset-0 z-[60] bg-background group"
+              : "relative flex-1 bg-[#060e20] flex items-center justify-center group min-h-[220px] md:min-h-[400px]"
+          }
+        >
           {navigationOverlay}
           {isImage && (
             <img
@@ -619,8 +628,13 @@ export function MediaAssetViewer({
               className="w-full h-full min-h-[400px] max-h-[40vh] md:max-h-[90vh] border-0 bg-white"
             />
           )}
-          {(fileCategory === "text" || fileCategory === "markdown" || fileCategory === "word" || fileCategory === "excel") && (
-            <div ref={documentScrollRef} className="w-full h-full max-h-[40vh] md:max-h-[90vh] overflow-auto bg-background text-foreground">
+          {isDocument && (
+            <div
+              ref={documentScrollRef}
+              className={`w-full h-full overflow-auto bg-background text-foreground ${
+                isFullscreen ? "" : "max-h-[40vh] md:max-h-[90vh]"
+              }`}
+            >
               {documentPreviewStatus === "loading" && (
                 <div className="h-full min-h-[260px] flex items-center justify-center text-sm text-muted-foreground">
                   Loading preview…
@@ -631,15 +645,36 @@ export function MediaAssetViewer({
                   Preview could not be loaded
                 </div>
               )}
-              {isEditableDocument && documentPreview && (documentPreview.kind === "text" || documentPreview.kind === "markdown") && (
+              {documentPreview && (
                 <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-border/20 bg-background/95 px-5 py-3 backdrop-blur">
                   <div className="min-w-0">
                     <p className="text-xs font-medium text-muted-foreground">
                       {isEditingDocument ? "Editing" : "Previewing"} {getFileCategoryLabel(fileCategory).toLowerCase()}
+                      {isFullscreen ? " — fullscreen" : ""}
                     </p>
                     {saveStatus === "error" && <p className="text-xs text-red-400 mt-0.5">Could not save changes</p>}
                   </div>
-                  {canEdit && (
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsFullscreen(!isFullscreen)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border/30 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
+                    title={isFullscreen ? "Exit fullscreen" : "View fullscreen"}
+                  >
+                    {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+                    <span className="hidden sm:inline">{isFullscreen ? "Exit" : "Fullscreen"}</span>
+                  </button>
+                  {isFullscreen && (
+                    <button
+                      type="button"
+                      onClick={() => { setIsFullscreen(false); onClose(); }}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border/30 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
+                      title="Close"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                  {canEdit && isEditableDocument && (
                     <div className="flex flex-wrap justify-end gap-2">
                       {isEditingDocument ? (
                         <>
@@ -680,6 +715,7 @@ export function MediaAssetViewer({
                       )}
                     </div>
                   )}
+                  </div>
                 </div>
               )}
               <div className="p-5">
@@ -763,7 +799,7 @@ export function MediaAssetViewer({
           )}
 
           {/* Fullscreen button */}
-          {canFullscreen && (
+          {canFullscreen && !isFullscreen && (
             <button
               type="button"
               onClick={() => setIsFullscreen(true)}
@@ -774,11 +810,13 @@ export function MediaAssetViewer({
             </button>
           )}
 
-          {/* Asset status */}
-          <div className="absolute bottom-4 left-4 flex items-center gap-2 bg-black/40 backdrop-blur-sm px-3 py-1.5 rounded-full">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-            <span className="label-meta text-white/80">Active in Gallery</span>
-          </div>
+          {/* Asset status (hidden while a document fills the screen) */}
+          {!(isFullscreen && isDocument) && (
+            <div className="absolute bottom-4 left-4 flex items-center gap-2 bg-black/40 backdrop-blur-sm px-3 py-1.5 rounded-full">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+              <span className="label-meta text-white/80">Active in Gallery</span>
+            </div>
+          )}
         </div>
 
         {/* Right — metadata panel */}
