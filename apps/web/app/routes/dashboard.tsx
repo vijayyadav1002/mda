@@ -7,6 +7,7 @@ import { MediaAssetViewer } from "~/components/MediaAssetViewer";
 import { CompressDialog } from "~/components/CompressDialog";
 import { CompressQueuePanel, type CompressJob } from "~/components/CompressQueuePanel";
 import { TagDialog, type TagSuggestion } from "~/components/TagDialog";
+import { RemoveTagsDialog } from "~/components/RemoveTagsDialog";
 import { ConfirmDialog } from "~/components/ConfirmDialog";
 import { SearchBar } from "~/components/SearchBar";
 import {
@@ -15,7 +16,7 @@ import {
   Menu, X, ImagePlus, ArrowUpDown, Minimize2,
   Upload, LogOut, Download, FolderPlus, ListTodo,
   Moon, Sun, User, Tag as TagIcon, Pencil, HardDrive, FolderOpen,
-  Copy, ScrollText, CalendarDays, Film, RefreshCw,
+  Copy, ScrollText, CalendarDays, Film, RefreshCw, Zap,
 } from "lucide-react";
 
 const API_URL = getApiUrl();
@@ -79,6 +80,14 @@ const CONFIRM_COMPRESS_MUTATION = `
 const CANCEL_COMPRESS_MUTATION = `
   mutation CancelCompressPreview($ids: [ID!]!) {
     cancelCompressPreview(ids: $ids)
+  }
+`;
+
+const CREATE_TEXT_FILE_MUTATION = `
+  mutation CreateTextFile($parentPath: String, $name: String!) {
+    createTextFile(parentPath: $parentPath, name: $name) {
+      id fileName filePath mimeType fileSize thumbnailUrl transcodedUrl createdAt tags { id name }
+    }
   }
 `;
 
@@ -210,6 +219,12 @@ const APPLY_TAGS_MUTATION = `
   }
 `;
 
+const REMOVE_TAGS_FROM_ASSETS_MUTATION = `
+  mutation RemoveTagsFromAssets($assetIds: [ID!]!, $tagNames: [String!]!) {
+    removeTagsFromAssets(assetIds: $assetIds, tagNames: $tagNames)
+  }
+`;
+
 const REMOVE_TAG_MUTATION = `
   mutation RemoveTagFromAsset($assetId: ID!, $tagName: String!) {
     removeTagFromAsset(assetId: $assetId, tagName: $tagName) {
@@ -312,6 +327,7 @@ interface MediaAsset {
   mimeType: string;
   fileSize: string;
   thumbnailUrl: string | null;
+  transcodedUrl?: string | null;
   createdAt: string;
   tags?: TagSummary[];
 }
@@ -611,6 +627,8 @@ export default function Dashboard() {
   const [compressDialogAssets, setCompressDialogAssets] = useState<MediaAsset[]>([]);
   const [isTagDialogOpen, setIsTagDialogOpen] = useState(false);
   const [tagDialogAssets, setTagDialogAssets] = useState<MediaAsset[]>([]);
+  const [isRemoveTagsDialogOpen, setIsRemoveTagsDialogOpen] = useState(false);
+  const [removeTagsAssets, setRemoveTagsAssets] = useState<MediaAsset[]>([]);
   const [tagSuggestions, setTagSuggestions] = useState<TagSuggestion[]>([]);
   const [showTagFilterMenu, setShowTagFilterMenu] = useState(false);
   const [activeTagFilter, setActiveTagFilter] = useState<string | null>(null);
@@ -630,6 +648,11 @@ export default function Dashboard() {
   const [showNewFolderDialog, setShowNewFolderDialog] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
+  const [showNewFileDialog, setShowNewFileDialog] = useState(false);
+  const [newFileName, setNewFileName] = useState('');
+  const [newFileType, setNewFileType] = useState<'md' | 'txt'>('md');
+  const [isCreatingFile, setIsCreatingFile] = useState(false);
+  const [autoEditAssetId, setAutoEditAssetId] = useState<string | null>(null);
   const [showMoveDialog, setShowMoveDialog] = useState(false);
   const [moveTargetFolderPath, setMoveTargetFolderPath] = useState('');
   const [isMoving, setIsMoving] = useState(false);
@@ -833,6 +856,17 @@ export default function Dashboard() {
     if (rootPath && rootPath !== currentPath) await loadDirectoryIntoCache(rootPath);
     if (activeTagFilter) await loadTagFilterAssets(activeTagFilter);
     return data.applyTagsToAssets as Array<{ id: string; tags: Array<{ id: string; name: string }> }>;
+  }, [activeTagFilter, currentPath, loadTagFilterAssets, refreshTagSuggestions, rootPath]);
+
+  const removeTagsFromAssets = useCallback(async (assetIds: string[], tagNames: string[]) => {
+    const token = getAuthToken();
+    if (!token) throw new Error("Not authenticated");
+    const client = createGraphQLClient(token);
+    await client.request(REMOVE_TAGS_FROM_ASSETS_MUTATION, { assetIds, tagNames });
+    await refreshTagSuggestions();
+    if (currentPath) await loadDirectoryIntoCache(currentPath);
+    if (rootPath && rootPath !== currentPath) await loadDirectoryIntoCache(rootPath);
+    if (activeTagFilter) await loadTagFilterAssets(activeTagFilter);
   }, [activeTagFilter, currentPath, loadTagFilterAssets, refreshTagSuggestions, rootPath]);
 
   const removeTagFromAsset = useCallback(async (assetId: string, tagName: string) => {
@@ -1504,6 +1538,37 @@ export default function Dashboard() {
     });
   }, [saveQueueToServer]);
 
+  const handleCreateFile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = newFileName.trim();
+    if (!trimmed || isCreatingFile) return;
+    // Append the chosen extension unless the user already typed a valid one
+    const hasValidExt = /\.(txt|md|markdown)$/i.test(trimmed);
+    const finalName = hasValidExt ? trimmed : `${trimmed}.${newFileType}`;
+    try {
+      setIsCreatingFile(true);
+      const token = getAuthToken();
+      if (!token) return;
+      const client = createGraphQLClient(token);
+      const data: any = await client.request(CREATE_TEXT_FILE_MUTATION, {
+        parentPath: currentPath,
+        name: finalName,
+      });
+      setShowNewFileDialog(false);
+      setNewFileName('');
+      if (currentPath) await loadDirectoryIntoCache(currentPath);
+      // Open the new document straight in the editor
+      const created = data.createTextFile as MediaAsset;
+      setAutoEditAssetId(created.id);
+      setSelectedAsset(created);
+      setIsViewerOpen(true);
+    } catch (err: any) {
+      alert(`Failed to create file: ${err?.response?.errors?.[0]?.message || err.message || 'Unknown error'}`);
+    } finally {
+      setIsCreatingFile(false);
+    }
+  };
+
   const handleCreateFolder = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newFolderName.trim() || isCreatingFolder) return;
@@ -1886,6 +1951,7 @@ export default function Dashboard() {
   const handleCloseViewer = () => {
     setIsViewerOpen(false);
     setSelectedAsset(null);
+    setAutoEditAssetId(null);
   };
 
   const toggleFolder = async (directoryPath: string) => {
@@ -2701,6 +2767,30 @@ export default function Dashboard() {
                   <CheckSquare className="w-4 h-4" />
                   <span className="hidden sm:inline">{selectionMode ? "Cancel" : "Select"}</span>
                 </button>
+                {selectionMode && viewerNavAssets.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const allSelected = viewerNavAssets.every((a) => selectedAssetIds.has(a.id));
+                      setSelectedAssetIds(allSelected ? new Set() : new Set(viewerNavAssets.map((a) => a.id)));
+                    }}
+                    className="flex items-center gap-1 px-2.5 py-2 rounded-xl text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
+                    title={viewerNavAssets.every((a) => selectedAssetIds.has(a.id)) ? "Unselect all files in this view" : "Select all files in this view"}
+                  >
+                    {viewerNavAssets.every((a) => selectedAssetIds.has(a.id)) ? (
+                      <>
+                        <Square className="w-4 h-4" />
+                        <span className="hidden sm:inline">Unselect All</span>
+                      </>
+                    ) : (
+                      <>
+                        <CheckSquare className="w-4 h-4" />
+                        <span className="hidden sm:inline">Select All</span>
+                        <span className="text-xs">({viewerNavAssets.length})</span>
+                      </>
+                    )}
+                  </button>
+                )}
                 {selectionMode && (selectedAssetIds.size > 0 || selectedFolderPaths.size > 0) && (
                   <>
                     {selectedAssetIds.size > 0 && (
@@ -2781,6 +2871,26 @@ export default function Dashboard() {
                         <span className="text-xs">({selectedAssetIds.size})</span>
                       </button>
                     )}
+                    {(user?.role === "admin" || user?.role === "editor") && selectedAssetIds.size > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const pool: MediaAsset[] = activeTagFilter
+                            ? tagFilterAssets
+                            : sortedFolderChildren
+                                .filter((n) => n.type === "file" && n.mediaAsset)
+                                .map((n) => n.mediaAsset!);
+                          setRemoveTagsAssets(pool.filter((a) => selectedAssetIds.has(a.id)));
+                          setIsRemoveTagsDialogOpen(true);
+                        }}
+                        className="flex items-center gap-1 px-2.5 py-2 rounded-xl text-sm text-brand-primary hover:bg-accent transition-all"
+                        title="Remove tags from selected items"
+                      >
+                        <TagIcon className="w-4 h-4" />
+                        <span className="hidden sm:inline">Untag</span>
+                        <span className="text-xs">({selectedAssetIds.size})</span>
+                      </button>
+                    )}
                     {(user?.role === "admin" || user?.role === "editor") && (
                       <button
                         type="button"
@@ -2816,6 +2926,19 @@ export default function Dashboard() {
               >
                 <FolderPlus className="w-4 h-4" />
                 <span className="hidden md:inline">New Folder</span>
+              </button>
+            )}
+
+            {/* New File */}
+            {(user?.role === "admin" || user?.role === "editor") && !selectionMode && (
+              <button
+                type="button"
+                onClick={() => setShowNewFileDialog(true)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
+                title="New text or Markdown file"
+              >
+                <FileText className="w-4 h-4" />
+                <span className="hidden md:inline">New File</span>
               </button>
             )}
 
@@ -3177,8 +3300,19 @@ export default function Dashboard() {
                         </div>
 
                         {/* Type badge */}
-                        <div className="absolute top-3 left-3 z-10 bg-background/70 backdrop-blur-sm px-2 py-0.5 rounded-lg">
-                          <span className="label-meta">{getFileCategoryLabel(asset)}</span>
+                        <div className="absolute top-3 left-3 z-10 flex items-center gap-1">
+                          <div className="bg-background/70 backdrop-blur-sm px-2 py-0.5 rounded-lg">
+                            <span className="label-meta">{getFileCategoryLabel(asset)}</span>
+                          </div>
+                          {asset.mimeType.startsWith("video/") && asset.transcodedUrl && (
+                            <div
+                              className="bg-emerald-500/20 backdrop-blur-sm px-1.5 py-0.5 rounded-lg flex items-center gap-0.5"
+                              title="Transcoded — plays instantly"
+                            >
+                              <Zap className="w-2.5 h-2.5 text-emerald-400 fill-emerald-400" />
+                              <span className="text-[10px] font-medium text-emerald-400">Transcoded</span>
+                            </div>
+                          )}
                         </div>
 
                         {/* Download button */}
@@ -3305,6 +3439,7 @@ export default function Dashboard() {
         onNavigate={handleViewerNavigate}
         hasPrev={viewerNavIndex > 0}
         hasNext={viewerNavIndex >= 0 && viewerNavIndex < viewerNavAssets.length - 1}
+        autoEdit={selectedAsset != null && selectedAsset.id === autoEditAssetId}
         onCompress={selectedAsset && canCompressAsset(selectedAsset) ? () => {
           if (selectedAsset) {
             setCompressDialogAssets([selectedAsset]);
@@ -3378,6 +3513,23 @@ export default function Dashboard() {
             }
           }
           setIsTagDialogOpen(false);
+          setSelectionMode(false);
+          setSelectedAssetIds(new Set());
+        }}
+      />
+
+      <RemoveTagsDialog
+        isOpen={isRemoveTagsDialogOpen}
+        onClose={() => setIsRemoveTagsDialogOpen(false)}
+        selectedAssets={removeTagsAssets}
+        onRemove={async (tagNames) => {
+          await removeTagsFromAssets(removeTagsAssets.map((a) => a.id), tagNames);
+          if (searchQuery) await handleSearch(searchQuery.term, searchQuery.mediaType);
+          if (isViewerOpen && selectedAsset && removeTagsAssets.some((a) => a.id === selectedAsset.id)) {
+            setSelectedAsset((prev) =>
+              prev ? { ...prev, tags: (prev.tags ?? []).filter((t) => !tagNames.includes(t.name)) } : prev
+            );
+          }
           setSelectionMode(false);
           setSelectedAssetIds(new Set());
         }}
@@ -3623,6 +3775,72 @@ export default function Dashboard() {
                 className="px-4 py-2 rounded-xl gradient-brand text-[#060e20] font-manrope font-bold text-sm shadow-ambient hover:opacity-90 transition-opacity"
               >
                 Update Password
+              </button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* New File Dialog */}
+      <Dialog open={showNewFileDialog} onOpenChange={(open) => { setShowNewFileDialog(open); if (!open) setNewFileName(''); }}>
+        <DialogContent className="bg-card border-border/20 shadow-ambient rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="font-manrope text-foreground">New File</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleCreateFile} className="space-y-4 mt-2">
+            <div className="space-y-1.5">
+              <label className="label-meta">File Name</label>
+              <div className="flex items-center gap-2">
+                <Input
+                  value={newFileName}
+                  onChange={(e) => setNewFileName(e.target.value)}
+                  placeholder="e.g. notes"
+                  required
+                  autoFocus
+                  className="bg-muted border-border/20 text-foreground placeholder:text-muted-foreground"
+                />
+                {!/\.(txt|md|markdown)$/i.test(newFileName.trim()) && (
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    {(["md", "txt"] as const).map((type) => (
+                      <button
+                        key={type}
+                        type="button"
+                        onClick={() => setNewFileType(type)}
+                        className={`px-2.5 py-1.5 rounded-lg text-xs font-mono transition-colors ${
+                          newFileType === type
+                            ? "bg-brand-primary text-[#060e20] font-semibold"
+                            : "bg-muted text-muted-foreground hover:text-foreground"
+                        }`}
+                      >
+                        .{type}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {currentFolder && (
+                <p className="text-xs text-muted-foreground">
+                  Will be created inside: <span className="text-foreground font-medium">{currentFolder.name}</span>
+                </p>
+              )}
+              <p className="text-xs text-muted-foreground">
+                Opens in the editor right away. Markdown files render as a formatted preview after saving.
+              </p>
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <button
+                type="button"
+                onClick={() => { setShowNewFileDialog(false); setNewFileName(''); }}
+                className="px-4 py-2 rounded-xl text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isCreatingFile || !newFileName.trim()}
+                className="px-4 py-2 rounded-xl gradient-brand text-[#060e20] font-manrope font-bold text-sm shadow-ambient hover:opacity-90 transition-opacity disabled:opacity-50"
+              >
+                {isCreatingFile ? 'Creating…' : 'Create File'}
               </button>
             </div>
           </form>
