@@ -127,6 +127,7 @@ export const schema = `
     confirmCompressReplace(ids: [ID!]!): [MediaAsset!]!
     cancelCompressPreview(ids: [ID!]!): Boolean!
 
+    createTextFile(parentPath: String, name: String!): MediaAsset!
     createFolder(parentPath: String, name: String!): DirectoryNode!
     deleteFolder(path: String!): Boolean!
     renameFolder(path: String!, newName: String!): DirectoryNode!
@@ -135,6 +136,7 @@ export const schema = `
 
     applyTagsToAssets(assetIds: [ID!]!, tagNames: [String!]!): [MediaAsset!]!
     removeTagFromAsset(assetId: ID!, tagName: String!): MediaAsset!
+    removeTagsFromAssets(assetIds: [ID!]!, tagNames: [String!]!): Int!
     renameTag(oldName: String!, newName: String!): Tag!
     deleteTag(name: String!): Boolean!
     clearCache(type: String!): CacheStats!

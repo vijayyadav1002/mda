@@ -6,9 +6,9 @@ A full-stack file library for media, documents, and general files, built with a 
 
 - 📁 **File Library Management** - Index and manage all regular non-hidden files under the library path
 - 🗓️ **Timeline View** - iOS-Photos-style timeline of photos and videos with Years / Months / Grid / Dense zoom levels (pinch, Ctrl+wheel, or on-screen controls), virtualized scrolling, a year scrubber, and multi-select actions. By default dates come from folder names (`2022-02`, `2022/02`, `2021-12-25`), filename patterns (`IMG_20240115...`), or file modified time; admins can switch the timeline date source to embedded EXIF metadata (camera capture date, with folder-name fallback), file creation time, or file modified time from the timeline's settings menu (the whole library is re-dated in the background)
-- 🖼️ **Thumbnail Generation** - On-demand thumbnail generation for images, videos, PDFs, Word, Excel, text, and Markdown files, plus force-regeneration from the timeline
+- 🖼️ **Thumbnail Generation** - On-demand thumbnail generation for images, videos, PDFs, Word, Excel, text, and Markdown files, plus force-regeneration for selected items from any view (folder grid, tree, search, or timeline)
 - 📄 **Document Preview** - Preview PDFs, `.docx`, `.xlsx`, `.txt`, and `.md` files inside the app
-- ✏️ **Text Editing** - Edit `.txt` and Markdown files in place
+- ✏️ **Text Editing** - Create and edit `.txt` and Markdown files in place; new files open straight in the editor, and Markdown renders as a formatted preview after saving
 - 📋 **Copy and Move** - Move, rename, delete, duplicate, upload, and download files and folders
 - 🔒 **Role-Based Access Control** - Admin, Editor, and ReadOnly roles
 - 🎨 **Modern UI** - React with Remix Router and shadcn UI components
@@ -18,9 +18,10 @@ A full-stack file library for media, documents, and general files, built with a 
 - 🔐 **JWT Authentication** - Secure token-based authentication
 - 📝 **Audit Logging** - Track operations such as move, delete, rename, duplicate, and tagging
 - 🗜️ **Compression Queue** - Compress images, videos, and PDFs with preview/confirm/cancel flow
-- 🎞️ **Transcode Queue** - Batch-transcode selected videos to web-compatible MP4; finished transcodes persist on disk and play instantly (evicted only when the size cap is exceeded, oldest first)
+- 🎞️ **Transcode Queue** - Batch-transcode selected videos to web-compatible MP4 from any view (folder grid, tree, search, or timeline); finished transcodes persist on disk and play instantly (evicted only when the size cap is exceeded, oldest first), and transcoded videos are marked with a ⚡ badge on tiles, cards, and in the viewer
+- ✅ **Multi-Select Everywhere** - Selection mode with Select All / Unselect All in the dashboard (per view) and per-month sections in the timeline; bulk actions include download, compress, transcode, tag, untag, thumbnail regeneration, move, and delete
 - ⚙️ **In-App Cache Settings** - Admins can adjust per-cache size limits and retention from the Cache panel; changes are stored in the database and applied immediately
-- 🏷️ **Tags and Search** - Apply tags, filter by tag, and search files/folders with in-field query syntax: wildcards (`IMG_20*`, `*.mp4`), folder scoping (`vacation/beach`, `in:"summer trip"`), and parameters (`type:video`, `tag:family`, `ext:heic`, `size:>10mb`). Folder matches appear alongside files and persist when switching between the All/Images/Videos tabs
+- 🏷️ **Tags and Search** - Apply and remove tags in bulk or per item, filter by tag, and search files/folders with in-field query syntax: wildcards (`IMG_20*`, `*.mp4`), folder scoping (`vacation/beach`, `in:"summer trip"`), and parameters (`type:video`, `tag:family`, `ext:heic`, `size:>10mb`). Folder matches appear alongside files and persist when switching between the All/Images/Videos tabs
 - ⚙️ **Monorepo Structure** - Turborepo for efficient build caching and task orchestration
 
 ## Architecture
@@ -275,6 +276,27 @@ mutation {
     previewUrl
   }
 }
+
+# Create a new text or Markdown file (opens empty; edit in the app)
+mutation {
+  createTextFile(parentPath: "/library/notes", name: "todo.md") {
+    id
+    fileName
+    filePath
+  }
+}
+
+# Bulk tag management
+mutation {
+  applyTagsToAssets(assetIds: ["1", "2"], tagNames: ["family", "trip"]) {
+    id
+    tags { name }
+  }
+}
+
+mutation {
+  removeTagsFromAssets(assetIds: ["1", "2"], tagNames: ["trip"])
+}
 ```
 
 ## REST API
@@ -429,9 +451,11 @@ All regular non-hidden files under `MEDIA_LIBRARY_PATH` can be indexed, uploaded
 - Text (`.txt`)
 - Markdown (`.md`, `.markdown`)
 
-### Editable In-App
+### Creatable and Editable In-App
 - Text (`.txt`)
-- Markdown (`.md`, `.markdown`)
+- Markdown (`.md`, `.markdown`) — rendered as a formatted preview outside of edit mode
+
+New files are created via the dashboard's "New File" button (admin/editor) and open directly in the editor.
 
 ### Thumbnail Generation
 - Images and videos

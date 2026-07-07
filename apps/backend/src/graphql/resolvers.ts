@@ -15,6 +15,7 @@ import {
   upsertTag,
   attachTags,
   detachTag,
+  detachTagsBulk,
   listTags,
   getTagByName,
   getTagsForAssets,
@@ -1440,6 +1441,58 @@ export const resolvers = {
       return true;
     },
 
+    createTextFile: async (
+      _: any,
+      args: { parentPath?: string | null; name: string },
+      context: GraphQLContext
+    ) => {
+      if (!context.user || !['admin', 'editor'].includes(context.user.role)) {
+        throw new Error('Admin or Editor access required');
+      }
+
+      const name = (args.name ?? '').trim();
+      if (!name || /[/\\]/.test(name) || name.includes('..') || name.startsWith('.')) {
+        throw new Error('Invalid file name');
+      }
+      const ext = path.extname(name).toLowerCase();
+      if (!['.txt', '.md', '.markdown'].includes(ext)) {
+        throw new Error('Only .txt, .md, and .markdown files can be created');
+      }
+
+      const parentPath = resolveLibraryPath(args.parentPath ?? null);
+      const parentStat = await fs.stat(parentPath);
+      if (!parentStat.isDirectory()) {
+        throw new Error('Parent path is not a directory');
+      }
+
+      const newFilePath = path.join(parentPath, name);
+      const rootPath = path.resolve(config.mediaLibraryPath);
+      if (!newFilePath.startsWith(`${rootPath}${path.sep}`)) {
+        throw new Error('Invalid file path');
+      }
+
+      // 'wx' fails if the file already exists — no silent overwrite
+      try {
+        await fs.writeFile(newFilePath, '', { flag: 'wx' });
+      } catch (err: any) {
+        if (err?.code === 'EEXIST') throw new Error('A file with that name already exists');
+        throw err;
+      }
+
+      await indexFile(newFilePath);
+
+      const created = await db.query('SELECT * FROM media_assets WHERE file_path = $1', [newFilePath]);
+      if (created.rows.length === 0) {
+        throw new Error('File was created but could not be indexed');
+      }
+
+      await logAudit(context.user.id, 'CREATE_FILE', 'media_asset', created.rows[0].id, {
+        path: newFilePath
+      });
+
+      return mapMediaAssetRow(created.rows[0]);
+    },
+
     createFolder: async (
       _: any,
       args: { parentPath?: string | null; name: string },
@@ -1776,6 +1829,36 @@ export const resolvers = {
       });
 
       return mapMediaAssetRow(assetResult.rows[0]);
+    },
+
+    removeTagsFromAssets: async (
+      _: any,
+      args: { assetIds: string[]; tagNames: string[] },
+      context: GraphQLContext
+    ) => {
+      if (!context.user || !['admin', 'editor'].includes(context.user.role)) {
+        throw new Error('Admin or Editor access required');
+      }
+
+      const assetIds = Array.from(
+        new Set(
+          (args.assetIds ?? [])
+            .map((raw) => Number.parseInt(String(raw), 10))
+            .filter((n) => Number.isInteger(n) && n > 0)
+        )
+      );
+      const tagNames = (args.tagNames ?? []).map((t) => String(t)).filter(Boolean);
+      if (assetIds.length === 0 || tagNames.length === 0) return 0;
+
+      const removed = await detachTagsBulk(assetIds, tagNames);
+
+      await logAudit(context.user.id, 'REMOVE_TAGS_BULK', 'media_asset', undefined, {
+        assetIds,
+        tagNames,
+        removed
+      });
+
+      return removed;
     },
 
     deleteTag: async (_: any, args: { name: string }, context: GraphQLContext) => {

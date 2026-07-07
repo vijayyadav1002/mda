@@ -49,6 +49,8 @@ interface MediaAssetViewerProps {
   readonly onNavigate?: (direction: 1 | -1) => void;
   readonly hasPrev?: boolean;
   readonly hasNext?: boolean;
+  /** Open text/markdown documents directly in edit mode (used for newly created files). */
+  readonly autoEdit?: boolean;
 }
 
 type FileCategory = "image" | "video" | "pdf" | "word" | "excel" | "text" | "markdown" | "other";
@@ -119,6 +121,7 @@ export function MediaAssetViewer({
   onNavigate,
   hasPrev = false,
   hasNext = false,
+  autoEdit = false,
 }: Readonly<MediaAssetViewerProps>) {
   const canEdit = userRole === "admin" || userRole === "editor";
   const canEditTags = canEdit;
@@ -138,6 +141,8 @@ export function MediaAssetViewer({
   const [isEditingDocument, setIsEditingDocument] = useState(false);
   const [editorText, setEditorText] = useState("");
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "error">("idle");
+  const autoEditConsumedRef = useRef<string | null>(null);
+  const documentScrollRef = useRef<HTMLDivElement | null>(null);
   const videoSourceKindRef = useRef<VideoSource["kind"] | null>(null);
   const splitVideoRef = useRef<HTMLVideoElement | null>(null);
   const fullscreenVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -163,6 +168,25 @@ export function MediaAssetViewer({
       setCurrentVideoId(asset.id);
     }
   }, [isOpen, asset]);
+
+  // Start at the top when switching between edit and preview so the editor's
+  // top edge (and the beginning of the document) is never hidden under the
+  // sticky toolbar.
+  useEffect(() => {
+    documentScrollRef.current?.scrollTo({ top: 0 });
+  }, [isEditingDocument, documentPreview]);
+
+  // Jump straight into the editor for a freshly created document (once per asset)
+  useEffect(() => {
+    if (!isOpen || !autoEdit || !asset) return;
+    if (autoEditConsumedRef.current === asset.id) return;
+    const isEditableKind =
+      documentPreview && (documentPreview.kind === "text" || documentPreview.kind === "markdown");
+    if (isEditableKind && (userRole === "admin" || userRole === "editor")) {
+      autoEditConsumedRef.current = asset.id;
+      setIsEditingDocument(true);
+    }
+  }, [isOpen, autoEdit, asset, documentPreview, userRole]);
 
   useEffect(() => {
     if (!isOpen || !asset) return;
@@ -596,7 +620,7 @@ export function MediaAssetViewer({
             />
           )}
           {(fileCategory === "text" || fileCategory === "markdown" || fileCategory === "word" || fileCategory === "excel") && (
-            <div className="w-full h-full max-h-[40vh] md:max-h-[90vh] overflow-auto bg-background text-foreground p-5">
+            <div ref={documentScrollRef} className="w-full h-full max-h-[40vh] md:max-h-[90vh] overflow-auto bg-background text-foreground">
               {documentPreviewStatus === "loading" && (
                 <div className="h-full min-h-[260px] flex items-center justify-center text-sm text-muted-foreground">
                   Loading preview…
@@ -608,7 +632,7 @@ export function MediaAssetViewer({
                 </div>
               )}
               {isEditableDocument && documentPreview && (documentPreview.kind === "text" || documentPreview.kind === "markdown") && (
-                <div className="sticky top-0 z-10 -mx-5 -mt-5 mb-4 flex items-center justify-between gap-3 border-b border-border/20 bg-background/95 px-5 py-3 backdrop-blur">
+                <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-border/20 bg-background/95 px-5 py-3 backdrop-blur">
                   <div className="min-w-0">
                     <p className="text-xs font-medium text-muted-foreground">
                       {isEditingDocument ? "Editing" : "Previewing"} {getFileCategoryLabel(fileCategory).toLowerCase()}
@@ -658,6 +682,7 @@ export function MediaAssetViewer({
                   )}
                 </div>
               )}
+              <div className="p-5">
               {documentPreview?.kind === "text" && isEditingDocument && (
                 <textarea
                   value={editorText}
@@ -727,6 +752,7 @@ export function MediaAssetViewer({
                   </div>
                 </div>
               )}
+              </div>
             </div>
           )}
           {!isImage && !isVideo && !isPdf && !["word", "excel", "text", "markdown"].includes(fileCategory) && (
@@ -910,6 +936,13 @@ export function MediaAssetViewer({
                   value: formatDate(asset.createdAt),
                   sub: new Date(asset.createdAt).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
                 },
+                ...(isVideo
+                  ? [{
+                      label: "Playback",
+                      value: asset.transcodedUrl ? "⚡ Transcoded" : "Original",
+                      sub: asset.transcodedUrl ? "Cached web-ready MP4 — plays instantly" : "Transcodes on demand if needed",
+                    }]
+                  : []),
               ].map((item) => (
                 <div key={item.label}>
                   <p className="label-meta">{item.label}</p>
