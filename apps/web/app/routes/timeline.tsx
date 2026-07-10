@@ -1,7 +1,7 @@
 import type { MetaFunction } from "@remix-run/node";
 import { useNavigate } from "@remix-run/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, CalendarDays, Check, CheckSquare, Film, ImageIcon, ListTodo, Minus, Play, Plus, RefreshCw, Settings, Square, Tag as TagIcon, X, Zap } from "lucide-react";
+import { ArrowLeft, CalendarDays, Check, CheckSquare, ChevronDown, Film, ImageIcon, ListTodo, Minus, Play, Plus, RefreshCw, Settings, Square, Tag as TagIcon, X, Zap } from "lucide-react";
 import { MediaAssetViewer } from "~/components/MediaAssetViewer";
 import { CompressDialog } from "~/components/CompressDialog";
 import { TagDialog, type TagSuggestion } from "~/components/TagDialog";
@@ -116,6 +116,8 @@ interface SectionState {
 // Zoom levels, iOS-Photos style: 0 = years, 1 = months, 2 = comfy grid, 3 = dense grid
 const MIN_ZOOM = 0;
 const MAX_ZOOM = 3;
+const ZOOM_LEVEL_LABELS = ["Years", "Months", "Grid", "Dense"] as const;
+const ZOOM_LABELS = ["Years", "Months", "Grid", "Dense"] as const;
 const TILE_SIZE: Record<number, number> = { 2: 168, 3: 96 };
 const TILE_GAP: Record<number, number> = { 2: 8, 3: 4 };
 const SECTION_HEADER_H = 52;
@@ -264,6 +266,8 @@ export default function Timeline() {
   const [dateSource, setDateSource] = useState<string>("folder");
   const [dateSourceSaving, setDateSourceSaving] = useState(false);
   const settingsMenuRef = useRef<HTMLDivElement>(null);
+  const [showZoomMenu, setShowZoomMenu] = useState(false);
+  const zoomMenuRef = useRef<HTMLDivElement>(null);
 
   const gridRef = useRef<HTMLDivElement>(null);
   const sectionObserverRef = useRef<IntersectionObserver | null>(null);
@@ -822,6 +826,18 @@ export default function Timeline() {
     return () => document.removeEventListener("mousedown", handler);
   }, [showSettingsMenu]);
 
+  // Close the mobile zoom dropdown on outside click
+  useEffect(() => {
+    if (!showZoomMenu) return;
+    const handler = (e: MouseEvent) => {
+      if (zoomMenuRef.current && !zoomMenuRef.current.contains(e.target as Node)) {
+        setShowZoomMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [showZoomMenu]);
+
   const reloadTimeline = useCallback(() => {
     const token = getAuthToken();
     if (!token) return;
@@ -1076,8 +1092,8 @@ export default function Timeline() {
             </button>
           )}
 
-          {/* Zoom controls */}
-          <div className="flex items-center gap-1 bg-card rounded-xl border border-border/30 p-1">
+          {/* Zoom controls — segmented on desktop, compact dropdown on mobile */}
+          <div className="hidden md:flex items-center gap-1 bg-card rounded-xl border border-border/30 p-1">
             <button
               type="button"
               onClick={() => anchorAndSetZoom(zoom - 1)}
@@ -1088,7 +1104,7 @@ export default function Timeline() {
               <Minus className="w-4 h-4" />
             </button>
             <div className="flex items-center gap-1 px-1">
-              {["Years", "Months", "Grid", "Dense"].map((label, i) => (
+              {ZOOM_LEVEL_LABELS.map((label, i) => (
                 <button
                   key={label}
                   type="button"
@@ -1110,6 +1126,40 @@ export default function Timeline() {
             >
               <Plus className="w-4 h-4" />
             </button>
+          </div>
+
+          <div className="relative md:hidden" ref={zoomMenuRef}>
+            <button
+              type="button"
+              onClick={() => setShowZoomMenu((p) => !p)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-card border border-border/30 text-xs font-medium text-foreground"
+              aria-label="Change zoom level"
+            >
+              {ZOOM_LEVEL_LABELS[zoom]}
+              <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${showZoomMenu ? "rotate-180" : ""}`} />
+            </button>
+            {showZoomMenu && (
+              <div className="absolute right-0 top-full mt-2 w-40 rounded-2xl bg-card border border-border/30 shadow-ambient p-1.5 z-40">
+                {ZOOM_LEVEL_LABELS.map((label, i) => (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => {
+                      anchorAndSetZoom(i);
+                      setShowZoomMenu(false);
+                    }}
+                    className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-xl text-left text-xs transition-colors ${
+                      zoom === i ? "bg-accent font-medium text-foreground" : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+                    }`}
+                  >
+                    <span className="w-4 flex-shrink-0">
+                      {zoom === i && <Check className="w-3.5 h-3.5 text-brand-primary" />}
+                    </span>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
           </div>
         </div>
