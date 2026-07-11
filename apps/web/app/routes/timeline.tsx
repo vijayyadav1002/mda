@@ -268,6 +268,8 @@ export default function Timeline() {
   const settingsMenuRef = useRef<HTMLDivElement>(null);
   const [showZoomMenu, setShowZoomMenu] = useState(false);
   const zoomMenuRef = useRef<HTMLDivElement>(null);
+  const [showActionsMenu, setShowActionsMenu] = useState(false);
+  const actionsMenuRef = useRef<HTMLDivElement>(null);
 
   const gridRef = useRef<HTMLDivElement>(null);
   const sectionObserverRef = useRef<IntersectionObserver | null>(null);
@@ -838,6 +840,18 @@ export default function Timeline() {
     return () => document.removeEventListener("mousedown", handler);
   }, [showZoomMenu]);
 
+  // Close the mobile actions dropdown on outside click
+  useEffect(() => {
+    if (!showActionsMenu) return;
+    const handler = (e: MouseEvent) => {
+      if (actionsMenuRef.current && !actionsMenuRef.current.contains(e.target as Node)) {
+        setShowActionsMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [showActionsMenu]);
+
   const reloadTimeline = useCallback(() => {
     const token = getAuthToken();
     if (!token) return;
@@ -1338,55 +1352,95 @@ export default function Timeline() {
         )}
       </main>
 
-      {/* ── Selection action bar ── */}
+      {/* ── Selection action bar — full bar on desktop, dropdown on mobile ── */}
       {selectionMode && (
-        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-card/95 backdrop-blur-md border border-border/30 shadow-ambient max-w-[95vw] overflow-x-auto">
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-card/95 backdrop-blur-md border border-border/30 shadow-ambient max-w-[95vw]">
           <span className="text-xs font-manrope font-semibold px-1.5 whitespace-nowrap">
             {selectedIds.size} selected
           </span>
-          <button
-            type="button"
-            onClick={() => { setTagTargets(selectedAssets); setIsTagDialogOpen(true); }}
-            disabled={selectedIds.size === 0}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-40 transition-all whitespace-nowrap"
-          >
-            <TagIcon className="w-3.5 h-3.5" /> Tags
-          </button>
-          <button
-            type="button"
-            onClick={() => { setTagTargets(selectedAssets); setIsRemoveTagsDialogOpen(true); }}
-            disabled={selectedIds.size === 0}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-40 transition-all whitespace-nowrap"
-            title="Remove tags from selected items"
-          >
-            <TagIcon className="w-3.5 h-3.5" /> Untag
-          </button>
-          <button
-            type="button"
-            onClick={() => setIsCompressDialogOpen(true)}
-            disabled={selectedIds.size === 0}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-40 transition-all whitespace-nowrap"
-          >
-            <ListTodo className="w-3.5 h-3.5" /> Compress
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleTranscode()}
-            disabled={selectedVideos.length === 0}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-40 transition-all whitespace-nowrap"
-            title="Transcode selected videos to web format"
-          >
-            <Film className="w-3.5 h-3.5" /> Transcode{selectedVideos.length > 0 ? ` (${selectedVideos.length})` : ""}
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleRegenerateThumbnails()}
-            disabled={selectedIds.size === 0}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-40 transition-all whitespace-nowrap"
-            title="Regenerate thumbnails for selected items"
-          >
-            <RefreshCw className="w-3.5 h-3.5" /> Thumbnails
-          </button>
+
+          {/* Desktop: inline actions */}
+          <div className="hidden md:flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => { setTagTargets(selectedAssets); setIsTagDialogOpen(true); }}
+              disabled={selectedIds.size === 0}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-40 transition-all whitespace-nowrap"
+            >
+              <TagIcon className="w-3.5 h-3.5" /> Tags
+            </button>
+            <button
+              type="button"
+              onClick={() => { setTagTargets(selectedAssets); setIsRemoveTagsDialogOpen(true); }}
+              disabled={selectedIds.size === 0}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-40 transition-all whitespace-nowrap"
+              title="Remove tags from selected items"
+            >
+              <TagIcon className="w-3.5 h-3.5" /> Untag
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsCompressDialogOpen(true)}
+              disabled={selectedIds.size === 0}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-40 transition-all whitespace-nowrap"
+            >
+              <ListTodo className="w-3.5 h-3.5" /> Compress
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleTranscode()}
+              disabled={selectedVideos.length === 0}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-40 transition-all whitespace-nowrap"
+              title="Transcode selected videos to web format"
+            >
+              <Film className="w-3.5 h-3.5" /> Transcode{selectedVideos.length > 0 ? ` (${selectedVideos.length})` : ""}
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleRegenerateThumbnails()}
+              disabled={selectedIds.size === 0}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-40 transition-all whitespace-nowrap"
+              title="Regenerate thumbnails for selected items"
+            >
+              <RefreshCw className="w-3.5 h-3.5" /> Thumbnails
+            </button>
+          </div>
+
+          {/* Mobile: actions dropdown (opens upward) */}
+          <div className="relative md:hidden" ref={actionsMenuRef}>
+            <button
+              type="button"
+              onClick={() => setShowActionsMenu((p) => !p)}
+              disabled={selectedIds.size === 0}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-medium text-foreground bg-muted disabled:opacity-40 transition-all"
+            >
+              Actions
+              <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${showActionsMenu ? "" : "rotate-180"}`} />
+            </button>
+            {showActionsMenu && (
+              <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-48 rounded-2xl bg-card border border-border/30 shadow-ambient p-1.5 z-50">
+                {[
+                  { label: "Add tags", icon: TagIcon, disabled: selectedIds.size === 0, run: () => { setTagTargets(selectedAssets); setIsTagDialogOpen(true); } },
+                  { label: "Remove tags", icon: TagIcon, disabled: selectedIds.size === 0, run: () => { setTagTargets(selectedAssets); setIsRemoveTagsDialogOpen(true); } },
+                  { label: "Compress", icon: ListTodo, disabled: selectedIds.size === 0, run: () => setIsCompressDialogOpen(true) },
+                  { label: `Transcode${selectedVideos.length > 0 ? ` (${selectedVideos.length})` : ""}`, icon: Film, disabled: selectedVideos.length === 0, run: () => void handleTranscode() },
+                  { label: "Regenerate thumbnails", icon: RefreshCw, disabled: selectedIds.size === 0, run: () => void handleRegenerateThumbnails() },
+                ].map((item) => (
+                  <button
+                    key={item.label}
+                    type="button"
+                    onClick={() => { setShowActionsMenu(false); item.run(); }}
+                    disabled={item.disabled}
+                    className="w-full flex items-center gap-2 px-2.5 py-2 rounded-xl text-left text-xs text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-40 transition-colors"
+                  >
+                    <item.icon className="w-3.5 h-3.5 flex-shrink-0" />
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
           <button
             type="button"
             onClick={exitSelection}

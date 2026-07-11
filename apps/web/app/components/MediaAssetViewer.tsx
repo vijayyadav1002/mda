@@ -443,7 +443,7 @@ export function MediaAssetViewer({
               type="button"
               aria-label="Previous"
               onClick={(e) => { e.stopPropagation(); onNavigate(-1); }}
-              className="md:hidden absolute left-0 top-0 h-full w-1/4 z-10 focus:outline-none"
+              className="md:hidden absolute left-0 top-0 h-full w-[15%] z-10 focus:outline-none"
             />
           )}
           {hasNext && (
@@ -451,7 +451,7 @@ export function MediaAssetViewer({
               type="button"
               aria-label="Next"
               onClick={(e) => { e.stopPropagation(); onNavigate(1); }}
-              className="md:hidden absolute right-0 top-0 h-full w-1/4 z-10 focus:outline-none"
+              className="md:hidden absolute right-0 top-0 h-full w-[15%] z-10 focus:outline-none"
             />
           )}
         </>
@@ -583,15 +583,22 @@ export function MediaAssetViewer({
         >
           {navigationOverlay}
           {isImage && (
-            <img
-              src={originalImageUrl}
-              alt={asset.fileName}
-              className="w-full h-full object-contain max-h-[40vh] md:max-h-[90vh]"
-              onLoad={handleImageLoad}
-              onError={(e) => {
-                if (asset.thumbnailUrl) e.currentTarget.src = `${apiUrl}${asset.thumbnailUrl}`;
-              }}
-            />
+            <button
+              type="button"
+              onClick={() => setIsFullscreen(true)}
+              className="w-full h-full focus:outline-none cursor-zoom-in"
+              title="View fullscreen"
+            >
+              <img
+                src={originalImageUrl}
+                alt={asset.fileName}
+                className="w-full h-full object-contain max-h-[40vh] md:max-h-[90vh]"
+                onLoad={handleImageLoad}
+                onError={(e) => {
+                  if (asset.thumbnailUrl) e.currentTarget.src = `${apiUrl}${asset.thumbnailUrl}`;
+                }}
+              />
+            </button>
           )}
           {isVideo && (
             <div className="relative w-full h-full flex items-center justify-center">
@@ -798,12 +805,12 @@ export function MediaAssetViewer({
             </div>
           )}
 
-          {/* Fullscreen button */}
+          {/* Fullscreen button — always visible on touch screens (no hover there) */}
           {canFullscreen && !isFullscreen && (
             <button
               type="button"
               onClick={() => setIsFullscreen(true)}
-              className="absolute top-4 right-4 p-2.5 bg-black/40 hover:bg-black/60 text-white rounded-xl backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-all"
+              className="absolute top-4 right-4 z-20 p-2.5 bg-black/40 hover:bg-black/60 text-white rounded-xl backdrop-blur-sm opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all"
               title="View Fullscreen"
             >
               <Maximize2 className="w-4 h-4" />
