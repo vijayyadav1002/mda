@@ -623,6 +623,8 @@ export default function Dashboard() {
   const [sortOption, setSortOption] = useState<"default" | "size-asc" | "size-desc" | "date-asc" | "date-desc">("default");
   const [showSortMenu, setShowSortMenu] = useState(false);
   const sortMenuRef = useRef<HTMLDivElement>(null);
+  const [showSelectionActionsMenu, setShowSelectionActionsMenu] = useState(false);
+  const selectionActionsMenuRef = useRef<HTMLDivElement>(null);
   const [isCompressDialogOpen, setIsCompressDialogOpen] = useState(false);
   const [compressDialogAssets, setCompressDialogAssets] = useState<MediaAsset[]>([]);
   const [isTagDialogOpen, setIsTagDialogOpen] = useState(false);
@@ -2160,6 +2162,16 @@ export default function Dashboard() {
   }, [showSortMenu]);
 
   useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (selectionActionsMenuRef.current && !selectionActionsMenuRef.current.contains(e.target as Node)) {
+        setShowSelectionActionsMenu(false);
+      }
+    };
+    if (showSelectionActionsMenu) document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showSelectionActionsMenu]);
+
+  useEffect(() => {
     if (!searchQuery) return;
     void handleSearch(searchQuery.term, searchQuery.mediaType);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2793,6 +2805,7 @@ export default function Dashboard() {
                 )}
                 {selectionMode && (selectedAssetIds.size > 0 || selectedFolderPaths.size > 0) && (
                   <>
+                    <div className="hidden md:flex items-center gap-1.5 md:gap-2 flex-wrap justify-end">
                     {selectedAssetIds.size > 0 && (
                       <button
                         type="button"
@@ -2911,6 +2924,61 @@ export default function Dashboard() {
                       <span className="hidden sm:inline">Delete</span>
                       <span className="text-xs">({selectedAssetIds.size})</span>
                     </button>
+                    </div>
+
+                    {/* Mobile: selection actions dropdown */}
+                    <div className="relative md:hidden" ref={selectionActionsMenuRef}>
+                      <button
+                        type="button"
+                        onClick={() => setShowSelectionActionsMenu((p) => !p)}
+                        className="flex items-center gap-1 px-3 py-2 rounded-xl text-sm font-medium text-foreground bg-muted transition-all"
+                      >
+                        Actions
+                        <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${showSelectionActionsMenu ? "rotate-180" : ""}`} />
+                      </button>
+                      {showSelectionActionsMenu && (
+                        <div className="absolute right-0 top-full mt-2 w-56 rounded-2xl bg-card border border-border/30 shadow-ambient p-1.5 z-40">
+                          {[
+                            { label: `Download (${selectedAssetIds.size})`, icon: Download, disabled: selectedAssetIds.size === 0, destructive: false, show: true, run: () => handleDownloadSelected() },
+                            { label: `Compress (${selectedCompressibleAssets.length})`, icon: Minimize2, disabled: selectedCompressibleAssets.length === 0, destructive: false, show: selectedAssetIds.size > 0, run: () => {
+                              const skipped = selectedAssets.length - selectedCompressibleAssets.length;
+                              if (skipped > 0) alert(`${skipped} unsupported file${skipped === 1 ? "" : "s"} will be skipped.`);
+                              setCompressDialogAssets(selectedCompressibleAssets);
+                              setIsCompressDialogOpen(true);
+                            } },
+                            { label: `Transcode (${selectedVideoAssets.length})`, icon: Film, disabled: selectedVideoAssets.length === 0, destructive: false, show: user?.role === "admin" || user?.role === "editor", run: () => void handleTranscodeSelected() },
+                            { label: `Thumbnails (${selectedThumbableAssets.length})`, icon: RefreshCw, disabled: selectedThumbableAssets.length === 0, destructive: false, show: true, run: () => void handleRegenerateThumbnailsSelected() },
+                            { label: `Add tags (${selectedAssetIds.size})`, icon: TagIcon, disabled: selectedAssetIds.size === 0, destructive: false, show: true, run: () => {
+                              const pool: MediaAsset[] = activeTagFilter ? tagFilterAssets : sortedFolderChildren.filter((n) => n.type === "file" && n.mediaAsset).map((n) => n.mediaAsset!);
+                              setTagDialogAssets(pool.filter((a) => selectedAssetIds.has(a.id)));
+                              setIsTagDialogOpen(true);
+                            } },
+                            { label: `Remove tags (${selectedAssetIds.size})`, icon: TagIcon, disabled: selectedAssetIds.size === 0, destructive: false, show: user?.role === "admin" || user?.role === "editor", run: () => {
+                              const pool: MediaAsset[] = activeTagFilter ? tagFilterAssets : sortedFolderChildren.filter((n) => n.type === "file" && n.mediaAsset).map((n) => n.mediaAsset!);
+                              setRemoveTagsAssets(pool.filter((a) => selectedAssetIds.has(a.id)));
+                              setIsRemoveTagsDialogOpen(true);
+                            } },
+                            { label: `Move (${selectedAssetIds.size + selectedFolderPaths.size})`, icon: FolderOpen, disabled: false, destructive: false, show: user?.role === "admin" || user?.role === "editor", run: () => { setMoveTargetFolderPath(''); setShowMoveDialog(true); } },
+                            { label: `Delete (${selectedAssetIds.size})`, icon: Trash2, disabled: false, destructive: true, show: true, run: () => handleDeleteSelected() },
+                          ].filter((item) => item.show).map((item) => (
+                            <button
+                              key={item.label}
+                              type="button"
+                              onClick={() => { setShowSelectionActionsMenu(false); item.run(); }}
+                              disabled={item.disabled}
+                              className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-xl text-left text-sm disabled:opacity-40 transition-colors ${
+                                item.destructive
+                                  ? "text-destructive hover:bg-destructive/10"
+                                  : "text-muted-foreground hover:text-foreground hover:bg-accent"
+                              }`}
+                            >
+                              <item.icon className="w-4 h-4 flex-shrink-0" />
+                              {item.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </>
                 )}
               </>
