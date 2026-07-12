@@ -99,6 +99,18 @@ export const schema = `
     timelineAssets(from: String!, to: String!, limit: Int, offset: Int): TimelineAssetsResult!
     cacheSettings: CacheSettings!
     timelineSettings: TimelineSettings!
+    trashItems: [TrashItem!]!
+  }
+
+  type TrashItem {
+    id: ID!
+    fileName: String!
+    originalPath: String!
+    itemType: String!
+    fileSize: String
+    mimeType: String
+    deletedAt: String!
+    expiresAt: String!
   }
 
   type TimelineSettings {
@@ -143,6 +155,9 @@ export const schema = `
     clearAuditLogs(startDate: String!, endDate: String!): Int!
     updateCacheSettings(input: CacheSettingsInput!): CacheSettings!
     updateTimelineDateSource(dateSource: String!): TimelineSettings!
+    restoreTrashItem(id: ID!): Boolean!
+    purgeTrashItem(id: ID!): Boolean!
+    emptyTrash: Int!
   }
 
   type CacheSettings {

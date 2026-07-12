@@ -87,6 +87,10 @@ async function scanDirectory(dir: string, maxDepth: number = 20, currentDepth: n
     const entries = await fs.readdir(dir, { withFileTypes: true });
 
     for (const entry of entries) {
+      // Skip hidden entries entirely — including dot-directories like the
+      // `.trash` bin, which must never be re-indexed.
+      if (entry.name.startsWith('.')) continue;
+
       const fullPath = path.join(dir, entry.name);
 
       try {

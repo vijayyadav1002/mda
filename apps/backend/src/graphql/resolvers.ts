@@ -9,6 +9,13 @@ import { getCacheSettings, updateCacheSettings as updateCacheSettingsService, ge
 import { indexFile } from '../services/media-indexer.js';
 import { updateCaptureDateForAsset, recomputeAllCaptureDates } from '../services/capture-date.js';
 import { parseSearchTerm, toLikePattern, toDirLikePattern, buildNameMatcher } from '../services/search-query.js';
+import {
+  moveToTrash,
+  listTrashItems,
+  restoreTrashItem as restoreTrashItemService,
+  purgeTrashItem as purgeTrashItemService,
+  emptyTrash as emptyTrashService
+} from '../services/trash.js';
 import { canCompressFile, canThumbnailFile } from '../services/file-types.js';
 import {
   normalizeTagName,
@@ -448,6 +455,24 @@ export const resolvers = {
     timelineSettings: async (_: any, __: any, context: GraphQLContext) => {
       if (!context.user) throw new Error('Unauthorized');
       return getTimelineSettings();
+    },
+
+    trashItems: async (_: any, __: any, context: GraphQLContext) => {
+      if (!context.user || !['admin', 'editor'].includes(context.user.role)) {
+        throw new Error('Admin or Editor access required');
+      }
+      const retentionMs = config.trashRetentionDays * 24 * 60 * 60 * 1000;
+      const items = await listTrashItems();
+      return items.map((item) => ({
+        id: item.id,
+        fileName: item.file_name,
+        originalPath: item.original_path,
+        itemType: item.item_type,
+        fileSize: item.file_size != null ? String(item.file_size) : null,
+        mimeType: item.mime_type,
+        deletedAt: item.deleted_at.toISOString(),
+        expiresAt: new Date(item.deleted_at.getTime() + retentionMs).toISOString()
+      }));
     },
 
     timelineBuckets: async (
@@ -1035,9 +1060,18 @@ export const resolvers = {
       // Remove generated caches first while source file metadata is still available.
       await cleanupDeletedAssetCaches(asset, { removeTranscoded: true });
 
-      // Delete the file
+      // Soft delete: move the file to the trash bin instead of unlinking.
+      // Permanent deletion happens only from the trash (explicitly or after
+      // the retention window expires).
       try {
-        await fs.unlink(asset.file_path);
+        await moveToTrash({
+          originalPath: asset.file_path,
+          itemType: 'file',
+          fileName: asset.file_name,
+          fileSize: asset.file_size,
+          mimeType: asset.mime_type,
+          deletedBy: context.user.id
+        });
       } catch (error: any) {
         if (error?.code !== 'ENOENT') {
           throw error;
@@ -1048,7 +1082,8 @@ export const resolvers = {
       await db.query('DELETE FROM media_assets WHERE id = $1', [args.id]);
 
       await logAudit(context.user.id, 'DELETE_ASSET', 'media_asset', parseInt(args.id, 10), {
-        filePath: asset.file_path
+        filePath: asset.file_path,
+        movedToTrash: true
       });
 
       return true;
@@ -1564,11 +1599,17 @@ export const resolvers = {
         );
       }
 
-      // Delete folder from filesystem
-      await fs.rm(targetPath, { recursive: true, force: true });
+      // Soft delete: move the whole folder to the trash bin.
+      await moveToTrash({
+        originalPath: targetPath,
+        itemType: 'folder',
+        fileName: path.basename(targetPath),
+        deletedBy: context.user.id
+      });
 
       await logAudit(context.user.id, 'DELETE_FOLDER', 'directory', undefined, {
         path: targetPath,
+        movedToTrash: true,
         assetsDeleted: assetsResult.rows.length
       });
 
@@ -1931,6 +1972,37 @@ export const resolvers = {
         console.error('[CacheMaintenance] Post-settings-update run failed:', error);
       });
       return updated;
+    },
+
+    restoreTrashItem: async (_: any, args: { id: string }, context: GraphQLContext) => {
+      if (!context.user || !['admin', 'editor'].includes(context.user.role)) {
+        throw new Error('Admin or Editor access required');
+      }
+      const id = Number.parseInt(String(args.id), 10);
+      if (!Number.isFinite(id)) throw new Error('Invalid trash item id');
+      const restoredPath = await restoreTrashItemService(id);
+      await logAudit(context.user.id, 'RESTORE_TRASH_ITEM', 'trash', id, { restoredPath });
+      return true;
+    },
+
+    purgeTrashItem: async (_: any, args: { id: string }, context: GraphQLContext) => {
+      if (!context.user || !['admin', 'editor'].includes(context.user.role)) {
+        throw new Error('Admin or Editor access required');
+      }
+      const id = Number.parseInt(String(args.id), 10);
+      if (!Number.isFinite(id)) throw new Error('Invalid trash item id');
+      await purgeTrashItemService(id);
+      await logAudit(context.user.id, 'PURGE_TRASH_ITEM', 'trash', id);
+      return true;
+    },
+
+    emptyTrash: async (_: any, __: any, context: GraphQLContext) => {
+      if (!context.user || !['admin', 'editor'].includes(context.user.role)) {
+        throw new Error('Admin or Editor access required');
+      }
+      const purged = await emptyTrashService();
+      await logAudit(context.user.id, 'EMPTY_TRASH', 'trash', undefined, { purged });
+      return purged;
     },
 
     updateTimelineDateSource: async (

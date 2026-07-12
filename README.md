@@ -10,6 +10,7 @@ A full-stack file library for media, documents, and general files, built with a 
 - 📄 **Document Preview** - Preview PDFs, `.docx`, `.xlsx`, `.txt`, and `.md` files inside the app
 - ✏️ **Text Editing** - Create and edit `.txt` and Markdown files in place; new files open straight in the editor, and Markdown renders as a formatted preview after saving
 - 📋 **Copy and Move** - Move, rename, delete, duplicate, upload, and download files and folders
+- 🗑️ **Trash Bin** - Deleting files or folders moves them to a trash bin instead of erasing them. Restore items to their original location or delete them permanently from the Trash panel; anything left in the trash is auto-purged after 30 days (configurable via `TRASH_RETENTION_DAYS`)
 - 🔒 **Role-Based Access Control** - Admin, Editor, and ReadOnly roles
 - 🎨 **Modern UI** - React with Remix Router and shadcn UI components
 - 🚀 **Fast Backend** - Fastify server with Mercurius GraphQL

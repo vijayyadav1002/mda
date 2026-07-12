@@ -122,6 +122,16 @@ the whole library in the background. Dates are
 also recomputed on move/rename and backfilled on startup for previously
 indexed assets.
 
+### Trash Items
+- `original_path` / `trash_path` - Where the item lived and where it sits in `<library>/.trash`
+- `file_name`, `file_size`, `mime_type`, `item_type` (`file` | `folder`)
+- `deleted_by`, `deleted_at` - Who deleted it and when
+
+Deletes are soft: files/folders are renamed into the hidden `.trash` folder
+(same filesystem, ignored by the indexer/watcher/tree). Restore or purge them
+via `restoreTrashItem` / `purgeTrashItem` / `emptyTrash`; items expire after
+`TRASH_RETENTION_DAYS` (default 30) via the maintenance cycle.
+
 ### App Settings
 - `key` - Setting key (e.g. `cache_settings`)
 - `value` - JSONB value (runtime overrides for cache limits, editable from the app by admins)
@@ -154,6 +164,7 @@ indexed assets.
 | `PREVIEW_QUALITY` | JPEG quality for HEIC previews | `70` (low mode) |
 | `HEIC_DECODE_MODE` | `auto` (default), `external` (use `heif-convert`), `libheif-js` (force wasm) | `auto` |
 | `CACHE_CLEANUP_INTERVAL_MINUTES` | Background cleanup interval | `30` (low mode) |
+| `TRASH_RETENTION_DAYS` | Days deleted items stay in the trash before permanent removal | `30` |
 | `PREVIEW_CACHE_MAX_AGE_DAYS` | Preview retention window | `7` (low mode) |
 | `HLS_CACHE_MAX_AGE_HOURS` | HLS retention window | `24` (low mode) |
 | `THUMBNAIL_CACHE_MAX_MB` | Max thumbnail cache size | `250` (low mode) |
