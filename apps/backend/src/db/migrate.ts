@@ -60,6 +60,19 @@ CREATE TABLE IF NOT EXISTS app_settings (
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Trash bin: soft-deleted files/folders awaiting restore or purge
+CREATE TABLE IF NOT EXISTS trash_items (
+  id SERIAL PRIMARY KEY,
+  original_path TEXT NOT NULL,
+  trash_path TEXT NOT NULL,
+  file_name VARCHAR(255) NOT NULL,
+  file_size BIGINT,
+  mime_type VARCHAR(100),
+  item_type VARCHAR(10) NOT NULL CHECK (item_type IN ('file', 'folder')),
+  deleted_by INTEGER REFERENCES users(id),
+  deleted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Audit logs table
 CREATE TABLE IF NOT EXISTS audit_logs (
   id SERIAL PRIMARY KEY,

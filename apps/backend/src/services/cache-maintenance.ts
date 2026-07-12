@@ -3,6 +3,7 @@ import path from 'node:path';
 import { config } from '../config.js';
 import { db } from '../db/index.js';
 import { getEffectiveCacheLimits } from './settings.js';
+import { purgeExpiredTrash } from './trash.js';
 
 type CacheFile = {
   filePath: string;
@@ -259,6 +260,11 @@ export async function runCacheMaintenanceOnce(): Promise<void> {
       recursive: false
     });
     await clearDbReferences('transcoded_path', deletedTranscoded);
+
+    // Trash bin: permanently remove items past the retention window
+    await purgeExpiredTrash().catch((error) => {
+      console.warn('[CacheMaintenance] Trash purge failed:', error);
+    });
   } finally {
     cacheCleanupRunning = false;
   }
