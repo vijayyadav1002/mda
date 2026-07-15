@@ -470,6 +470,9 @@ export const resolvers = {
         itemType: item.item_type,
         fileSize: item.file_size != null ? String(item.file_size) : null,
         mimeType: item.mime_type,
+        thumbnailUrl: item.thumbnail_path
+          ? `/thumbnails/${path.basename(item.thumbnail_path)}?v=${item.deleted_at.getTime()}`
+          : null,
         deletedAt: item.deleted_at.toISOString(),
         expiresAt: new Date(item.deleted_at.getTime() + retentionMs).toISOString()
       }));
@@ -1057,8 +1060,9 @@ export const resolvers = {
 
       const asset = result.rows[0];
 
-      // Remove generated caches first while source file metadata is still available.
-      await cleanupDeletedAssetCaches(asset, { removeTranscoded: true });
+      // Remove generated caches, but keep the thumbnail so the trash page
+      // can show what the deleted item looked like.
+      await cleanupDeletedAssetCaches(asset, { removeTranscoded: true, preserveThumbnail: true });
 
       // Soft delete: move the file to the trash bin instead of unlinking.
       // Permanent deletion happens only from the trash (explicitly or after
@@ -1070,6 +1074,7 @@ export const resolvers = {
           fileName: asset.file_name,
           fileSize: asset.file_size,
           mimeType: asset.mime_type,
+          thumbnailPath: asset.thumbnail_path,
           deletedBy: context.user.id
         });
       } catch (error: any) {

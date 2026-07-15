@@ -8,7 +8,6 @@ import { CompressDialog } from "~/components/CompressDialog";
 import { CompressQueuePanel, type CompressJob } from "~/components/CompressQueuePanel";
 import { TagDialog, type TagSuggestion } from "~/components/TagDialog";
 import { RemoveTagsDialog } from "~/components/RemoveTagsDialog";
-import { TrashPanel } from "~/components/TrashPanel";
 import { ConfirmDialog } from "~/components/ConfirmDialog";
 import { SearchBar } from "~/components/SearchBar";
 import {
@@ -626,7 +625,6 @@ export default function Dashboard() {
   const sortMenuRef = useRef<HTMLDivElement>(null);
   const [showSelectionActionsMenu, setShowSelectionActionsMenu] = useState(false);
   const selectionActionsMenuRef = useRef<HTMLDivElement>(null);
-  const [showTrashPanel, setShowTrashPanel] = useState(false);
   const [isCompressDialogOpen, setIsCompressDialogOpen] = useState(false);
   const [compressDialogAssets, setCompressDialogAssets] = useState<MediaAsset[]>([]);
   const [isTagDialogOpen, setIsTagDialogOpen] = useState(false);
@@ -2451,7 +2449,7 @@ export default function Dashboard() {
           <SidebarNavItem icon={Folder} label="Collections" active onClick={() => { setCurrentPath(rootPath); setFolderHistory([]); }} />
           <SidebarNavItem icon={CalendarDays} label="Timeline" onClick={() => navigate("/timeline")} />
           {(user?.role === "admin" || user?.role === "editor") && (
-            <SidebarNavItem icon={Trash2} label="Trash" onClick={() => setShowTrashPanel(true)} />
+            <SidebarNavItem icon={Trash2} label="Trash" onClick={() => navigate("/trash")} />
           )}
           {(user?.role === "admin" || user?.role === "editor") && (
             <SidebarNavItem
@@ -2596,7 +2594,7 @@ export default function Dashboard() {
               <SidebarNavItem icon={Folder} label="Collections" active onClick={() => { setCurrentPath(rootPath); setFolderHistory([]); setMobileMenuOpen(false); }} />
               <SidebarNavItem icon={CalendarDays} label="Timeline" onClick={() => { navigate("/timeline"); setMobileMenuOpen(false); }} />
               {(user?.role === "admin" || user?.role === "editor") && (
-                <SidebarNavItem icon={Trash2} label="Trash" onClick={() => { setShowTrashPanel(true); setMobileMenuOpen(false); }} />
+                <SidebarNavItem icon={Trash2} label="Trash" onClick={() => { navigate("/trash"); setMobileMenuOpen(false); }} />
               )}
               {(user?.role === "admin" || user?.role === "editor") && (
                 <SidebarNavItem
@@ -3591,15 +3589,6 @@ export default function Dashboard() {
           setIsTagDialogOpen(false);
           setSelectionMode(false);
           setSelectedAssetIds(new Set());
-        }}
-      />
-
-      <TrashPanel
-        isOpen={showTrashPanel}
-        onClose={() => setShowTrashPanel(false)}
-        onRestored={() => {
-          if (rootPath) void loadDirectoryIntoCache(rootPath);
-          if (currentPath && currentPath !== rootPath) void loadDirectoryIntoCache(currentPath);
         }}
       />
 

@@ -12,6 +12,8 @@ export interface MediaAssetCleanupTarget {
 
 type CleanupOptions = {
   removeTranscoded?: boolean;
+  /** Keep the thumbnail file (used for soft deletes so the trash page can show it). */
+  preserveThumbnail?: boolean;
 };
 
 async function unlinkIfExists(filePath: string): Promise<void> {
@@ -31,7 +33,7 @@ export async function cleanupDeletedAssetCaches(
   const removeTranscoded = options.removeTranscoded !== false;
   const assetId = String(asset.id);
 
-  if (asset.thumbnail_path) {
+  if (asset.thumbnail_path && !options.preserveThumbnail) {
     await unlinkIfExists(asset.thumbnail_path);
   }
 

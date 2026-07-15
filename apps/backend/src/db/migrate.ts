@@ -69,9 +69,21 @@ CREATE TABLE IF NOT EXISTS trash_items (
   file_size BIGINT,
   mime_type VARCHAR(100),
   item_type VARCHAR(10) NOT NULL CHECK (item_type IN ('file', 'folder')),
+  thumbnail_path TEXT,
   deleted_by INTEGER REFERENCES users(id),
   deleted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Add thumbnail_path to trash_items if missing (for databases migrated earlier)
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'trash_items' AND column_name = 'thumbnail_path'
+  ) THEN
+    ALTER TABLE trash_items ADD COLUMN thumbnail_path TEXT;
+  END IF;
+END $$;
 
 -- Audit logs table
 CREATE TABLE IF NOT EXISTS audit_logs (

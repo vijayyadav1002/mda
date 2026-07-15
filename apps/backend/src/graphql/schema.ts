@@ -109,6 +109,7 @@ export const schema = `
     itemType: String!
     fileSize: String
     mimeType: String
+    thumbnailUrl: String
     deletedAt: String!
     expiresAt: String!
   }
