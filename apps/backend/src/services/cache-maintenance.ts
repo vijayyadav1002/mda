@@ -151,10 +151,17 @@ async function clearDbReferences(column: 'thumbnail_path' | 'transcoded_path', d
   if (deletedPaths.length === 0) return;
   try {
     const resolved = deletedPaths.map((p) => path.resolve(p));
+    const allForms = resolved.concat(deletedPaths);
     await db.query(
       `UPDATE media_assets SET ${column} = NULL WHERE ${column} = ANY($1)`,
-      [resolved.concat(deletedPaths)]
+      [allForms]
     );
+    if (column === 'thumbnail_path') {
+      await db.query(
+        'UPDATE trash_items SET thumbnail_path = NULL WHERE thumbnail_path = ANY($1)',
+        [allForms]
+      );
+    }
   } catch (error) {
     console.warn(`[CacheMaintenance] Could not clear ${column} references:`, error);
   }
@@ -163,8 +170,12 @@ async function clearDbReferences(column: 'thumbnail_path' | 'transcoded_path', d
 async function cleanupOrphanThumbnails(thumbnailCachePath: string): Promise<void> {
   await fs.mkdir(thumbnailCachePath, { recursive: true });
 
+  // Thumbnails referenced by live assets AND by trash items (kept so the
+  // trash page can show what a deleted photo looked like).
   const result = await db.query(
-    'SELECT thumbnail_path FROM media_assets WHERE thumbnail_path IS NOT NULL'
+    `SELECT thumbnail_path FROM media_assets WHERE thumbnail_path IS NOT NULL
+     UNION
+     SELECT thumbnail_path FROM trash_items WHERE thumbnail_path IS NOT NULL`
   );
   const referencedRows = result.rows
     .map((row) => row.thumbnail_path as string)

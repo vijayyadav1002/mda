@@ -66,7 +66,7 @@ mda/
 - Remix file-based routing under `app/routes/`
 - GraphQL client: `graphql-request` configured in `app/lib/api.ts`
 - Main route: `dashboard.tsx` (media browser, ~50KB); `timeline.tsx` (zoomable date-based timeline with multi-select)
-- Auth route: `login.tsx`; admin routes: `users.tsx`, `audit.tsx`
+- Auth route: `login.tsx`; admin routes: `users.tsx`, `audit.tsx`; `trash.tsx` (soft-deleted items, admin/editor)
 - UI: Tailwind CSS + shadcn components in `app/components/ui/`
 
 ## Key Conventions

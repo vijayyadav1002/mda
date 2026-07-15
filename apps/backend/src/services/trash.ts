@@ -21,6 +21,7 @@ export type TrashItemRow = {
   file_size: string | null;
   mime_type: string | null;
   item_type: 'file' | 'folder';
+  thumbnail_path: string | null;
   deleted_by: number | null;
   deleted_at: Date;
 };
@@ -36,6 +37,7 @@ export async function moveToTrash(options: {
   fileName: string;
   fileSize?: string | number | null;
   mimeType?: string | null;
+  thumbnailPath?: string | null;
   deletedBy: number;
 }): Promise<TrashItemRow> {
   const trashDir = getTrashDir();
@@ -45,8 +47,8 @@ export async function moveToTrash(options: {
   await fs.rename(options.originalPath, trashPath);
 
   const result = await db.query(
-    `INSERT INTO trash_items (original_path, trash_path, file_name, file_size, mime_type, item_type, deleted_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
+    `INSERT INTO trash_items (original_path, trash_path, file_name, file_size, mime_type, item_type, thumbnail_path, deleted_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
      RETURNING *`,
     [
       options.originalPath,
@@ -55,11 +57,17 @@ export async function moveToTrash(options: {
       options.fileSize ?? null,
       options.mimeType ?? null,
       options.itemType,
+      options.thumbnailPath ?? null,
       options.deletedBy
     ]
   );
   return result.rows[0];
 }
+
+const removeTrashItemThumbnail = async (item: TrashItemRow) => {
+  if (!item.thumbnail_path) return;
+  await fs.unlink(item.thumbnail_path).catch(() => {});
+};
 
 export async function listTrashItems(): Promise<TrashItemRow[]> {
   const result = await db.query('SELECT * FROM trash_items ORDER BY deleted_at DESC');
@@ -113,6 +121,18 @@ export async function restoreTrashItem(id: number): Promise<string> {
 
   if (item.item_type === 'file') {
     await indexFile(targetPath).catch(() => {});
+    // Reattach the preserved thumbnail so the restored file shows instantly.
+    if (item.thumbnail_path && targetPath === item.original_path) {
+      try {
+        await fs.access(item.thumbnail_path);
+        await db.query(
+          'UPDATE media_assets SET thumbnail_path = $1 WHERE file_path = $2 AND thumbnail_path IS NULL',
+          [item.thumbnail_path, targetPath]
+        );
+      } catch {
+        // Thumbnail no longer on disk — it will regenerate on demand.
+      }
+    }
   } else {
     await reindexFolder(targetPath);
   }
@@ -124,6 +144,7 @@ export async function restoreTrashItem(id: number): Promise<string> {
 export async function purgeTrashItem(id: number): Promise<void> {
   const item = await getTrashItem(id);
   await fs.rm(item.trash_path, { recursive: true, force: true });
+  await removeTrashItemThumbnail(item);
   await db.query('DELETE FROM trash_items WHERE id = $1', [id]);
 }
 
@@ -132,6 +153,7 @@ export async function emptyTrash(): Promise<number> {
   const items = await listTrashItems();
   for (const item of items) {
     await fs.rm(item.trash_path, { recursive: true, force: true }).catch(() => {});
+    await removeTrashItemThumbnail(item);
   }
   await db.query('DELETE FROM trash_items');
   return items.length;
@@ -145,6 +167,7 @@ export async function purgeExpiredTrash(): Promise<number> {
   );
   for (const item of result.rows as TrashItemRow[]) {
     await fs.rm(item.trash_path, { recursive: true, force: true }).catch(() => {});
+    await removeTrashItemThumbnail(item);
     await db.query('DELETE FROM trash_items WHERE id = $1', [item.id]);
   }
   if (result.rows.length > 0) {
