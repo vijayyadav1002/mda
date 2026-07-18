@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "~/components/u
 import {
   ScrollText, Folder, ListTodo, Users,
   LogOut, User, Moon, Sun, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Trash2,
+  ArrowLeft, CalendarDays,
 } from "lucide-react";
 
 const PAGE_SIZE = 50;
@@ -327,6 +328,8 @@ export default function AuditPage() {
 
         <nav className="flex-1 px-3 space-y-0.5">
           <SidebarNavItem icon={Folder} label="Collections" onClick={() => navigate("/dashboard")} />
+          <SidebarNavItem icon={CalendarDays} label="Timeline" onClick={() => navigate("/timeline")} />
+          <SidebarNavItem icon={Trash2} label="Trash" onClick={() => navigate("/trash")} />
           <SidebarNavItem
             icon={ListTodo}
             label="Queue"
@@ -371,6 +374,21 @@ export default function AuditPage() {
 
       {/* ── Main content ── */}
       <div className="flex-1 md:ml-64 min-h-screen">
+        {/* Mobile top bar (the sidebar is desktop-only) */}
+        <div className="md:hidden sticky top-0 z-20 flex items-center gap-3 px-6 py-3 bg-background/80 backdrop-blur-md border-b border-border/20">
+          <button
+            type="button"
+            onClick={() => navigate("/dashboard")}
+            className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4" /> Collections
+          </button>
+          <div className="w-px h-5 bg-border/40" />
+          <span className="font-manrope font-bold text-sm flex items-center gap-2">
+            <ScrollText className="w-4 h-4 text-brand-primary" /> Audit Log
+          </span>
+        </div>
+
         {/* Hero */}
         <div className="px-6 md:px-10 pt-8 pb-6">
           <h1 className="font-manrope text-3xl md:text-4xl font-bold text-foreground tracking-tight">

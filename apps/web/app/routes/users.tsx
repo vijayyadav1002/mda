@@ -9,7 +9,7 @@ import { SearchBar } from "~/components/SearchBar";
 import {
   UserPlus, Trash2, Edit, Key, ArrowLeft,
   Users, Folder, ListTodo, ScrollText,
-  LogOut, User, Moon, Sun,
+  LogOut, User, Moon, Sun, CalendarDays,
 } from "lucide-react";
 
 const USERS_QUERY = `
@@ -283,6 +283,8 @@ export default function UsersPage() {
 
         <nav className="flex-1 px-3 space-y-0.5">
           <SidebarNavItem icon={Folder} label="Collections" onClick={() => navigate("/dashboard")} />
+          <SidebarNavItem icon={CalendarDays} label="Timeline" onClick={() => navigate("/timeline")} />
+          <SidebarNavItem icon={Trash2} label="Trash" onClick={() => navigate("/trash")} />
           <SidebarNavItem
             icon={ListTodo}
             label="Queue"
