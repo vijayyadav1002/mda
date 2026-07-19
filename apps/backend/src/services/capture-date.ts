@@ -56,7 +56,7 @@ export function parseCaptureDateFromFolder(filePath: string): CaptureDate | null
     if (dayMatch) {
       const [, y, m, d] = dayMatch;
       if (isValidDate(+y, +m, +d)) {
-        return { capturedAt: new Date(Date.UTC(+y, +m - 1, +d)), precision: 'day', source: 'folder' };
+        return { capturedAt: new Date(+y, +m - 1, +d), precision: 'day', source: 'folder' };
       }
     }
 
@@ -64,7 +64,7 @@ export function parseCaptureDateFromFolder(filePath: string): CaptureDate | null
     if (monthMatch) {
       const [, y, m] = monthMatch;
       if (isValidYear(+y)) {
-        return { capturedAt: new Date(Date.UTC(+y, +m - 1, 1)), precision: 'month', source: 'folder' };
+        return { capturedAt: new Date(+y, +m - 1, 1), precision: 'month', source: 'folder' };
       }
     }
 
@@ -74,7 +74,7 @@ export function parseCaptureDateFromFolder(filePath: string): CaptureDate | null
       const parentYear = FOLDER_YEAR_RE.exec(segments[i - 1]);
       if (parentYear && isValidYear(+parentYear[1])) {
         return {
-          capturedAt: new Date(Date.UTC(+parentYear[1], +bareMonthMatch[1] - 1, 1)),
+          capturedAt: new Date(+parentYear[1], +bareMonthMatch[1] - 1, 1),
           precision: 'month',
           source: 'folder'
         };
@@ -83,7 +83,7 @@ export function parseCaptureDateFromFolder(filePath: string): CaptureDate | null
 
     const yearMatch = FOLDER_YEAR_RE.exec(segment);
     if (yearMatch && isValidYear(+yearMatch[1])) {
-      return { capturedAt: new Date(Date.UTC(+yearMatch[1], 0, 1)), precision: 'year', source: 'folder' };
+      return { capturedAt: new Date(+yearMatch[1], 0, 1), precision: 'year', source: 'folder' };
     }
   }
 
@@ -95,7 +95,7 @@ export function parseCaptureDateFromFilename(fileName: string): CaptureDate | nu
   if (!match) return null;
   const [, y, m, d] = match;
   if (!isValidDate(+y, +m, +d)) return null;
-  return { capturedAt: new Date(Date.UTC(+y, +m - 1, +d)), precision: 'day', source: 'filename' };
+  return { capturedAt: new Date(+y, +m - 1, +d), precision: 'day', source: 'filename' };
 }
 
 export type FileTimes = { mtime: Date; birthtime?: Date };
