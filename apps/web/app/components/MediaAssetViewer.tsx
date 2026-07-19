@@ -30,6 +30,7 @@ interface MediaAsset {
   transcodedUrl?: string;
   createdAt: string;
   updatedAt: string;
+  capturedAt?: string | null;
   tags?: AssetTag[];
 }
 
@@ -977,9 +978,9 @@ export function MediaAssetViewer({
                   sub: asset.mimeType,
                 },
                 {
-                  label: "Created",
-                  value: formatDate(asset.createdAt),
-                  sub: new Date(asset.createdAt).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
+                  label: "Date",
+                  value: formatDate(asset.capturedAt ?? asset.createdAt),
+                  sub: new Date(asset.capturedAt ?? asset.createdAt).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
                 },
                 ...(isVideo
                   ? [{

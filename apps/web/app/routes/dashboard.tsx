@@ -86,7 +86,7 @@ const CANCEL_COMPRESS_MUTATION = `
 const CREATE_TEXT_FILE_MUTATION = `
   mutation CreateTextFile($parentPath: String, $name: String!) {
     createTextFile(parentPath: $parentPath, name: $name) {
-      id fileName filePath mimeType fileSize thumbnailUrl transcodedUrl createdAt tags { id name }
+      id fileName filePath mimeType fileSize thumbnailUrl transcodedUrl createdAt capturedAt tags { id name }
     }
   }
 `;
@@ -110,7 +110,7 @@ const DELETE_FOLDER_MUTATION = `
 const RENAME_MEDIA_ASSET_MUTATION = `
   mutation RenameMediaAsset($id: ID!, $newName: String!) {
     renameMediaAsset(id: $id, newName: $newName) {
-      id fileName filePath mimeType fileSize thumbnailUrl transcodedUrl createdAt tags { id name }
+      id fileName filePath mimeType fileSize thumbnailUrl transcodedUrl createdAt capturedAt tags { id name }
     }
   }
 `;
@@ -118,7 +118,7 @@ const RENAME_MEDIA_ASSET_MUTATION = `
 const MOVE_MEDIA_ASSET_MUTATION = `
   mutation MoveMediaAsset($id: ID!, $newPath: String!) {
     moveMediaAsset(id: $id, newPath: $newPath) {
-      id fileName filePath mimeType fileSize thumbnailUrl transcodedUrl createdAt tags { id name }
+      id fileName filePath mimeType fileSize thumbnailUrl transcodedUrl createdAt capturedAt tags { id name }
     }
   }
 `;
@@ -126,7 +126,7 @@ const MOVE_MEDIA_ASSET_MUTATION = `
 const DUPLICATE_MEDIA_ASSET_MUTATION = `
   mutation DuplicateMediaAsset($id: ID!, $destinationFolder: String) {
     duplicateMediaAsset(id: $id, destinationFolder: $destinationFolder) {
-      id fileName filePath mimeType fileSize thumbnailUrl transcodedUrl createdAt tags { id name }
+      id fileName filePath mimeType fileSize thumbnailUrl transcodedUrl createdAt capturedAt tags { id name }
     }
   }
 `;
@@ -165,6 +165,7 @@ const DIRECTORY_NODE_QUERY = `
     thumbnailUrl
     transcodedUrl
     createdAt
+    capturedAt
     tags { id name }
   }
 
@@ -205,6 +206,7 @@ const MEDIA_ASSETS_BY_TAG_QUERY = `
       thumbnailUrl
       transcodedUrl
       createdAt
+      capturedAt
       tags { id name }
     }
   }
@@ -257,6 +259,7 @@ const MEDIA_ASSET_QUERY = `
       thumbnailUrl
       transcodedUrl
       createdAt
+      capturedAt
       tags { id name }
     }
   }
@@ -307,7 +310,7 @@ const SEARCH_RESULTS_QUERY = `
       files {
         id fileName filePath fileSize mimeType
         thumbnailUrl transcodedUrl
-        indexedAt createdAt updatedAt
+        indexedAt createdAt updatedAt capturedAt
         tags { id name }
       }
       folders { name path parentPath }
@@ -329,6 +332,7 @@ interface MediaAsset {
   thumbnailUrl: string | null;
   transcodedUrl?: string | null;
   createdAt: string;
+  capturedAt?: string | null;
   tags?: TagSummary[];
 }
 
@@ -2036,8 +2040,8 @@ export default function Dashboard() {
         const sizeB = b.mediaAsset ? parseInt(b.mediaAsset.fileSize) || 0 : 0;
         return sortOption === "size-asc" ? sizeA - sizeB : sizeB - sizeA;
       }
-      const dateA = a.mediaAsset ? new Date(a.mediaAsset.createdAt).getTime() : 0;
-      const dateB = b.mediaAsset ? new Date(b.mediaAsset.createdAt).getTime() : 0;
+      const dateA = a.mediaAsset ? new Date(a.mediaAsset.capturedAt ?? a.mediaAsset.createdAt).getTime() : 0;
+      const dateB = b.mediaAsset ? new Date(b.mediaAsset.capturedAt ?? b.mediaAsset.createdAt).getTime() : 0;
       return sortOption === "date-asc" ? dateA - dateB : dateB - dateA;
     });
     return [...folders, ...sorted];
@@ -3406,7 +3410,7 @@ export default function Dashboard() {
                       <div className="p-3">
                         <p className="font-medium text-sm text-foreground truncate">{asset.fileName}</p>
                         <p className="label-meta mt-1">
-                          {formatBytes(asset.fileSize)} · {formatDate(asset.createdAt)}
+                          {formatBytes(asset.fileSize)} · {formatDate(asset.capturedAt ?? asset.createdAt)}
                         </p>
                         {searchQuery && rootPath && (
                           <p className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground/70">
