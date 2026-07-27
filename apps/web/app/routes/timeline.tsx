@@ -1,7 +1,8 @@
 import type { MetaFunction } from "@remix-run/node";
 import { useNavigate } from "@remix-run/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, CalendarDays, Check, CheckSquare, ChevronDown, Film, ImageIcon, ListTodo, Minus, Play, Plus, RefreshCw, Settings, Square, Tag as TagIcon, X, Zap } from "lucide-react";
+import { ArrowLeft, CalendarDays, Check, CheckSquare, ChevronDown, Film, ImageIcon, ListTodo, Minus, Play, Plus, RefreshCw, Settings, Square, Tag as TagIcon, Trash2, X, Zap } from "lucide-react";
+import { ConfirmDialog } from "~/components/ConfirmDialog";
 import { MediaAssetViewer } from "~/components/MediaAssetViewer";
 import { CompressDialog } from "~/components/CompressDialog";
 import { TagDialog, type TagSuggestion } from "~/components/TagDialog";
@@ -62,6 +63,10 @@ const REMOVE_TAG_MUTATION = `
   mutation RemoveTagFromAsset($assetId: ID!, $tagName: String!) {
     removeTagFromAsset(assetId: $assetId, tagName: $tagName) { id }
   }
+`;
+
+const DELETE_MEDIA_ASSET_MUTATION = `
+  mutation DeleteMediaAsset($id: ID!) { deleteMediaAsset(id: $id) }
 `;
 
 const TIMELINE_SETTINGS_QUERY = `
@@ -270,6 +275,7 @@ export default function Timeline() {
   const zoomMenuRef = useRef<HTMLDivElement>(null);
   const [showActionsMenu, setShowActionsMenu] = useState(false);
   const actionsMenuRef = useRef<HTMLDivElement>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const gridRef = useRef<HTMLDivElement>(null);
   const sectionObserverRef = useRef<IntersectionObserver | null>(null);
@@ -764,6 +770,58 @@ export default function Timeline() {
     updateLocalAssetTags([
       { id: selectedAsset.id, tags: (selectedAsset.tags ?? []).filter((t) => t.name !== tagName) },
     ]);
+  };
+
+  const handleDeleteSelected = async () => {
+    const token = getAuthToken();
+    if (!token || selectedAssets.length === 0) return;
+    const client = createGraphQLClient(token);
+    let deleted = 0;
+    const deletedIds = new Set<string>();
+    for (const asset of selectedAssets) {
+      try {
+        await client.request(DELETE_MEDIA_ASSET_MUTATION, { id: asset.id });
+        deleted += 1;
+        deletedIds.add(asset.id);
+      } catch (err) {
+        console.error(`Failed to delete asset ${asset.id}:`, err);
+      }
+    }
+
+    if (deletedIds.size > 0) {
+      // Remove deleted assets from loaded sections and shrink bucket counts
+      const removedPerMonth = new Map<string, number>();
+      for (const [key, section] of Object.entries(sectionsRef.current)) {
+        const removed = section.assets?.filter((a) => deletedIds.has(a.id)).length ?? 0;
+        if (removed > 0) removedPerMonth.set(key, removed);
+      }
+      setSections((prev) => {
+        const next: typeof prev = {};
+        for (const [key, section] of Object.entries(prev)) {
+          next[key] = section.assets?.some((a) => deletedIds.has(a.id))
+            ? { ...section, assets: section.assets.filter((a) => !deletedIds.has(a.id)) }
+            : section;
+        }
+        return next;
+      });
+      setMonthBuckets((prev) =>
+        prev
+          ? prev
+              .map((b) => {
+                const removed = removedPerMonth.get(monthKeyOf(b.period)) ?? 0;
+                return removed > 0 ? { ...b, count: Math.max(0, b.count - removed) } : b;
+              })
+              .filter((b) => b.count > 0)
+          : prev
+      );
+    }
+
+    showToast(
+      deleted === selectedAssets.length
+        ? `Moved ${deleted} item${deleted !== 1 ? "s" : ""} to Trash`
+        : `Moved ${deleted} of ${selectedAssets.length} items to Trash — some failed`
+    );
+    exitSelection();
   };
 
   const handleAddToCompressQueue = async (options: { resolution: string; quality: number }) => {
@@ -1404,6 +1462,15 @@ export default function Timeline() {
             >
               <RefreshCw className="w-3.5 h-3.5" /> Thumbnails
             </button>
+            <button
+              type="button"
+              onClick={() => setShowDeleteConfirm(true)}
+              disabled={selectedIds.size === 0}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs text-destructive hover:bg-destructive/10 disabled:opacity-40 transition-all whitespace-nowrap"
+              title="Move selected items to the Trash"
+            >
+              <Trash2 className="w-3.5 h-3.5" /> Delete
+            </button>
           </div>
 
           {/* Mobile: actions dropdown (opens upward) */}
@@ -1420,18 +1487,23 @@ export default function Timeline() {
             {showActionsMenu && (
               <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-48 rounded-2xl bg-card border border-border/30 shadow-ambient p-1.5 z-50">
                 {[
-                  { label: "Add tags", icon: TagIcon, disabled: selectedIds.size === 0, run: () => { setTagTargets(selectedAssets); setIsTagDialogOpen(true); } },
-                  { label: "Remove tags", icon: TagIcon, disabled: selectedIds.size === 0, run: () => { setTagTargets(selectedAssets); setIsRemoveTagsDialogOpen(true); } },
-                  { label: "Compress", icon: ListTodo, disabled: selectedIds.size === 0, run: () => setIsCompressDialogOpen(true) },
-                  { label: `Transcode${selectedVideos.length > 0 ? ` (${selectedVideos.length})` : ""}`, icon: Film, disabled: selectedVideos.length === 0, run: () => void handleTranscode() },
-                  { label: "Regenerate thumbnails", icon: RefreshCw, disabled: selectedIds.size === 0, run: () => void handleRegenerateThumbnails() },
+                  { label: "Add tags", icon: TagIcon, disabled: selectedIds.size === 0, destructive: false, run: () => { setTagTargets(selectedAssets); setIsTagDialogOpen(true); } },
+                  { label: "Remove tags", icon: TagIcon, disabled: selectedIds.size === 0, destructive: false, run: () => { setTagTargets(selectedAssets); setIsRemoveTagsDialogOpen(true); } },
+                  { label: "Compress", icon: ListTodo, disabled: selectedIds.size === 0, destructive: false, run: () => setIsCompressDialogOpen(true) },
+                  { label: `Transcode${selectedVideos.length > 0 ? ` (${selectedVideos.length})` : ""}`, icon: Film, disabled: selectedVideos.length === 0, destructive: false, run: () => void handleTranscode() },
+                  { label: "Regenerate thumbnails", icon: RefreshCw, disabled: selectedIds.size === 0, destructive: false, run: () => void handleRegenerateThumbnails() },
+                  { label: "Delete", icon: Trash2, disabled: selectedIds.size === 0, destructive: true, run: () => setShowDeleteConfirm(true) },
                 ].map((item) => (
                   <button
                     key={item.label}
                     type="button"
                     onClick={() => { setShowActionsMenu(false); item.run(); }}
                     disabled={item.disabled}
-                    className="w-full flex items-center gap-2 px-2.5 py-2 rounded-xl text-left text-xs text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-40 transition-colors"
+                    className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-xl text-left text-xs disabled:opacity-40 transition-colors ${
+                      item.destructive
+                        ? "text-destructive hover:bg-destructive/10"
+                        : "text-muted-foreground hover:text-foreground hover:bg-accent"
+                    }`}
                   >
                     <item.icon className="w-3.5 h-3.5 flex-shrink-0" />
                     {item.label}
@@ -1488,6 +1560,14 @@ export default function Timeline() {
         onClose={() => setIsRemoveTagsDialogOpen(false)}
         selectedAssets={tagTargets as any}
         onRemove={handleRemoveTagsBulk}
+      />
+      <ConfirmDialog
+        open={showDeleteConfirm}
+        onOpenChange={setShowDeleteConfirm}
+        title="Delete Items"
+        description={`Delete ${selectedIds.size} selected item${selectedIds.size === 1 ? "" : "s"}?`}
+        warning="Items are moved to the Trash and kept for 30 days before permanent deletion."
+        onConfirm={handleDeleteSelected}
       />
       <CompressDialog
         isOpen={isCompressDialogOpen}
