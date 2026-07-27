@@ -51,7 +51,7 @@ After trusting, open `https://<MDA_HOSTNAME>` and install the PWA.
 ## Notes
 
 - Database migrations run automatically when `app` starts.
-- Media files are mounted from `./media-files` into the container at `/data/media`.
+- Media files are mounted into the container at `/data/media` from `MEDIA_LIBRARY_HOST_PATH`, which defaults to `./media-files`. Set it in `.env` (or the shell) to mount a different host directory, e.g. `MEDIA_LIBRARY_HOST_PATH=/mnt/external/photos`. Note this is resolved by Compose on the host, so it must live in `.env`, not `.env.docker`.
 - Backend cache is persisted in a Docker volume (`backend_cache`).
 - Frontend talks to backend through same-origin HTTPS paths (`/graphql`, `/image/*`, `/video/*`, etc.).
 
