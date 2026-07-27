@@ -59,13 +59,13 @@ mda/
 ### Backend flow
 - Entry: `src/index.ts` (Fastify server, port 4000)
 - GraphQL: `src/graphql/schema.ts` + `src/graphql/resolvers.ts` via Mercurius
-- Services: `media-indexer`, `thumbnail` (sharp + libheif-js + FFmpeg), `video-transcode`, `queue` (BullMQ: thumbnails, compression, batch transcode), `auth` (bcrypt + JWT), `audit`, `media-watcher` (chokidar), `cache-maintenance`, `capture-date` (timeline dates from folder/filename/mtime; admin-selectable source: folder | created | modified), `settings` (DB-backed cache + timeline settings)
+- Services: `media-indexer`, `thumbnail` (sharp + libheif-js + FFmpeg), `video-transcode`, `queue` (BullMQ queues: thumbnail, compression, encoding/transcode, media-refresh), `auth` (bcrypt + JWT), `audit`, `media-watcher` (chokidar), `cache-maintenance`, `media-cleanup` (removes thumbnail/transcode derivatives on delete), `capture-date` (timeline dates from folder/filename/mtime by default; admin-selectable source: folder | exif | created | modified, recomputed library-wide via the media-refresh queue), `settings` (DB-backed cache + timeline settings), `trash` (soft-delete into hidden `.trash` dir, restore/purge, expiry via `TRASH_RETENTION_DAYS`), `tags`, `search-query` (in-field search DSL: `type:`/`tag:`/`ext:`/`size:`, wildcards, folder scoping), `file-types` (extension → category + preview/thumbnail/compress capability), `redis` (ioredis client backing BullMQ)
 - DB: raw `pg` client; migrations in `src/db/migrate.ts`
 
 ### Frontend flow
 - Remix file-based routing under `app/routes/`
 - GraphQL client: `graphql-request` configured in `app/lib/api.ts`
-- Main route: `dashboard.tsx` (media browser, ~50KB); `timeline.tsx` (zoomable date-based timeline with multi-select)
+- Main route: `dashboard.tsx` (media browser, ~180KB); `timeline.tsx` (zoomable date-based timeline with multi-select)
 - Auth route: `login.tsx`; admin routes: `users.tsx`, `audit.tsx`; `trash.tsx` (soft-deleted items, admin/editor)
 - UI: Tailwind CSS + shadcn components in `app/components/ui/`
 
