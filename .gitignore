@@ -4,6 +4,7 @@ build
 .next
 .turbo
 .env*.local
+/.env
 *.log
 .DS_Store
 coverage

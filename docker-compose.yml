@@ -16,7 +16,7 @@ services:
       # Local timezone so capture dates bucket by local wall time, not UTC
       TZ: America/Chicago
     volumes:
-      - ./media-files:/data/media
+      - ${MEDIA_LIBRARY_HOST_PATH:-./media-files}:/data/media
       - backend_cache:/app/apps/backend/cache
     expose:
       - "3000"
