@@ -1,6 +1,6 @@
 import type { MetaFunction } from "@remix-run/node";
 import { useNavigate } from "@remix-run/react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, CalendarDays, Check, CheckSquare, ChevronDown, Film, ImageIcon, ListTodo, Minus, Play, Plus, RefreshCw, Settings, Square, Tag as TagIcon, Trash2, X, Zap } from "lucide-react";
 import { ConfirmDialog } from "~/components/ConfirmDialog";
 import { MediaAssetViewer } from "~/components/MediaAssetViewer";
@@ -8,6 +8,7 @@ import { CompressDialog } from "~/components/CompressDialog";
 import { TagDialog, type TagSuggestion } from "~/components/TagDialog";
 import { RemoveTagsDialog } from "~/components/RemoveTagsDialog";
 import { createGraphQLClient, getApiUrl, getAuthToken } from "~/lib/api";
+import { useDragSelect } from "~/lib/useDragSelect";
 
 export const meta: MetaFunction = () => [{ title: "Timeline — MDA" }];
 
@@ -176,17 +177,17 @@ const sessionId = () =>
 
 /* ── Tile ───────────────────────────────────────────────────────── */
 
-function AssetTile({
+const AssetTile = memo(function AssetTile({
   asset,
   apiUrl,
-  onClick,
+  onActivate,
   onThumbError,
   selectionMode = false,
   isSelected = false,
 }: Readonly<{
   asset: TimelineAsset;
   apiUrl: string;
-  onClick: () => void;
+  onActivate: (asset: TimelineAsset) => void;
   onThumbError: (assetId: string) => void;
   selectionMode?: boolean;
   isSelected?: boolean;
@@ -195,7 +196,8 @@ function AssetTile({
   return (
     <button
       type="button"
-      onClick={onClick}
+      data-asset-id={asset.id}
+      onClick={() => onActivate(asset)}
       className={`relative w-full aspect-square overflow-hidden bg-muted/40 rounded-[3px] focus:outline-none focus:ring-2 focus:ring-brand-primary group/tile ${
         isSelected ? "ring-2 ring-brand-primary" : ""
       }`}
@@ -216,6 +218,7 @@ function AssetTile({
           src={`${apiUrl}${asset.thumbnailUrl}`}
           alt={asset.fileName}
           loading="lazy"
+          draggable={false}
           className="w-full h-full object-cover transition-transform duration-300 group-hover/tile:scale-105"
           onError={() => onThumbError(asset.id)}
         />
@@ -239,7 +242,7 @@ function AssetTile({
       </span>
     </button>
   );
-}
+});
 
 /* ── Route ──────────────────────────────────────────────────────── */
 
@@ -370,6 +373,26 @@ export default function Timeline() {
     () => (monthBuckets ?? []).map((b) => monthKeyOf(b.period)),
     [monthBuckets]
   );
+
+  // Every loaded asset in display order. Backs both lightbox navigation and
+  // drag-select ranges; sections missing from it simply aren't loaded yet.
+  const flatAssets = useMemo(() => {
+    const result: TimelineAsset[] = [];
+    for (const key of sortedMonthKeys) {
+      const section = sections[key];
+      if (section?.assets) result.push(...section.assets);
+    }
+    return result;
+  }, [sortedMonthKeys, sections]);
+
+  const orderedAssetIds = useMemo(() => flatAssets.map((a) => a.id), [flatAssets]);
+
+  const { isDragSelectingRef, consumeDragClick } = useDragSelect({
+    enabled: selectionMode && isGridLevel,
+    orderedIds: orderedAssetIds,
+    selectedIds,
+    setSelectedIds,
+  });
 
   /* ── Section fetching (virtualized) ── */
 
@@ -584,6 +607,8 @@ export default function Timeline() {
     const onTouchMove = (e: TouchEvent) => {
       if (e.touches.length !== 2 || pinchDistanceRef.current === null) return;
       e.preventDefault();
+      // A two-finger drag-select owns the gesture; don't also change zoom.
+      if (isDragSelectingRef.current) return;
       const ratio = distance(e) / pinchDistanceRef.current;
       if (ratio > 1.3) {
         pinchDistanceRef.current = distance(e);
@@ -607,15 +632,6 @@ export default function Timeline() {
   }, [zoom, anchorAndSetZoom]);
 
   /* ── Lightbox ── */
-
-  const flatAssets = useMemo(() => {
-    const result: TimelineAsset[] = [];
-    for (const key of sortedMonthKeys) {
-      const section = sections[key];
-      if (section?.assets) result.push(...section.assets);
-    }
-    return result;
-  }, [sortedMonthKeys, sections]);
 
   const viewerIndex = useMemo(
     () => (selectedAsset ? flatAssets.findIndex((a) => a.id === selectedAsset.id) : -1),
@@ -645,19 +661,25 @@ export default function Timeline() {
     }
   }, [isViewerOpen, viewerIndex, flatAssets, API_URL]);
 
-  const openAsset = (asset: TimelineAsset) => {
-    if (selectionMode) {
-      setSelectedIds((prev) => {
-        const next = new Set(prev);
-        if (next.has(asset.id)) next.delete(asset.id);
-        else next.add(asset.id);
-        return next;
-      });
-      return;
-    }
-    setSelectedAsset(asset);
-    setIsViewerOpen(true);
-  };
+  const openAsset = useCallback(
+    (asset: TimelineAsset) => {
+      // A drag ends with a click on whichever tile the pointer was over —
+      // don't let it toggle that tile back off.
+      if (consumeDragClick()) return;
+      if (selectionMode) {
+        setSelectedIds((prev) => {
+          const next = new Set(prev);
+          if (next.has(asset.id)) next.delete(asset.id);
+          else next.add(asset.id);
+          return next;
+        });
+        return;
+      }
+      setSelectedAsset(asset);
+      setIsViewerOpen(true);
+    },
+    [selectionMode, consumeDragClick]
+  );
 
   /* ── Multi-select actions ── */
 
@@ -1343,7 +1365,13 @@ export default function Timeline() {
 
         {/* ── Levels 2–3: virtualized photo grid with month sections ── */}
         {monthBuckets && isGridLevel && (
-          <div ref={gridRef} className="max-w-[1600px] mx-auto">
+          <div
+            ref={gridRef}
+            className="max-w-[1600px] mx-auto"
+            // `pan-y` hands vertical scrolling to the browser while leaving
+            // horizontal and multi-touch movement for drag-select to claim.
+            style={selectionMode ? { touchAction: "pan-y", userSelect: "none" } : undefined}
+          >
             {monthBuckets.map((bucket) => {
               const key = monthKeyOf(bucket.period);
               const section = sections[key];
@@ -1386,7 +1414,7 @@ export default function Timeline() {
                           key={asset.id}
                           asset={asset}
                           apiUrl={API_URL}
-                          onClick={() => openAsset(asset)}
+                          onActivate={openAsset}
                           onThumbError={handleThumbError}
                           selectionMode={selectionMode}
                           isSelected={selectedIds.has(asset.id)}
