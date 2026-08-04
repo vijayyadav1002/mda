@@ -1,5 +1,5 @@
-import type { MetaFunction } from "@remix-run/node";
-import { useNavigate } from "@remix-run/react";
+import type { MetaFunction } from "react-router";
+import { useNavigate } from "react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, CheckSquare, Clock, File, FileText, Folder, Loader2, Play, RotateCcw, Square, Trash2 } from "lucide-react";
 import { createGraphQLClient, getApiUrl, getAuthToken } from "~/lib/api";
