@@ -21,7 +21,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { pipeline } from 'node:stream/promises';
-import archiver from 'archiver';
+import { ZipArchive } from 'archiver';
 import { indexFile } from './services/media-indexer.js';
 import { canCompressFile, classifyFile } from './services/file-types.js';
 
@@ -352,7 +352,7 @@ fastify.get('/download-zip', async (request, reply) => {
     byId.set(Number(row.id), { file_path: row.file_path as string, file_name: row.file_name as string });
   }
 
-  const archive = archiver('zip', { zlib: { level: 0 } });
+  const archive = new ZipArchive({ zlib: { level: 0 } });
   const zipName = (query.name && query.name.trim()) || `media-${new Date().toISOString().slice(0, 10)}.zip`;
   const safeZipName = encodeURIComponent(zipName).replace(/'/g, '%27');
 
@@ -1051,7 +1051,7 @@ fastify.post('/api/compress/cancel', async (request, reply) => {
 
   // If the job is still waiting in BullMQ (not yet picked up), remove it.
   try {
-    const waitingJobs = await compressionQueue.getJobs(['waiting', 'delayed', 'prioritized', 'paused']);
+    const waitingJobs = await compressionQueue.getJobs(['waiting', 'delayed', 'prioritized']);
     for (const bullJob of waitingJobs) {
       if (bullJob?.data?.jobId === jobId) {
         await bullJob.remove().catch((err) => {

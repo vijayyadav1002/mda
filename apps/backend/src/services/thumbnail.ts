@@ -1,4 +1,4 @@
-import sharp from 'sharp';
+import sharp, { type Sharp } from 'sharp';
 import ffmpeg from 'fluent-ffmpeg';
 import path from 'path';
 import crypto from 'crypto';
@@ -450,7 +450,7 @@ export async function compressImageAdvanced(
   const ext = path.extname(inputPath).toLowerCase();
   const quality = options.quality ?? 80;
 
-  let pipeline: sharp.Sharp;
+  let pipeline: Sharp;
 
   // HEIC needs special decoding
   if (ext === '.heic') {
