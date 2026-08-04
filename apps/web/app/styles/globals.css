@@ -1,6 +1,49 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+
+  --color-surface: hsl(220 72% 8%);
+  --color-surface-low: hsl(220 65% 10%);
+  --color-surface-container: hsl(220 62% 14%);
+  --color-surface-high: hsl(220 60% 17%);
+  --color-surface-highest: hsl(220 55% 18%);
+  --color-surface-bright: hsl(220 50% 20%);
+  --color-on-surface: hsl(220 50% 93%);
+  --color-on-surface-variant: hsl(225 22% 70%);
+  --color-outline-variant: hsl(220 20% 30%);
+  --color-brand-primary: hsl(238 100% 82%);
+  --color-brand-secondary: hsl(280 100% 75%);
+  --color-brand-tertiary: hsl(330 100% 71%);
+
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+
+  --font-manrope: "Manrope", sans-serif;
+  --font-inter: "Inter", sans-serif;
+}
 
 @layer base {
   /* Light mode — Indigo Gallery */

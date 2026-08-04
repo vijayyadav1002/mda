@@ -162,7 +162,7 @@ export function TagDialog({ isOpen, onClose, selectedAssets, suggestions, onAppl
                 onKeyDown={handleKeyDown}
                 onBlur={flushDraft}
                 disabled={submitting}
-                className="flex-1 min-w-[120px] bg-transparent outline-none text-sm text-foreground placeholder:text-muted-foreground"
+                className="flex-1 min-w-[120px] bg-transparent outline-hidden text-sm text-foreground placeholder:text-muted-foreground"
               />
             </div>
             <p className="text-xs text-muted-foreground">

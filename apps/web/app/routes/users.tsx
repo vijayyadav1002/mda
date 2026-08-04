@@ -97,7 +97,7 @@ function SidebarNavItem({
           : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
       }`}
     >
-      <Icon className="w-4 h-4 flex-shrink-0" />
+      <Icon className="w-4 h-4 shrink-0" />
       {label}
       {badge != null && badge > 0 && (
         <span className="ml-auto w-5 h-5 gradient-brand rounded-full flex items-center justify-center text-[10px] font-bold text-[#060e20]">
@@ -266,10 +266,10 @@ export default function UsersPage() {
   return (
     <div className="min-h-screen flex bg-background">
       {/* ── Sidebar ── */}
-      <aside className="hidden md:flex flex-col fixed left-0 top-0 h-screen w-64 bg-card z-30 flex-shrink-0">
+      <aside className="hidden md:flex flex-col fixed left-0 top-0 h-screen w-64 bg-card z-30 shrink-0">
         <div className="px-5 py-6">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl gradient-brand flex items-center justify-center shadow-ambient flex-shrink-0">
+            <div className="w-9 h-9 rounded-xl gradient-brand flex items-center justify-center shadow-ambient shrink-0">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#060e20" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
               </svg>
@@ -315,7 +315,7 @@ export default function UsersPage() {
 
           {currentUser && (
             <div className="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-accent/50 transition-colors group">
-              <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
+              <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center shrink-0">
                 <User className="w-4 h-4 text-muted-foreground" />
               </div>
               <div className="flex-1 min-w-0">
@@ -348,11 +348,11 @@ export default function UsersPage() {
       {/* ── Main content ── */}
       <div className="flex-1 md:ml-64 min-h-screen">
         {/* Toolbar */}
-        <div className="sticky top-0 z-20 bg-background/80 backdrop-blur-sm px-6 md:px-10 py-4 flex flex-col md:flex-row md:items-center gap-3">
+        <div className="sticky top-0 z-20 bg-background/80 backdrop-blur-xs px-6 md:px-10 py-4 flex flex-col md:flex-row md:items-center gap-3">
           <button
             type="button"
             onClick={() => navigate("/dashboard")}
-            className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
+            className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors shrink-0"
           >
             <ArrowLeft className="w-4 h-4" /> Dashboard
           </button>
@@ -374,7 +374,7 @@ export default function UsersPage() {
                 Manage curators and access permissions.
               </p>
             </div>
-            <div className="flex items-center gap-2 flex-shrink-0">
+            <div className="flex items-center gap-2 shrink-0">
               <span className="w-2 h-2 rounded-full bg-emerald-400" />
               <span className="label-meta text-emerald-400">Operational</span>
             </div>
@@ -432,7 +432,7 @@ export default function UsersPage() {
                 >
                   {/* Username + role (mobile: stacked; desktop: separate cols) */}
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
+                    <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center shrink-0">
                       <User className="w-4 h-4 text-muted-foreground" />
                     </div>
                     <div className="min-w-0 flex-1">
@@ -542,7 +542,7 @@ export default function UsersPage() {
                 id="create-role"
                 value={formData.role}
                 onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-                className="w-full px-3 py-2.5 rounded-xl bg-muted border border-border/20 text-foreground text-sm outline-none focus:border-brand-primary/80"
+                className="w-full px-3 py-2.5 rounded-xl bg-muted border border-border/20 text-foreground text-sm outline-hidden focus:border-brand-primary/80"
               >
                 <option value="readonly">Read Only — View media only</option>
                 <option value="editor">Editor — View, edit, delete media</option>
@@ -576,7 +576,7 @@ export default function UsersPage() {
                 id="edit-role"
                 value={selectedUser?.role || "readonly"}
                 onChange={(e) => selectedUser && handleUpdateRole(selectedUser.id, e.target.value)}
-                className="w-full px-3 py-2.5 rounded-xl bg-muted border border-border/20 text-foreground text-sm outline-none focus:border-brand-primary/80"
+                className="w-full px-3 py-2.5 rounded-xl bg-muted border border-border/20 text-foreground text-sm outline-hidden focus:border-brand-primary/80"
               >
                 <option value="readonly">Read Only</option>
                 <option value="editor">Editor</option>

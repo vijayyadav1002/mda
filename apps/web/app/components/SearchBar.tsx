@@ -113,7 +113,7 @@ export function SearchBar({
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
           aria-label="Search files and folders"
-          className="w-full pl-9 pr-9 py-2 rounded-xl bg-muted text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-brand-primary/30 transition-all"
+          className="w-full pl-9 pr-9 py-2 rounded-xl bg-muted text-sm text-foreground placeholder:text-muted-foreground focus:outline-hidden focus:ring-2 focus:ring-brand-primary/30 transition-all"
         />
         {hasTerm ? (
           <button
@@ -126,7 +126,7 @@ export function SearchBar({
           </button>
         ) : (
           <span className="absolute right-3 hidden md:flex items-center gap-1 text-[10px] text-muted-foreground/70">
-            <kbd className="px-1.5 py-0.5 rounded border border-border/30 font-mono">/</kbd>
+            <kbd className="px-1.5 py-0.5 rounded-sm border border-border/30 font-mono">/</kbd>
           </span>
         )}
       </div>

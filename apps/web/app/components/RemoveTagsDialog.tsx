@@ -98,14 +98,14 @@ export function RemoveTagsDialog({ isOpen, onClose, selectedAssets, onRemove }: 
                     }`}
                   >
                     {isPicked ? (
-                      <Check className="w-4 h-4 text-destructive flex-shrink-0" />
+                      <Check className="w-4 h-4 text-destructive shrink-0" />
                     ) : (
-                      <Square className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                      <Square className="w-4 h-4 text-muted-foreground shrink-0" />
                     )}
                     <span className={`text-sm flex-1 truncate ${isPicked ? "text-destructive line-through" : "text-foreground"}`}>
                       #{name}
                     </span>
-                    <span className="text-xs text-muted-foreground flex-shrink-0">
+                    <span className="text-xs text-muted-foreground shrink-0">
                       {count} of {selectedAssets.length}
                     </span>
                   </button>

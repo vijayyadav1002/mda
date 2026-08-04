@@ -117,7 +117,7 @@ function SidebarNavItem({
           : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
       }`}
     >
-      <Icon className="w-4 h-4 flex-shrink-0" />
+      <Icon className="w-4 h-4 shrink-0" />
       {label}
       {badge != null && badge > 0 && (
         <span className="ml-auto w-5 h-5 gradient-brand rounded-full flex items-center justify-center text-[10px] font-bold text-[#060e20]">
@@ -311,10 +311,10 @@ export default function AuditPage() {
   return (
     <div className="min-h-screen flex bg-background">
       {/* ── Sidebar ── */}
-      <aside className="hidden md:flex flex-col fixed left-0 top-0 h-screen w-64 bg-card z-30 flex-shrink-0">
+      <aside className="hidden md:flex flex-col fixed left-0 top-0 h-screen w-64 bg-card z-30 shrink-0">
         <div className="px-5 py-6">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl gradient-brand flex items-center justify-center shadow-ambient flex-shrink-0">
+            <div className="w-9 h-9 rounded-xl gradient-brand flex items-center justify-center shadow-ambient shrink-0">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#060e20" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
               </svg>
@@ -352,7 +352,7 @@ export default function AuditPage() {
 
           {currentUser && (
             <div className="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-accent/50 transition-colors group">
-              <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
+              <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center shrink-0">
                 <User className="w-4 h-4 text-muted-foreground" />
               </div>
               <div className="flex-1 min-w-0">
@@ -409,7 +409,7 @@ export default function AuditPage() {
                 <select
                   value={filterAction}
                   onChange={e => setFilterAction(e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-xl bg-muted border border-border/20 text-foreground text-sm outline-none focus:border-brand-primary/80"
+                  className="w-full px-3 py-2.5 rounded-xl bg-muted border border-border/20 text-foreground text-sm outline-hidden focus:border-brand-primary/80"
                 >
                   <option value="">All actions</option>
                   {ALL_ACTIONS.map(a => <option key={a} value={a}>{a}</option>)}
@@ -422,7 +422,7 @@ export default function AuditPage() {
                 <select
                   value={filterResourceType}
                   onChange={e => setFilterResourceType(e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-xl bg-muted border border-border/20 text-foreground text-sm outline-none focus:border-brand-primary/80"
+                  className="w-full px-3 py-2.5 rounded-xl bg-muted border border-border/20 text-foreground text-sm outline-hidden focus:border-brand-primary/80"
                 >
                   <option value="">All types</option>
                   {ALL_RESOURCE_TYPES.map(r => <option key={r} value={r}>{r}</option>)}
@@ -435,7 +435,7 @@ export default function AuditPage() {
                 <select
                   value={filterUserId}
                   onChange={e => setFilterUserId(e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-xl bg-muted border border-border/20 text-foreground text-sm outline-none focus:border-brand-primary/80"
+                  className="w-full px-3 py-2.5 rounded-xl bg-muted border border-border/20 text-foreground text-sm outline-hidden focus:border-brand-primary/80"
                 >
                   <option value="">All users</option>
                   {userOptions.map(u => (
@@ -451,7 +451,7 @@ export default function AuditPage() {
                   type="date"
                   value={filterStartDate}
                   onChange={e => setFilterStartDate(e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-xl bg-muted border border-border/20 text-foreground text-sm outline-none focus:border-brand-primary/80"
+                  className="w-full px-3 py-2.5 rounded-xl bg-muted border border-border/20 text-foreground text-sm outline-hidden focus:border-brand-primary/80"
                 />
               </div>
 
@@ -462,7 +462,7 @@ export default function AuditPage() {
                   type="date"
                   value={filterEndDate}
                   onChange={e => setFilterEndDate(e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-xl bg-muted border border-border/20 text-foreground text-sm outline-none focus:border-brand-primary/80"
+                  className="w-full px-3 py-2.5 rounded-xl bg-muted border border-border/20 text-foreground text-sm outline-hidden focus:border-brand-primary/80"
                 />
               </div>
             </div>
@@ -497,7 +497,7 @@ export default function AuditPage() {
                   type="date"
                   value={clearStartDate}
                   onChange={e => { setClearStartDate(e.target.value); setClearResult(""); }}
-                  className="px-3 py-2.5 rounded-xl bg-muted border border-border/20 text-foreground text-sm outline-none focus:border-destructive/60"
+                  className="px-3 py-2.5 rounded-xl bg-muted border border-border/20 text-foreground text-sm outline-hidden focus:border-destructive/60"
                 />
               </div>
               <div className="space-y-1">
@@ -506,7 +506,7 @@ export default function AuditPage() {
                   type="date"
                   value={clearEndDate}
                   onChange={e => { setClearEndDate(e.target.value); setClearResult(""); }}
-                  className="px-3 py-2.5 rounded-xl bg-muted border border-border/20 text-foreground text-sm outline-none focus:border-destructive/60"
+                  className="px-3 py-2.5 rounded-xl bg-muted border border-border/20 text-foreground text-sm outline-hidden focus:border-destructive/60"
                 />
               </div>
               <button
@@ -553,13 +553,13 @@ export default function AuditPage() {
                 {logs.map(log => (
                   <div key={log.id} className="flex flex-col lg:grid lg:grid-cols-[180px_140px_180px_120px_80px_1fr] px-4 lg:px-6 py-4 gap-2 lg:gap-0 lg:items-start hover:bg-accent/20 transition-colors">
                     {/* Timestamp */}
-                    <p className="text-xs text-muted-foreground lg:pt-0.5 flex-shrink-0">
+                    <p className="text-xs text-muted-foreground lg:pt-0.5 shrink-0">
                       {formatDate(log.createdAt)}
                     </p>
 
                     {/* User */}
                     <div className="flex items-center gap-1.5 min-w-0">
-                      <div className="w-5 h-5 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
+                      <div className="w-5 h-5 rounded-full bg-muted flex items-center justify-center shrink-0">
                         <User className="w-3 h-3 text-muted-foreground" />
                       </div>
                       <div className="min-w-0">

@@ -61,7 +61,7 @@ export function CompressDialog({ isOpen, onClose, selectedAssets, onAddToQueue }
               {selectedAssets.map(a => (
                 <div key={a.id} className="flex items-center justify-between text-xs">
                   <span className="text-foreground truncate flex-1 mr-3">{a.fileName}</span>
-                  <span className="text-muted-foreground flex-shrink-0">{formatFileSize(a.fileSize)}</span>
+                  <span className="text-muted-foreground shrink-0">{formatFileSize(a.fileSize)}</span>
                 </div>
               ))}
             </div>
@@ -74,7 +74,7 @@ export function CompressDialog({ isOpen, onClose, selectedAssets, onAddToQueue }
               <button
                 type="button"
                 onClick={() => setShowResDropdown(p => !p)}
-                className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl bg-muted border border-border/20 text-sm text-foreground hover:border-brand-primary/60 transition-colors outline-none"
+                className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl bg-muted border border-border/20 text-sm text-foreground hover:border-brand-primary/60 transition-colors outline-hidden"
               >
                 {RESOLUTION_OPTIONS.find(o => o.value === resolution)?.label}
                 <ChevronDown className="w-4 h-4 text-muted-foreground" />
