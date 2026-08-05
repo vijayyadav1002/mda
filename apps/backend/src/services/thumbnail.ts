@@ -224,16 +224,19 @@ async function extractDocumentSnippet(inputPath: string): Promise<{ title: strin
   }
 
   if (classification.category === 'excel') {
-    const XLSX = await import('xlsx');
-    const workbook = XLSX.readFile(inputPath, { cellDates: true, sheetRows: 18 });
-    const sheetText = workbook.SheetNames.slice(0, 3).map((name) => {
-      const rows = XLSX.utils
-        .sheet_to_json<any[]>(workbook.Sheets[name], { header: 1, blankrows: false, defval: '' })
-        .slice(0, 12)
-        .map((row) => row.slice(0, 6).map((cell) => cell instanceof Date ? cell.toISOString().slice(0, 10) : String(cell)).join('    '))
-        .join('\n');
-      return `${name}\n${rows}`;
-    }).join('\n\n');
+    // Thumbnail generation runs unattended (triggered by the media watcher on
+    // any file drop), and exceljs's non-streaming reader parses the whole
+    // file into memory -- so cap how large a spreadsheet we're willing to
+    // fully parse just for a 12-row snippet. Files over this are skipped and
+    // fall back to the generic "no previewable text" placeholder.
+    const MAX_EXCEL_SNIPPET_BYTES = 25 * 1024 * 1024;
+    const stat = await fs.stat(inputPath);
+    if (stat.size > MAX_EXCEL_SNIPPET_BYTES) {
+      return { title, body: '' };
+    }
+    const { readExcelPreview } = await import('./excel.js');
+    const sheets = await readExcelPreview(inputPath, { maxSheets: 3, maxRows: 12, maxCols: 6 });
+    const sheetText = sheets.map(({ name, rows }) => `${name}\n${rows.map((row) => row.join('    ')).join('\n')}`).join('\n\n');
     return { title, body: sheetText };
   }
 

@@ -246,14 +246,11 @@ fastify.get('/file-preview/:id/content', async (request, reply) => {
   }
 
   if (target.classification.category === 'excel') {
-    const XLSX = await import('xlsx');
-    const workbook = XLSX.readFile(target.filePath, { cellDates: true });
-    const sheets = workbook.SheetNames.map((name) => {
-      const rows = XLSX.utils
-        .sheet_to_json<any[]>(workbook.Sheets[name], { header: 1, blankrows: false, defval: '' })
-        .slice(0, MAX_ROWS)
-        .map((row) => row.slice(0, MAX_COLS).map((cell) => cell instanceof Date ? cell.toISOString().slice(0, 10) : String(cell)));
-      return { name, rows };
+    const { readExcelPreview } = await import('./services/excel.js');
+    const sheets = await readExcelPreview(target.filePath, {
+      maxSheets: Infinity,
+      maxRows: MAX_ROWS,
+      maxCols: MAX_COLS,
     });
     return reply.send({ kind: 'excel', sheets, maxRows: MAX_ROWS, maxCols: MAX_COLS });
   }
