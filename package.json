@@ -19,6 +19,9 @@
     "turbo": "^2.2.3",
     "typescript": "^5.9.3"
   },
+  "overrides": {
+    "fast-uri": ">=3.1.5"
+  },
   "packageManager": "npm@10.9.0",
   "engines": {
     "node": ">=24.0.0"
