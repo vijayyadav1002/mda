@@ -60,42 +60,65 @@ After trusting, open `https://<MDA_HOSTNAME>` and install the PWA.
 The `postgres_data` volume stores data in PostgreSQL's on-disk format, which is
 **not** compatible across major versions. If you have an existing volume created
 by PostgreSQL 16 (or earlier), pulling this repo's current `docker-compose.yml`
-and running `docker compose up` will fail — the PostgreSQL 18 binaries refuse to
-start against a 16 data directory.
+and running `docker compose up` will fail.
+
+Two separate things changed between 16 and 18, and both matter here:
+
+1. The data format itself is incompatible across major versions (always true).
+2. As of the PostgreSQL 18 image, the volume mount point changed from
+   `/var/lib/postgresql/data` to `/var/lib/postgresql` (data now lives in a
+   version-specific subdirectory, e.g. `/var/lib/postgresql/18/docker`). This
+   repo's `docker-compose.yml` mounts `postgres_data` at the new
+   `/var/lib/postgresql` path. If your existing `postgres_data` volume still
+   has 16-era files sitting at its root from the old mount convention, the 18
+   image's startup check will find that unexpected data and refuse to start
+   with an error like `there appears to be PostgreSQL data in:
+   /var/lib/postgresql/data (unused mount/volume)`.
 
 If you have no existing data you care about (e.g. `postgres_data` was never
-created, or you're fine losing it), skip straight to `docker compose up --build`
-and a fresh 18 database will be initialized.
-
-To upgrade an existing volume, dump under the old image and restore under the
-new one:
+created, or you're fine losing it), remove the volume and start clean:
 
 ```bash
-# 1. Make sure the stack is running on the OLD images (postgres:16-alpine)
-docker compose up -d postgres
-
-# 2. Dump the database from the running (old) postgres container
-docker compose exec postgres pg_dump -U postgres -Fc mda > mda_backup.dump
-
-# 3. Stop everything and remove the old postgres_data volume
 docker compose down
-docker volume rm mda_postgres_data
-
-# 4. Pull this repo's current docker-compose.yml (postgres:18-alpine) and
-#    start a fresh postgres container — this creates a new empty 18 volume
-docker compose up -d postgres
-
-# 5. Restore into the new (empty) 18 database
-docker compose exec -T postgres pg_restore -U postgres -d mda --no-owner < mda_backup.dump
-
-# 6. Start the rest of the stack
+docker volume rm mda_postgres_data   # name may differ — check `docker volume ls`
 docker compose up --build
 ```
 
-Verify row counts or spot-check a few tables after step 5 before deleting
-`mda_backup.dump`. The `mda_postgres_data` volume name may differ if your
-project/directory name differs — check `docker volume ls` if `docker volume rm`
-fails to find it.
+To upgrade an existing volume, dump under the old image (run directly, not via
+the compose file, since that now points at 18) and restore under the new one:
+
+```bash
+# 1. Stop the stack if it's running
+docker compose down
+
+# 2. Start a throwaway PostgreSQL 16 container against the existing volume
+#    to dump the data (volume name may differ — check `docker volume ls`)
+docker run -d --name mda-pg16-dump \
+  -e POSTGRES_PASSWORD=postgres \
+  -v mda_postgres_data:/var/lib/postgresql/data \
+  postgres:16-alpine
+
+# 3. Wait for it to be ready, then dump
+docker exec mda-pg16-dump pg_isready -U postgres   # repeat until "accepting connections"
+docker exec mda-pg16-dump pg_dump -U postgres -Fc mda > mda_backup.dump
+
+# 4. Tear down the throwaway container and delete the old (16-format) volume
+docker rm -f mda-pg16-dump
+docker volume rm mda_postgres_data
+
+# 5. Start the real stack — this creates a fresh postgres_data volume using
+#    the new /var/lib/postgresql mount, and PostgreSQL 18 initializes cleanly
+docker compose up -d postgres
+
+# 6. Restore into the new (empty) 18 database
+docker compose exec -T postgres pg_restore -U postgres -d mda --no-owner < mda_backup.dump
+
+# 7. Start the rest of the stack
+docker compose up --build
+```
+
+Verify row counts or spot-check a few tables after step 6 before deleting
+`mda_backup.dump`.
 
 ## Stop / Reset
 
