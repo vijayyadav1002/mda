@@ -42,7 +42,7 @@
     "@types/bcrypt": "^6.0.0",
     "@types/fluent-ffmpeg": "^2.1.27",
     "@types/mime-types": "^3.0.1",
-    "@types/node": "^22.9.3",
+    "@types/node": "^24.13.3",
     "@types/pg": "^8.11.10",
     "@types/sanitize-html": "^2.16.1",
     "tsx": "^4.21.0",
