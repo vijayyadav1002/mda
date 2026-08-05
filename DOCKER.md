@@ -120,6 +120,35 @@ docker compose up --build
 Verify row counts or spot-check a few tables after step 6 before deleting
 `mda_backup.dump`.
 
+## Switching Redis to Valkey on an Existing Volume
+
+If your existing `redis_data` volume was written by a recent Redis (the old
+`redis:alpine` tag floats to whatever Redis Ltd. currently publishes as
+`alpine`), Valkey may fail to load it on first start:
+
+```
+# Can't handle RDB format version 14
+# Fatal error loading the DB, check server logs. Exiting.
+```
+
+Redis Ltd.'s post-fork RDB format has advanced past what Valkey (forked from
+Redis 7.2.4) understands, so a dump file written by a newer Redis isn't
+guaranteed to load in Valkey. Unlike PostgreSQL, nothing in this repo puts
+durable, user-owned data in Redis — `redis`/`redis_data` only backs BullMQ's
+job queues (thumbnail, compression, transcode, media-refresh). There's no
+session or auth state in it. The media indexer also backfills missing
+thumbnails on its own, so losing queued-but-not-yet-run jobs just means that
+work gets picked back up rather than being lost.
+
+Given that, the practical fix is to drop the old volume and let Valkey start
+clean:
+
+```bash
+docker compose down
+docker volume rm mda_redis_data   # name may differ — check `docker volume ls`
+docker compose up --build
+```
+
 ## Stop / Reset
 
 ```bash
