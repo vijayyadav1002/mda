@@ -26,5 +26,11 @@
   "packageManager": "npm@10.9.0",
   "engines": {
     "node": ">=24.0.0"
+  },
+  "allowScripts": {
+    "bcrypt@6.0.0": true,
+    "esbuild@0.28.1": true,
+    "fsevents@2.3.3": true,
+    "msgpackr-extract@3.0.4": true
   }
 }
