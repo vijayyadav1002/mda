@@ -444,7 +444,7 @@ export function MediaAssetViewer({
               type="button"
               aria-label="Previous"
               onClick={(e) => { e.stopPropagation(); onNavigate(-1); }}
-              className="md:hidden absolute left-0 top-0 h-full w-[15%] z-10 focus:outline-none"
+              className="md:hidden absolute left-0 top-0 h-full w-[15%] z-10 focus:outline-hidden"
             />
           )}
           {hasNext && (
@@ -452,7 +452,7 @@ export function MediaAssetViewer({
               type="button"
               aria-label="Next"
               onClick={(e) => { e.stopPropagation(); onNavigate(1); }}
-              className="md:hidden absolute right-0 top-0 h-full w-[15%] z-10 focus:outline-none"
+              className="md:hidden absolute right-0 top-0 h-full w-[15%] z-10 focus:outline-hidden"
             />
           )}
         </>
@@ -462,7 +462,7 @@ export function MediaAssetViewer({
           type="button"
           aria-label="Previous"
           onClick={(e) => { e.stopPropagation(); onNavigate(-1); }}
-          className="absolute left-3 top-1/2 -translate-y-1/2 z-20 p-2.5 rounded-full bg-black/40 hover:bg-black/70 text-white backdrop-blur-sm transition-all opacity-100 md:opacity-0 md:group-hover:opacity-100"
+          className="absolute left-3 top-1/2 -translate-y-1/2 z-20 p-2.5 rounded-full bg-black/40 hover:bg-black/70 text-white backdrop-blur-xs transition-all opacity-100 md:opacity-0 md:group-hover:opacity-100"
         >
           <ChevronLeft className="w-6 h-6" />
         </button>
@@ -472,7 +472,7 @@ export function MediaAssetViewer({
           type="button"
           aria-label="Next"
           onClick={(e) => { e.stopPropagation(); onNavigate(1); }}
-          className="absolute right-3 top-1/2 -translate-y-1/2 z-20 p-2.5 rounded-full bg-black/40 hover:bg-black/70 text-white backdrop-blur-sm transition-all opacity-100 md:opacity-0 md:group-hover:opacity-100"
+          className="absolute right-3 top-1/2 -translate-y-1/2 z-20 p-2.5 rounded-full bg-black/40 hover:bg-black/70 text-white backdrop-blur-xs transition-all opacity-100 md:opacity-0 md:group-hover:opacity-100"
         >
           <ChevronRight className="w-6 h-6" />
         </button>
@@ -491,7 +491,7 @@ export function MediaAssetViewer({
           <button
             type="button"
             onClick={() => setIsFullscreen(false)}
-            className="p-3 bg-black/50 hover:bg-black/70 text-white rounded-xl backdrop-blur-sm transition-all"
+            className="p-3 bg-black/50 hover:bg-black/70 text-white rounded-xl backdrop-blur-xs transition-all"
             title="Exit Fullscreen"
           >
             <Minimize2 className="w-5 h-5" />
@@ -499,7 +499,7 @@ export function MediaAssetViewer({
           <button
             type="button"
             onClick={onClose}
-            className="p-3 bg-black/50 hover:bg-black/70 text-white rounded-xl backdrop-blur-sm transition-all"
+            className="p-3 bg-black/50 hover:bg-black/70 text-white rounded-xl backdrop-blur-xs transition-all"
             title="Close"
           >
             <X className="w-5 h-5" />
@@ -507,7 +507,7 @@ export function MediaAssetViewer({
         </div>
 
         {isImage && (
-          <button type="button" onClick={() => setIsFullscreen(false)} className="focus:outline-none">
+          <button type="button" onClick={() => setIsFullscreen(false)} className="focus:outline-hidden">
             <img
               src={originalImageUrl}
               alt={asset.fileName}
@@ -527,7 +527,7 @@ export function MediaAssetViewer({
               <track kind="captions" />
             </video>
             {transcodeProgress && transcodeProgress.status !== "ready" && transcodeProgress.status !== "unknown" && (
-              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center bg-black/50 backdrop-blur-sm text-white">
+              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center bg-black/50 backdrop-blur-xs text-white">
                 <p className="font-manrope font-semibold mb-3">
                   {transcodeProgress.status === "queued" ? "Preparing video…" : "Transcoding for playback"}
                 </p>
@@ -569,7 +569,7 @@ export function MediaAssetViewer({
   // ── Split-panel dialog ────────────────────────────────────────────
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div className="relative w-full max-w-5xl max-h-[90vh] rounded-2xl overflow-hidden flex flex-col md:flex-row bg-card shadow-ambient border border-border/10">
@@ -587,7 +587,7 @@ export function MediaAssetViewer({
             <button
               type="button"
               onClick={() => setIsFullscreen(true)}
-              className="w-full h-full focus:outline-none cursor-zoom-in"
+              className="w-full h-full focus:outline-hidden cursor-zoom-in"
               title="View fullscreen"
             >
               <img
@@ -612,7 +612,7 @@ export function MediaAssetViewer({
                 <track kind="captions" />
               </video>
               {transcodeProgress && transcodeProgress.status !== "ready" && transcodeProgress.status !== "unknown" && (
-                <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center bg-black/50 backdrop-blur-sm text-white">
+                <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center bg-black/50 backdrop-blur-xs text-white">
                   <p className="font-manrope font-semibold mb-3">
                     {transcodeProgress.status === "queued" ? "Preparing video…" : "Transcoding for playback"}
                   </p>
@@ -734,7 +734,7 @@ export function MediaAssetViewer({
                     setEditorText(e.target.value);
                     if (saveStatus === "error") setSaveStatus("idle");
                   }}
-                  className="min-h-[360px] w-full resize-y rounded-xl border border-border/30 bg-muted/20 p-4 font-mono text-sm leading-6 text-foreground outline-none focus:border-brand-primary/70 focus:ring-2 focus:ring-brand-primary/20"
+                  className="min-h-[360px] w-full resize-y rounded-xl border border-border/30 bg-muted/20 p-4 font-mono text-sm leading-6 text-foreground outline-hidden focus:border-brand-primary/70 focus:ring-2 focus:ring-brand-primary/20"
                   spellCheck={false}
                 />
               )}
@@ -748,7 +748,7 @@ export function MediaAssetViewer({
                     setEditorText(e.target.value);
                     if (saveStatus === "error") setSaveStatus("idle");
                   }}
-                  className="min-h-[360px] w-full resize-y rounded-xl border border-border/30 bg-muted/20 p-4 font-mono text-sm leading-6 text-foreground outline-none focus:border-brand-primary/70 focus:ring-2 focus:ring-brand-primary/20"
+                  className="min-h-[360px] w-full resize-y rounded-xl border border-border/30 bg-muted/20 p-4 font-mono text-sm leading-6 text-foreground outline-hidden focus:border-brand-primary/70 focus:ring-2 focus:ring-brand-primary/20"
                   spellCheck={false}
                 />
               )}
@@ -771,7 +771,7 @@ export function MediaAssetViewer({
                         key={sheet.name}
                         type="button"
                         onClick={() => setActiveSheetIndex(index)}
-                        className={`px-3 py-1.5 rounded-lg text-xs flex-shrink-0 ${
+                        className={`px-3 py-1.5 rounded-lg text-xs shrink-0 ${
                           activeSheetIndex === index ? "bg-brand-primary text-[#060e20]" : "bg-muted text-muted-foreground"
                         }`}
                       >
@@ -811,7 +811,7 @@ export function MediaAssetViewer({
             <button
               type="button"
               onClick={() => setIsFullscreen(true)}
-              className="absolute top-4 right-4 z-20 p-2.5 bg-black/40 hover:bg-black/60 text-white rounded-xl backdrop-blur-sm opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all"
+              className="absolute top-4 right-4 z-20 p-2.5 bg-black/40 hover:bg-black/60 text-white rounded-xl backdrop-blur-xs opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all"
               title="View Fullscreen"
             >
               <Maximize2 className="w-4 h-4" />
@@ -820,7 +820,7 @@ export function MediaAssetViewer({
 
           {/* Asset status (hidden while a document fills the screen) */}
           {!(isFullscreen && isDocument) && (
-            <div className="absolute bottom-4 left-4 flex items-center gap-2 bg-black/40 backdrop-blur-sm px-3 py-1.5 rounded-full">
+            <div className="absolute bottom-4 left-4 flex items-center gap-2 bg-black/40 backdrop-blur-xs px-3 py-1.5 rounded-full">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
               <span className="label-meta text-white/80">Active in Gallery</span>
             </div>
@@ -828,7 +828,7 @@ export function MediaAssetViewer({
         </div>
 
         {/* Right — metadata panel */}
-        <div className="w-full md:w-80 flex-shrink-0 flex flex-col bg-card overflow-y-auto max-h-[50vh] md:max-h-[90vh]">
+        <div className="w-full md:w-80 shrink-0 flex flex-col bg-card overflow-y-auto max-h-[50vh] md:max-h-[90vh]">
           {/* Header */}
           <div className="px-6 pt-6 pb-4 flex items-start justify-between">
             {isRenaming ? (
@@ -854,7 +854,7 @@ export function MediaAssetViewer({
                   autoFocus
                   value={renameValue}
                   onChange={(e) => setRenameValue(e.target.value)}
-                  className="w-full font-manrope font-bold text-base text-foreground mt-1 bg-transparent border-b border-brand-primary/50 focus:outline-none focus:border-brand-primary pb-0.5"
+                  className="w-full font-manrope font-bold text-base text-foreground mt-1 bg-transparent border-b border-brand-primary/50 focus:outline-hidden focus:border-brand-primary pb-0.5"
                 />
                 <div className="flex gap-3 mt-2">
                   <button
@@ -885,7 +885,7 @@ export function MediaAssetViewer({
             <button
               type="button"
               onClick={onClose}
-              className="ml-3 p-1.5 rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent transition-all flex-shrink-0"
+              className="ml-3 p-1.5 rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent transition-all shrink-0"
             >
               <X className="w-4 h-4" />
             </button>

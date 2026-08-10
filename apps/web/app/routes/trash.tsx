@@ -1,5 +1,5 @@
-import type { MetaFunction } from "@remix-run/node";
-import { useNavigate } from "@remix-run/react";
+import type { MetaFunction } from "react-router";
+import { useNavigate } from "react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, CheckSquare, Clock, File, FileText, Folder, Loader2, Play, RotateCcw, Square, Trash2 } from "lucide-react";
 import { createGraphQLClient, getApiUrl, getAuthToken } from "~/lib/api";
@@ -232,7 +232,7 @@ export default function Trash() {
             </button>
             <div className="w-px h-5 bg-border/40" />
             <h1 className="font-manrope font-bold text-lg flex items-center gap-2 truncate">
-              <Trash2 className="w-5 h-5 text-brand-primary flex-shrink-0" />
+              <Trash2 className="w-5 h-5 text-brand-primary shrink-0" />
               Trash
             </h1>
             {items && (
@@ -307,16 +307,16 @@ export default function Trash() {
                       key={item.id}
                       type="button"
                       onClick={() => toggle(item.id)}
-                      className={`relative text-left rounded-xl overflow-hidden bg-card border transition-all focus:outline-none ${
+                      className={`relative text-left rounded-xl overflow-hidden bg-card border transition-all focus:outline-hidden ${
                         isSelected ? "border-brand-primary ring-2 ring-brand-primary" : "border-border/20 hover:border-border/50"
                       }`}
                       title={item.originalPath}
                     >
                       <span className="absolute top-1.5 left-1.5 z-10">
                         {isSelected ? (
-                          <CheckSquare className="w-4 h-4 text-brand-primary drop-shadow bg-black/40 rounded" />
+                          <CheckSquare className="w-4 h-4 text-brand-primary drop-shadow-sm bg-black/40 rounded-sm" />
                         ) : (
-                          <Square className="w-4 h-4 text-white/80 drop-shadow" />
+                          <Square className="w-4 h-4 text-white/80 drop-shadow-sm" />
                         )}
                       </span>
                       {isSelected && <span className="absolute inset-0 bg-brand-primary/15 z-[5] pointer-events-none" />}
@@ -338,7 +338,7 @@ export default function Trash() {
                       <div className="p-2">
                         <p className="text-xs font-medium text-foreground truncate">{item.fileName}</p>
                         <p className="text-[10px] text-muted-foreground mt-0.5 flex items-center gap-1">
-                          <Clock className="w-2.5 h-2.5 flex-shrink-0" />
+                          <Clock className="w-2.5 h-2.5 shrink-0" />
                           {left} day{left !== 1 ? "s" : ""} left{item.fileSize ? ` · ${formatSize(item.fileSize)}` : ""}
                         </p>
                       </div>

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { useNavigate, useSearchParams } from "@remix-run/react";
+import { useNavigate, useSearchParams } from "react-router";
 import { createGraphQLClient, getApiUrl, getAuthToken, clearAuthToken } from "~/lib/api";
 import { Input } from "~/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "~/components/ui/dialog";
@@ -487,7 +487,7 @@ function CachePanelBody({
           <div key={key} className="space-y-1">
             <div className="flex items-center justify-between gap-2 text-xs">
               <span className="text-muted-foreground truncate">{s.label}</span>
-              <div className="flex items-center gap-2 flex-shrink-0">
+              <div className="flex items-center gap-2 shrink-0">
                 <span className="font-mono text-foreground">
                   {formatBytes(s.bytes)}
                   <span className="text-muted-foreground"> / {formatBytes(s.maxBytes)}</span>
@@ -532,7 +532,7 @@ function CachePanelBody({
                   min={1}
                   value={draft[key] ?? ""}
                   onChange={(e) => setDraft((prev) => ({ ...prev, [key]: e.target.value }))}
-                  className="w-full px-2 py-1 rounded-lg bg-background border border-border/40 text-xs font-mono text-foreground focus:outline-none focus:border-brand-primary"
+                  className="w-full px-2 py-1 rounded-lg bg-background border border-border/40 text-xs font-mono text-foreground focus:outline-hidden focus:border-brand-primary"
                 />
               </label>
             ))}
@@ -583,7 +583,7 @@ function SidebarNavItem({
           : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
       }`}
     >
-      <Icon className="w-4 h-4 flex-shrink-0" />
+      <Icon className="w-4 h-4 shrink-0" />
       {label}
       {badge != null && badge > 0 && (
         <span className="ml-auto w-5 h-5 gradient-brand rounded-full flex items-center justify-center text-[10px] font-bold text-[#060e20]">
@@ -2280,13 +2280,13 @@ export default function Dashboard() {
         <div key={node.path} className="relative group">
           <button
             type="button"
-            className={`w-full pl-6 py-2.5 flex items-center gap-3 cursor-pointer hover:bg-accent rounded-xl transition-all duration-150 outline-none focus:ring-2 focus:ring-brand-primary/30 text-left ${
+            className={`w-full pl-6 py-2.5 flex items-center gap-3 cursor-pointer hover:bg-accent rounded-xl transition-all duration-150 outline-hidden focus:ring-2 focus:ring-brand-primary/30 text-left ${
               isSelected ? "bg-accent" : ""
             }`}
             onClick={() => node.mediaAsset && handleAssetClick(node.mediaAsset)}
           >
             {selectionMode && (
-              <div className="flex-shrink-0">
+              <div className="shrink-0">
                 {isSelected ? (
                   <CheckSquare className="w-4 h-4 text-brand-primary" />
                 ) : (
@@ -2294,7 +2294,7 @@ export default function Dashboard() {
                 )}
               </div>
             )}
-            <FileImage className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+            <FileImage className="w-4 h-4 text-muted-foreground shrink-0" />
             <span className="text-sm truncate text-foreground flex-1">{node.name}</span>
             {!selectionMode && node.mediaAsset && (user?.role === "admin" || user?.role === "editor") && (
               <button
@@ -2322,19 +2322,19 @@ export default function Dashboard() {
         <div className="group relative flex items-center">
           <button
             type="button"
-            className="flex-1 py-2.5 flex items-center gap-3 font-medium text-foreground hover:bg-accent rounded-xl transition-all duration-150 outline-none focus:ring-2 focus:ring-brand-primary/30 text-left px-2"
+            className="flex-1 py-2.5 flex items-center gap-3 font-medium text-foreground hover:bg-accent rounded-xl transition-all duration-150 outline-hidden focus:ring-2 focus:ring-brand-primary/30 text-left px-2"
             onClick={() => void toggleFolder(node.path)}
           >
             {isExpanded ? (
-              <ChevronDown className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+              <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />
             ) : (
-              <ChevronRight className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+              <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
             )}
-            <div className="w-8 h-8 gradient-brand rounded-lg flex items-center justify-center flex-shrink-0">
+            <div className="w-8 h-8 gradient-brand rounded-lg flex items-center justify-center shrink-0">
               <Folder className="w-4 h-4 text-[#060e20]" />
             </div>
             <span className="text-sm">{node.name}</span>
-            <span className="flex items-center gap-1.5 ml-auto mr-2 flex-shrink-0">
+            <span className="flex items-center gap-1.5 ml-auto mr-2 shrink-0">
               {node.size != null && node.size > 0 && (
                 <span className="text-xs text-muted-foreground font-mono">
                   {formatBytes(node.size)}
@@ -2352,7 +2352,7 @@ export default function Dashboard() {
               <button
                 type="button"
                 onClick={() => { setRenamingFolder({ path: node.path, name: node.name }); setRenameFolderValue(node.name); }}
-                className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-accent rounded-lg transition-all duration-150 flex-shrink-0"
+                className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-accent rounded-lg transition-all duration-150 shrink-0"
                 title="Rename folder"
               >
                 <Pencil className="w-3.5 h-3.5 text-foreground" />
@@ -2360,7 +2360,7 @@ export default function Dashboard() {
               <button
                 type="button"
                 onClick={() => openDuplicateFolderDialog({ path: node.path, name: node.name })}
-                className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-accent rounded-lg transition-all duration-150 flex-shrink-0"
+                className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-accent rounded-lg transition-all duration-150 shrink-0"
                 title="Duplicate folder"
               >
                 <Copy className="w-3.5 h-3.5 text-foreground" />
@@ -2368,7 +2368,7 @@ export default function Dashboard() {
               <button
                 type="button"
                 onClick={() => void handleDeleteFolder(node.path, node.name)}
-                className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-destructive/10 rounded-lg transition-all duration-150 mr-1 flex-shrink-0"
+                className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-destructive/10 rounded-lg transition-all duration-150 mr-1 shrink-0"
                 title="Delete folder"
               >
                 <Trash2 className="w-3.5 h-3.5 text-destructive" />
@@ -2428,7 +2428,7 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen flex bg-background">
       {/* ── Sidebar ──────────────────────────────────────────────── */}
-      <aside className="hidden md:flex flex-col fixed left-0 top-0 h-screen w-64 bg-card z-30 flex-shrink-0">
+      <aside className="hidden md:flex flex-col fixed left-0 top-0 h-screen w-64 bg-card z-30 shrink-0">
         {/* Brand */}
         <div className="px-5 py-6">
           <button
@@ -2436,7 +2436,7 @@ export default function Dashboard() {
             onClick={() => { setCurrentPath(rootPath); setFolderHistory([]); }}
             className="flex items-center gap-3 hover:opacity-80 transition-opacity"
           >
-            <div className="w-9 h-9 rounded-xl gradient-brand flex items-center justify-center shadow-ambient flex-shrink-0">
+            <div className="w-9 h-9 rounded-xl gradient-brand flex items-center justify-center shadow-ambient shrink-0">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#060e20" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
               </svg>
@@ -2476,7 +2476,7 @@ export default function Dashboard() {
           {rootSize != null && rootSize > 0 && (
             <div className="flex items-center justify-between px-3 py-2 rounded-xl border border-border/20 text-xs text-muted-foreground">
               <span className="flex items-center gap-1.5">
-                <HardDrive className="w-3.5 h-3.5 flex-shrink-0" />
+                <HardDrive className="w-3.5 h-3.5 shrink-0" />
                 Media Total
               </span>
               <span className="font-mono">{formatBytes(rootSize)}</span>
@@ -2491,12 +2491,12 @@ export default function Dashboard() {
                 className="w-full flex items-center justify-between px-3 py-2.5 text-sm text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-all"
               >
                 <span className="flex items-center gap-2">
-                  <HardDrive className="w-4 h-4 flex-shrink-0" />
+                  <HardDrive className="w-4 h-4 shrink-0" />
                   Cache
                 </span>
                 <span className="flex items-center gap-1.5 min-w-0">
                   <span className="font-mono text-xs truncate">{formatBytes(cacheStats.totalBytes)}</span>
-                  <ChevronDown className={`w-3.5 h-3.5 flex-shrink-0 transition-transform duration-200 ${showCachePanel ? "rotate-180" : ""}`} />
+                  <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform duration-200 ${showCachePanel ? "rotate-180" : ""}`} />
                 </span>
               </button>
               {showCachePanel && (
@@ -2536,7 +2536,7 @@ export default function Dashboard() {
           {/* User row */}
           {user && (
             <div className="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-accent/50 transition-colors group">
-              <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
+              <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center shrink-0">
                 <User className="w-4 h-4 text-muted-foreground" />
               </div>
               <div className="flex-1 min-w-0">
@@ -2570,7 +2570,7 @@ export default function Dashboard() {
       <div className="flex-1 md:ml-64 min-h-screen flex flex-col">
 
         {/* Mobile top bar */}
-        <div className="md:hidden flex items-center justify-between px-4 py-4 bg-card/80 backdrop-blur-sm sticky top-0 z-20">
+        <div className="md:hidden flex items-center justify-between px-4 py-4 bg-card/80 backdrop-blur-xs sticky top-0 z-20">
           <button
             type="button"
             onClick={() => { setCurrentPath(rootPath); setFolderHistory([]); }}
@@ -2663,7 +2663,7 @@ export default function Dashboard() {
                 {rootSize != null && rootSize > 0 && (
                   <div className="flex items-center justify-between px-3 py-2 rounded-xl border border-border/20 text-xs text-muted-foreground">
                     <span className="flex items-center gap-1.5">
-                      <HardDrive className="w-3.5 h-3.5 flex-shrink-0" />
+                      <HardDrive className="w-3.5 h-3.5 shrink-0" />
                       Media Total
                     </span>
                     <span className="font-mono">{formatBytes(rootSize)}</span>
@@ -2677,12 +2677,12 @@ export default function Dashboard() {
                       className="w-full flex items-center justify-between px-3 py-2.5 text-sm text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-all"
                     >
                       <span className="flex items-center gap-2">
-                        <HardDrive className="w-4 h-4 flex-shrink-0" />
+                        <HardDrive className="w-4 h-4 shrink-0" />
                         Cache
                       </span>
                       <span className="flex items-center gap-1.5 min-w-0">
                         <span className="font-mono text-xs truncate">{formatBytes(cacheStats.totalBytes)}</span>
-                        <ChevronDown className={`w-3.5 h-3.5 flex-shrink-0 transition-transform duration-200 ${showCachePanel ? "rotate-180" : ""}`} />
+                        <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform duration-200 ${showCachePanel ? "rotate-180" : ""}`} />
                       </span>
                     </button>
                     {showCachePanel && (
@@ -2708,7 +2708,7 @@ export default function Dashboard() {
         )}
 
         {/* Search bar */}
-        <div className="md:sticky md:top-0 z-20 bg-background/80 backdrop-blur-sm px-4 md:px-10 pt-3 pb-1.5">
+        <div className="md:sticky md:top-0 z-20 bg-background/80 backdrop-blur-xs px-4 md:px-10 pt-3 pb-1.5">
           <SearchBar
             onSearch={handleSearch}
             onClear={handleClearSearch}
@@ -2717,7 +2717,7 @@ export default function Dashboard() {
         </div>
 
         {/* Toolbar */}
-        <div className="relative z-30 bg-background/80 backdrop-blur-sm px-4 md:px-10 pb-3 pt-1 flex items-center justify-between gap-2 md:gap-4">
+        <div className="relative z-30 bg-background/80 backdrop-blur-xs px-4 md:px-10 pb-3 pt-1 flex items-center justify-between gap-2 md:gap-4">
           <div className="flex items-center gap-3 min-w-0">
             {searchQuery && (
               <button
@@ -2982,7 +2982,7 @@ export default function Dashboard() {
                                   : "text-muted-foreground hover:text-foreground hover:bg-accent"
                               }`}
                             >
-                              <item.icon className="w-4 h-4 flex-shrink-0" />
+                              <item.icon className="w-4 h-4 shrink-0" />
                               {item.label}
                             </button>
                           ))}
@@ -3181,7 +3181,7 @@ export default function Dashboard() {
               <select
                 value={searchLimit}
                 onChange={(e) => setSearchLimit(Number(e.target.value) as typeof searchLimit)}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm bg-muted text-muted-foreground focus:outline-none focus:ring-2 focus:ring-brand-primary/30 cursor-pointer"
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm bg-muted text-muted-foreground focus:outline-hidden focus:ring-2 focus:ring-brand-primary/30 cursor-pointer"
                 aria-label="Max search results"
               >
                 <option value={25}>25 results</option>
@@ -3197,7 +3197,7 @@ export default function Dashboard() {
               <select
                 value={minSizeBytes}
                 onChange={(e) => setMinSizeBytes(Number(e.target.value))}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary/30 cursor-pointer ${
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm focus:outline-hidden focus:ring-2 focus:ring-brand-primary/30 cursor-pointer ${
                   minSizeBytes > 0
                     ? "text-brand-primary bg-brand-primary/10"
                     : "bg-muted text-muted-foreground"
@@ -3223,7 +3223,7 @@ export default function Dashboard() {
                   onClick={() => setView(v)}
                   className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all capitalize ${
                     view === v
-                      ? "bg-card text-foreground shadow-sm"
+                      ? "bg-card text-foreground shadow-xs"
                       : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
@@ -3243,7 +3243,7 @@ export default function Dashboard() {
               </h1>
               <p className="text-muted-foreground mt-1.5 text-sm">{heroSubtitle}</p>
             </div>
-            <div className="text-right flex-shrink-0">
+            <div className="text-right shrink-0">
               <p className="label-meta">Total Items</p>
               <p className="font-manrope text-2xl font-bold text-foreground">
                 {activeTagFilter ? tagFilterAssets.length : currentFolderChildren.length}
@@ -3270,8 +3270,8 @@ export default function Dashboard() {
                         {selectionMode && (
                           <div className="absolute top-3 left-3 z-10">
                             {selectedFolderPaths.has(node.path)
-                              ? <CheckSquare className="w-5 h-5 text-brand-primary drop-shadow" />
-                              : <Square className="w-5 h-5 text-white drop-shadow" />}
+                              ? <CheckSquare className="w-5 h-5 text-brand-primary drop-shadow-sm" />
+                              : <Square className="w-5 h-5 text-white drop-shadow-sm" />}
                           </div>
                         )}
                         <div className="w-16 h-16 rounded-2xl gradient-brand flex items-center justify-center shadow-ambient group-hover:scale-110 transition-transform duration-300">
@@ -3291,7 +3291,7 @@ export default function Dashboard() {
                           <button
                             type="button"
                             onClick={(e) => { e.stopPropagation(); setRenamingFolder({ path: node.path, name: node.name }); setRenameFolderValue(node.name); }}
-                            className="w-8 h-8 bg-background/80 backdrop-blur-sm rounded-xl flex items-center justify-center hover:bg-accent transition-all duration-200"
+                            className="w-8 h-8 bg-background/80 backdrop-blur-xs rounded-xl flex items-center justify-center hover:bg-accent transition-all duration-200"
                             title="Rename folder"
                           >
                             <Pencil className="w-3.5 h-3.5 text-foreground" />
@@ -3299,7 +3299,7 @@ export default function Dashboard() {
                           <button
                             type="button"
                             onClick={(e) => { e.stopPropagation(); openDuplicateFolderDialog({ path: node.path, name: node.name }); }}
-                            className="w-8 h-8 bg-background/80 backdrop-blur-sm rounded-xl flex items-center justify-center hover:bg-accent transition-all duration-200"
+                            className="w-8 h-8 bg-background/80 backdrop-blur-xs rounded-xl flex items-center justify-center hover:bg-accent transition-all duration-200"
                             title="Duplicate folder"
                           >
                             <Copy className="w-3.5 h-3.5 text-foreground" />
@@ -3307,7 +3307,7 @@ export default function Dashboard() {
                           <button
                             type="button"
                             onClick={(e) => { e.stopPropagation(); void handleDeleteFolder(node.path, node.name); }}
-                            className="w-8 h-8 bg-background/80 backdrop-blur-sm rounded-xl flex items-center justify-center hover:bg-destructive/20 transition-all duration-200"
+                            className="w-8 h-8 bg-background/80 backdrop-blur-xs rounded-xl flex items-center justify-center hover:bg-destructive/20 transition-all duration-200"
                             title="Delete folder"
                           >
                             <Trash2 className="w-3.5 h-3.5 text-destructive" />
@@ -3331,9 +3331,9 @@ export default function Dashboard() {
                       {selectionMode && (
                         <div className="absolute top-3 left-3 z-10">
                           {isSelected ? (
-                            <CheckSquare className="w-5 h-5 text-brand-primary drop-shadow" />
+                            <CheckSquare className="w-5 h-5 text-brand-primary drop-shadow-sm" />
                           ) : (
-                            <Square className="w-5 h-5 text-white drop-shadow" />
+                            <Square className="w-5 h-5 text-white drop-shadow-sm" />
                           )}
                         </div>
                       )}
@@ -3346,7 +3346,7 @@ export default function Dashboard() {
                             e.stopPropagation();
                             handleDeleteSingle(asset.id, asset.fileName);
                           }}
-                          className="absolute top-3 right-3 z-10 opacity-0 group-hover:opacity-100 w-8 h-8 bg-background/80 backdrop-blur-sm rounded-xl flex items-center justify-center hover:bg-destructive/20 transition-all duration-200"
+                          className="absolute top-3 right-3 z-10 opacity-0 group-hover:opacity-100 w-8 h-8 bg-background/80 backdrop-blur-xs rounded-xl flex items-center justify-center hover:bg-destructive/20 transition-all duration-200"
                         >
                           <Trash2 className="w-3.5 h-3.5 text-destructive" />
                         </button>
@@ -3379,12 +3379,12 @@ export default function Dashboard() {
 
                         {/* Type badge */}
                         <div className="absolute top-3 left-3 z-10 flex items-center gap-1">
-                          <div className="bg-background/70 backdrop-blur-sm px-2 py-0.5 rounded-lg">
+                          <div className="bg-background/70 backdrop-blur-xs px-2 py-0.5 rounded-lg">
                             <span className="label-meta">{getFileCategoryLabel(asset)}</span>
                           </div>
                           {asset.mimeType.startsWith("video/") && asset.transcodedUrl && (
                             <div
-                              className="bg-emerald-500/20 backdrop-blur-sm px-1.5 py-0.5 rounded-lg flex items-center gap-0.5"
+                              className="bg-emerald-500/20 backdrop-blur-xs px-1.5 py-0.5 rounded-lg flex items-center gap-0.5"
                               title="Transcoded — plays instantly"
                             >
                               <Zap className="w-2.5 h-2.5 text-emerald-400 fill-emerald-400" />
@@ -3398,7 +3398,7 @@ export default function Dashboard() {
                           <a
                             href={`${API_URL}/download/${asset.id}`}
                             onClick={(e) => e.stopPropagation()}
-                            className="absolute bottom-3 right-3 z-10 opacity-0 group-hover:opacity-100 w-8 h-8 bg-background/80 backdrop-blur-sm rounded-xl flex items-center justify-center hover:bg-accent transition-all duration-200"
+                            className="absolute bottom-3 right-3 z-10 opacity-0 group-hover:opacity-100 w-8 h-8 bg-background/80 backdrop-blur-xs rounded-xl flex items-center justify-center hover:bg-accent transition-all duration-200"
                             title={`Download ${asset.fileName}`}
                           >
                             <Download className="w-3.5 h-3.5 text-foreground" />
@@ -3668,7 +3668,7 @@ export default function Dashboard() {
                         : 'hover:bg-accent text-foreground'
                   }`}
                 >
-                  <Folder className="w-4 h-4 flex-shrink-0" />
+                  <Folder className="w-4 h-4 shrink-0" />
                   <span className="font-mono text-xs truncate">{relPath}</span>
                   {isCurrent && <span className="ml-auto text-xs text-muted-foreground">current</span>}
                   {isInvalidDest && <span className="ml-auto text-xs text-muted-foreground">inside source</span>}
@@ -3742,7 +3742,7 @@ export default function Dashboard() {
                         : 'hover:bg-accent text-foreground'
                   }`}
                 >
-                  <Folder className="w-4 h-4 flex-shrink-0" />
+                  <Folder className="w-4 h-4 shrink-0" />
                   <span className="font-mono text-xs truncate">{relPath}</span>
                   {isCurrent && <span className="ml-auto text-xs text-muted-foreground">current</span>}
                   {isInvalidDest && <span className="ml-auto text-xs text-muted-foreground">selected</span>}
@@ -3878,7 +3878,7 @@ export default function Dashboard() {
                   className="bg-muted border-border/20 text-foreground placeholder:text-muted-foreground"
                 />
                 {!/\.(txt|md|markdown)$/i.test(newFileName.trim()) && (
-                  <div className="flex items-center gap-1 flex-shrink-0">
+                  <div className="flex items-center gap-1 shrink-0">
                     {(["md", "txt"] as const).map((type) => (
                       <button
                         key={type}
@@ -3981,7 +3981,7 @@ export default function Dashboard() {
               <select
                 value={uploadTargetPath}
                 onChange={(e) => setUploadTargetPath(e.target.value)}
-                className="w-full bg-muted border border-border/20 rounded-xl px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-brand-primary/30"
+                className="w-full bg-muted border border-border/20 rounded-xl px-3 py-2 text-sm text-foreground focus:outline-hidden focus:ring-2 focus:ring-brand-primary/30"
               >
                 {allDirectories.map((dir) => (
                   <option key={dir.path} value={dir.path}>{dir.displayName}</option>
@@ -4023,7 +4023,7 @@ export default function Dashboard() {
               <div className="space-y-2 max-h-44 overflow-y-auto pr-1">
                 {uploadFiles.map((file) => (
                   <div key={file.name} className="flex items-center gap-3 bg-muted rounded-xl px-3 py-2">
-                    <FileImage className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                    <FileImage className="w-4 h-4 text-muted-foreground shrink-0" />
                     <div className="flex-1 min-w-0">
                       <p className="text-xs text-foreground truncate">{file.name}</p>
                       {isUploading && (
@@ -4035,12 +4035,12 @@ export default function Dashboard() {
                         </div>
                       )}
                     </div>
-                    <span className="text-xs text-muted-foreground flex-shrink-0">{formatBytes(file.size)}</span>
+                    <span className="text-xs text-muted-foreground shrink-0">{formatBytes(file.size)}</span>
                     {!isUploading && (
                       <button
                         type="button"
                         onClick={() => setUploadFiles((prev) => prev.filter((f) => f.name !== file.name))}
-                        className="p-1 rounded-lg hover:bg-accent text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
+                        className="p-1 rounded-lg hover:bg-accent text-muted-foreground hover:text-foreground transition-colors shrink-0"
                       >
                         <X className="w-3 h-3" />
                       </button>
@@ -4084,7 +4084,7 @@ export default function Dashboard() {
 
       {/* Logout Confirmation */}
       {showLogoutConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs">
           <div className="bg-card rounded-2xl p-8 max-w-sm w-full mx-4 shadow-ambient border border-border/10 text-center">
             <div className="w-12 h-12 rounded-2xl bg-muted flex items-center justify-center mx-auto mb-4">
               <LogOut className="w-5 h-5 text-muted-foreground" />

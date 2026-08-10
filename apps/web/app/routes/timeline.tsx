@@ -1,5 +1,5 @@
-import type { MetaFunction } from "@remix-run/node";
-import { useNavigate } from "@remix-run/react";
+import type { MetaFunction } from "react-router";
+import { useNavigate } from "react-router";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, CalendarDays, Check, CheckSquare, ChevronDown, Film, ImageIcon, ListTodo, Minus, Play, Plus, RefreshCw, Settings, Square, Tag as TagIcon, Trash2, X, Zap } from "lucide-react";
 import { ConfirmDialog } from "~/components/ConfirmDialog";
@@ -198,7 +198,7 @@ const AssetTile = memo(function AssetTile({
       type="button"
       data-asset-id={asset.id}
       onClick={() => onActivate(asset)}
-      className={`relative w-full aspect-square overflow-hidden bg-muted/40 rounded-[3px] focus:outline-none focus:ring-2 focus:ring-brand-primary group/tile ${
+      className={`relative w-full aspect-square overflow-hidden bg-muted/40 rounded-[3px] focus:outline-hidden focus:ring-2 focus:ring-brand-primary group/tile ${
         isSelected ? "ring-2 ring-brand-primary" : ""
       }`}
       title={asset.fileName}
@@ -206,9 +206,9 @@ const AssetTile = memo(function AssetTile({
       {selectionMode && (
         <span className="absolute top-1 left-1 z-10">
           {isSelected ? (
-            <CheckSquare className="w-4 h-4 text-brand-primary drop-shadow bg-black/40 rounded" />
+            <CheckSquare className="w-4 h-4 text-brand-primary drop-shadow-sm bg-black/40 rounded-sm" />
           ) : (
-            <Square className="w-4 h-4 text-white/80 drop-shadow" />
+            <Square className="w-4 h-4 text-white/80 drop-shadow-sm" />
           )}
         </span>
       )}
@@ -229,7 +229,7 @@ const AssetTile = memo(function AssetTile({
       )}
       {isVideo && (
         <span
-          className="absolute bottom-1 right-1 flex items-center gap-0.5 px-1 py-0.5 rounded bg-black/60 text-white text-[10px] font-mono leading-none"
+          className="absolute bottom-1 right-1 flex items-center gap-0.5 px-1 py-0.5 rounded-sm bg-black/60 text-white text-[10px] font-mono leading-none"
           title={asset.transcodedUrl ? "Transcoded — plays instantly" : undefined}
         >
           {asset.transcodedUrl && <Zap className="w-2.5 h-2.5 fill-emerald-400 text-emerald-400" />}
@@ -237,7 +237,7 @@ const AssetTile = memo(function AssetTile({
           {asset.duration ? formatDuration(asset.duration) : ""}
         </span>
       )}
-      <span className="absolute bottom-1 left-1 px-1 py-0.5 rounded bg-black/60 text-white text-[10px] font-mono leading-none">
+      <span className="absolute bottom-1 left-1 px-1 py-0.5 rounded-sm bg-black/60 text-white text-[10px] font-mono leading-none">
         {formatBytes(asset.fileSize)}
       </span>
     </button>
@@ -1110,7 +1110,7 @@ export default function Timeline() {
             </button>
             <div className="w-px h-5 bg-border/40" />
             <h1 className="font-manrope font-bold text-lg flex items-center gap-2 truncate">
-              <CalendarDays className="w-5 h-5 text-brand-primary flex-shrink-0" />
+              <CalendarDays className="w-5 h-5 text-brand-primary shrink-0" />
               Timeline
             </h1>
             {monthBuckets && (
@@ -1152,7 +1152,7 @@ export default function Timeline() {
                           dateSource === option.value ? "bg-accent" : "hover:bg-accent/50"
                         }`}
                       >
-                        <span className="w-4 pt-0.5 flex-shrink-0">
+                        <span className="w-4 pt-0.5 shrink-0">
                           {dateSource === option.value && <Check className="w-4 h-4 text-brand-primary" />}
                         </span>
                         <span>
@@ -1246,7 +1246,7 @@ export default function Timeline() {
                       zoom === i ? "bg-accent font-medium text-foreground" : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
                     }`}
                   >
-                    <span className="w-4 flex-shrink-0">
+                    <span className="w-4 shrink-0">
                       {zoom === i && <Check className="w-3.5 h-3.5 text-brand-primary" />}
                     </span>
                     {label}
@@ -1325,7 +1325,7 @@ export default function Timeline() {
                     zoomAnchorRef.current = sortedMonthKeys.find((k) => k.startsWith(year)) ?? null;
                     setZoom(1);
                   }}
-                  className="text-left group focus:outline-none"
+                  className="text-left group focus:outline-hidden"
                 >
                   <CoverMosaic covers={bucket.coverAssets} fallbackLabel={year} />
                   <p className="mt-2 font-manrope font-bold text-xl group-hover:text-brand-primary transition-colors">{year}</p>
@@ -1350,7 +1350,7 @@ export default function Timeline() {
                     zoomAnchorRef.current = key;
                     setZoom(2);
                   }}
-                  className="text-left group focus:outline-none"
+                  className="text-left group focus:outline-hidden"
                 >
                   <CoverMosaic covers={bucket.coverAssets} fallbackLabel={monthShortLabel(key)} />
                   <p className="mt-2 font-manrope font-semibold text-sm group-hover:text-brand-primary transition-colors">
@@ -1533,7 +1533,7 @@ export default function Timeline() {
                         : "text-muted-foreground hover:text-foreground hover:bg-accent"
                     }`}
                   >
-                    <item.icon className="w-3.5 h-3.5 flex-shrink-0" />
+                    <item.icon className="w-3.5 h-3.5 shrink-0" />
                     {item.label}
                   </button>
                 ))}
