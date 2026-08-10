@@ -1,5 +1,6 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
+import rateLimit from '@fastify/rate-limit';
 import jwt from '@fastify/jwt';
 import multipart from '@fastify/multipart';
 import fastifyStatic from '@fastify/static';
@@ -24,12 +25,14 @@ import { pipeline } from 'node:stream/promises';
 import { ZipArchive } from 'archiver';
 import { indexFile } from './services/media-indexer.js';
 import { canCompressFile, classifyFile } from './services/file-types.js';
+import { isValidAssetId, resolveWithinRoot } from './lib/media-path.js';
 
 let workerHandles: ReturnType<typeof startWorkers> | null = null;
 let cacheMaintenanceTimer: ReturnType<typeof setInterval> | null = null;
 
 const fastify = Fastify({
-  logger: true
+  logger: true,
+  trustProxy: true
 });
 
 async function authenticateRequest(request: any) {
@@ -91,6 +94,17 @@ async function requirePreviewAsset(request: any, reply: any) {
 await fastify.register(cors, {
   origin: true,
   credentials: true
+});
+
+await fastify.register(rateLimit, {
+  max: 300,
+  timeWindow: '1 minute',
+  allowList: (request) => {
+    return request.url.startsWith('/thumbnails/')
+      || request.url.startsWith('/compress-preview/')
+      || request.url.startsWith('/media/')
+      || request.url.startsWith('/hls/');
+  }
 });
 
 await fastify.register(jwt, {
@@ -321,7 +335,7 @@ fastify.put('/file-preview/:id/content', async (request, reply) => {
 });
 
 // Bulk ZIP download — streams a zip of the requested asset IDs
-fastify.get('/download-zip', async (request, reply) => {
+fastify.get('/download-zip', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (request, reply) => {
   const query = request.query as { ids?: string; name?: string };
   const rawIds = (query.ids ?? '').split(',').map((s) => s.trim()).filter(Boolean);
   if (rawIds.length === 0) {
@@ -492,6 +506,9 @@ fastify.get('/image/:id', async (request, reply) => {
 // Lightweight playback negotiation — does not block on transcoding
 fastify.get('/video/:id/prepare', async (request, reply) => {
   const { id } = request.params as { id: string };
+  if (!isValidAssetId(id)) {
+    return reply.code(400).send({ error: 'Invalid asset id' });
+  }
 
   try {
     const result = await db.query(
@@ -572,6 +589,9 @@ fastify.get('/video/:id/prepare', async (request, reply) => {
 // Transcoding progress polling endpoint
 fastify.get('/video/:id/progress', async (request, reply) => {
   const { id } = request.params as { id: string };
+  if (!isValidAssetId(id)) {
+    return reply.code(400).send({ error: 'Invalid asset id' });
+  }
   const playlistPath = path.resolve(
     path.dirname(config.thumbnailCachePath),
     'hls',
@@ -593,6 +613,9 @@ fastify.get('/video/:id/progress', async (request, reply) => {
 // On-demand video transcoding endpoint
 fastify.get('/video/:id', async (request, reply) => {
   const { id } = request.params as { id: string };
+  if (!isValidAssetId(id)) {
+    return reply.code(400).send({ error: 'Invalid asset id' });
+  }
 
   try {
     // Get video info from database
@@ -696,6 +719,9 @@ fastify.get('/video/:id', async (request, reply) => {
 
 fastify.get('/video/:id/hls', async (request, reply) => {
   const { id } = request.params as { id: string };
+  if (!isValidAssetId(id)) {
+    return reply.code(400).send({ error: 'Invalid asset id' });
+  }
 
   // Get file path from DB
   const result = await db.query('SELECT file_path FROM media_assets WHERE id = $1', [id]);
@@ -718,6 +744,9 @@ fastify.get('/video/:id/hls', async (request, reply) => {
 // Delete transcoded video endpoint (called when video dialog closes)
 fastify.delete('/video/:id/cleanup', async (request, reply) => {
   const { id } = request.params as { id: string };
+  if (!isValidAssetId(id)) {
+    return reply.code(400).send({ error: 'Invalid asset id' });
+  }
 
   try {
     // Get video info from database
@@ -874,7 +903,7 @@ fastify.post('/api/compress/preview', async (request, reply) => {
 });
 
 // Enqueue compression job — creates BullMQ job + initial Redis state
-fastify.post('/api/compress/enqueue', async (request, reply) => {
+fastify.post('/api/compress/enqueue', { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } }, async (request, reply) => {
   const authHeader = request.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {
     return reply.code(401).send({ error: 'Unauthorized' });
@@ -939,7 +968,7 @@ fastify.post('/api/compress/enqueue', async (request, reply) => {
 
 // Enqueue a batch video-transcode job (shares the queue panel + cancel endpoint
 // with compression jobs via the same per-user Redis queue)
-fastify.post('/api/transcode/enqueue', async (request, reply) => {
+fastify.post('/api/transcode/enqueue', { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } }, async (request, reply) => {
   const authHeader = request.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {
     return reply.code(401).send({ error: 'Unauthorized' });
@@ -1107,7 +1136,7 @@ fastify.put('/api/queue-state', async (request, reply) => {
 });
 
 // Upload endpoint
-fastify.post('/api/upload', async (request, reply) => {
+fastify.post('/api/upload', { config: { rateLimit: { max: 100, timeWindow: '1 minute' } } }, async (request, reply) => {
   const authHeader = request.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {
     return reply.code(401).send({ error: 'Unauthorized' });
@@ -1128,12 +1157,11 @@ fastify.post('/api/upload', async (request, reply) => {
   let targetDir = rootPath;
 
   if (rawTargetPath) {
-    const resolved = path.resolve(rawTargetPath);
-    if (resolved === rootPath || resolved.startsWith(`${rootPath}${path.sep}`)) {
-      targetDir = resolved;
-    } else {
+    const resolved = resolveWithinRoot(rootPath, rawTargetPath);
+    if (resolved === null) {
       return reply.code(400).send({ error: 'Invalid target path' });
     }
+    targetDir = resolved;
   }
 
   try {

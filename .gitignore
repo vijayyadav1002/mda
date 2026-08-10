@@ -23,3 +23,6 @@ mempalace.yaml
 entities.json
 .claude/commands
 .prompts
+
+# Superpowers subagent-driven-development workspace
+.superpowers/
