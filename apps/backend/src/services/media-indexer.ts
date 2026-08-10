@@ -231,7 +231,7 @@ export async function indexFile(filePath: string, options: IndexOptions = {}): P
     console.log(`✓ Indexed: ${fileName} (${queueLabel})`);
     return 'indexed';
   } catch (error) {
-    console.error(`Error indexing file ${filePath}:`, error);
+    console.error('Error indexing file:', filePath, error);
     throw error; // Re-throw so watcher can log it properly
   }
 }
