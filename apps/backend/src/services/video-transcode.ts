@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import { config } from '../config.js';
 import ffmpeg from 'fluent-ffmpeg';
 import fs from 'node:fs/promises';
-import { isValidAssetId } from '../lib/media-path.js';
+import { isValidAssetId, resolveWithinRoot } from '../lib/media-path.js';
 
 const TRANSCODE_CACHE_PATH = path.join(config.thumbnailCachePath, '../transcoded');
 
@@ -289,8 +289,11 @@ export async function ensureHLS(filePath: string, assetId: string): Promise<stri
   if (!isValidAssetId(assetId)) {
     throw new Error(`Invalid assetId: ${assetId}`);
   }
-  const hlsDir = path.join(path.dirname(config.thumbnailCachePath), 'hls', assetId);
-  const playlistPath = path.join(hlsDir, 'master.m3u8');
+  const hlsRoot = path.resolve(path.dirname(config.thumbnailCachePath), 'hls');
+  const playlistPath = resolveWithinRoot(hlsRoot, path.join(hlsRoot, assetId, 'master.m3u8'));
+  if (!playlistPath) {
+    throw new Error(`Invalid assetId: ${assetId}`);
+  }
 
   try {
     await fs.access(playlistPath);

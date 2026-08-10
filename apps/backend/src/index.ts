@@ -159,7 +159,7 @@ await fastify.register(fastifyStatic, {
 });
 
 // Force-download endpoint — streams original file with Content-Disposition: attachment
-fastify.get('/download/:id', async (request, reply) => {
+fastify.get('/download/:id', { config: { rateLimit: { max: 300, timeWindow: '1 minute' } } }, async (request, reply) => {
   const { id } = request.params as { id: string };
 
   const result = await db.query(
@@ -197,7 +197,7 @@ fastify.get('/download/:id', async (request, reply) => {
   });
 });
 
-fastify.get('/file-preview/:id/pdf', async (request, reply) => {
+fastify.get('/file-preview/:id/pdf', { config: { rateLimit: { max: 300, timeWindow: '1 minute' } } }, async (request, reply) => {
   const target = await requirePreviewAsset(request, reply);
   if (!target) return;
 
@@ -221,7 +221,7 @@ fastify.get('/file-preview/:id/pdf', async (request, reply) => {
   });
 });
 
-fastify.get('/file-preview/:id/content', async (request, reply) => {
+fastify.get('/file-preview/:id/content', { config: { rateLimit: { max: 300, timeWindow: '1 minute' } } }, async (request, reply) => {
   const target = await requirePreviewAsset(request, reply);
   if (!target) return;
 
@@ -272,7 +272,7 @@ fastify.get('/file-preview/:id/content', async (request, reply) => {
   return reply.code(415).send({ error: 'Preview is not available for this file type' });
 });
 
-fastify.put('/file-preview/:id/content', async (request, reply) => {
+fastify.put('/file-preview/:id/content', { config: { rateLimit: { max: 300, timeWindow: '1 minute' } } }, async (request, reply) => {
   const user = await authenticateRequest(request);
   if (!user) {
     return reply.code(401).send({ error: 'Unauthorized' });
@@ -411,7 +411,7 @@ fastify.get('/download-zip', { config: { rateLimit: { max: 10, timeWindow: '1 mi
 });
 
 // Web-compatible image endpoint (HEIC -> JPEG).
-fastify.get('/image/:id', async (request, reply) => {
+fastify.get('/image/:id', { config: { rateLimit: { max: 300, timeWindow: '1 minute' } } }, async (request, reply) => {
   const { id } = request.params as { id: string };
 
   const result = await db.query('SELECT file_path, mime_type FROM media_assets WHERE id = $1', [id]);
@@ -504,7 +504,7 @@ fastify.get('/image/:id', async (request, reply) => {
 });
 
 // Lightweight playback negotiation — does not block on transcoding
-fastify.get('/video/:id/prepare', async (request, reply) => {
+fastify.get('/video/:id/prepare', { config: { rateLimit: { max: 300, timeWindow: '1 minute' } } }, async (request, reply) => {
   const { id } = request.params as { id: string };
   if (!isValidAssetId(id)) {
     return reply.code(400).send({ error: 'Invalid asset id' });
@@ -536,12 +536,11 @@ fastify.get('/video/:id/prepare', async (request, reply) => {
       fastify.log.warn({ err }, '[prepare] checkVideoCompatibility failed, falling back to HLS');
     }
 
-    const playlistPath = path.resolve(
-      path.dirname(config.thumbnailCachePath),
-      'hls',
-      id,
-      'master.m3u8'
-    );
+    const hlsRoot = path.resolve(path.dirname(config.thumbnailCachePath), 'hls');
+    const playlistPath = resolveWithinRoot(hlsRoot, path.join(hlsRoot, id, 'master.m3u8'));
+    if (!playlistPath) {
+      return reply.code(400).send({ error: 'Invalid asset id' });
+    }
     const alreadyCached = fs.existsSync(playlistPath);
 
     if (!alreadyCached) {
@@ -587,17 +586,16 @@ fastify.get('/video/:id/prepare', async (request, reply) => {
 });
 
 // Transcoding progress polling endpoint
-fastify.get('/video/:id/progress', async (request, reply) => {
+fastify.get('/video/:id/progress', { config: { rateLimit: { max: 300, timeWindow: '1 minute' } } }, async (request, reply) => {
   const { id } = request.params as { id: string };
   if (!isValidAssetId(id)) {
     return reply.code(400).send({ error: 'Invalid asset id' });
   }
-  const playlistPath = path.resolve(
-    path.dirname(config.thumbnailCachePath),
-    'hls',
-    id,
-    'master.m3u8'
-  );
+  const hlsRoot = path.resolve(path.dirname(config.thumbnailCachePath), 'hls');
+  const playlistPath = resolveWithinRoot(hlsRoot, path.join(hlsRoot, id, 'master.m3u8'));
+  if (!playlistPath) {
+    return reply.code(400).send({ error: 'Invalid asset id' });
+  }
   const playlistReady = fs.existsSync(playlistPath);
   const raw = await redis.get(`video_progress:${id}`);
   if (!raw) {
@@ -611,7 +609,7 @@ fastify.get('/video/:id/progress', async (request, reply) => {
 });
 
 // On-demand video transcoding endpoint
-fastify.get('/video/:id', async (request, reply) => {
+fastify.get('/video/:id', { config: { rateLimit: { max: 300, timeWindow: '1 minute' } } }, async (request, reply) => {
   const { id } = request.params as { id: string };
   if (!isValidAssetId(id)) {
     return reply.code(400).send({ error: 'Invalid asset id' });
@@ -717,7 +715,7 @@ fastify.get('/video/:id', async (request, reply) => {
   }
 });
 
-fastify.get('/video/:id/hls', async (request, reply) => {
+fastify.get('/video/:id/hls', { config: { rateLimit: { max: 300, timeWindow: '1 minute' } } }, async (request, reply) => {
   const { id } = request.params as { id: string };
   if (!isValidAssetId(id)) {
     return reply.code(400).send({ error: 'Invalid asset id' });
@@ -742,7 +740,7 @@ fastify.get('/video/:id/hls', async (request, reply) => {
 });
 
 // Delete transcoded video endpoint (called when video dialog closes)
-fastify.delete('/video/:id/cleanup', async (request, reply) => {
+fastify.delete('/video/:id/cleanup', { config: { rateLimit: { max: 300, timeWindow: '1 minute' } } }, async (request, reply) => {
   const { id } = request.params as { id: string };
   if (!isValidAssetId(id)) {
     return reply.code(400).send({ error: 'Invalid asset id' });
@@ -776,7 +774,7 @@ fastify.delete('/video/:id/cleanup', async (request, reply) => {
 });
 
 // Streaming compress preview endpoint with progress events
-fastify.post('/api/compress/preview', async (request, reply) => {
+fastify.post('/api/compress/preview', { config: { rateLimit: { max: 300, timeWindow: '1 minute' } } }, async (request, reply) => {
   // Auth check
   const authHeader = request.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {
@@ -1029,7 +1027,7 @@ fastify.post('/api/transcode/enqueue', { config: { rateLimit: { max: 20, timeWin
 });
 
 // Cancel an active or pending compression job
-fastify.post('/api/compress/cancel', async (request, reply) => {
+fastify.post('/api/compress/cancel', { config: { rateLimit: { max: 300, timeWindow: '1 minute' } } }, async (request, reply) => {
   const authHeader = request.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {
     return reply.code(401).send({ error: 'Unauthorized' });
@@ -1093,7 +1091,7 @@ fastify.post('/api/compress/cancel', async (request, reply) => {
 });
 
 // Get current compression queue state for authenticated user
-fastify.get('/api/queue-state', async (request, reply) => {
+fastify.get('/api/queue-state', { config: { rateLimit: { max: 300, timeWindow: '1 minute' } } }, async (request, reply) => {
   const authHeader = request.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {
     return reply.code(401).send({ error: 'Unauthorized' });
@@ -1114,7 +1112,7 @@ fastify.get('/api/queue-state', async (request, reply) => {
 });
 
 // Persist queue state (for dismiss / clear completed operations)
-fastify.put('/api/queue-state', async (request, reply) => {
+fastify.put('/api/queue-state', { config: { rateLimit: { max: 300, timeWindow: '1 minute' } } }, async (request, reply) => {
   const authHeader = request.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {
     return reply.code(401).send({ error: 'Unauthorized' });
