@@ -24,7 +24,7 @@ import { pipeline } from 'node:stream/promises';
 import { ZipArchive } from 'archiver';
 import { indexFile } from './services/media-indexer.js';
 import { canCompressFile, classifyFile } from './services/file-types.js';
-import { isValidAssetId } from './lib/media-path.js';
+import { isValidAssetId, resolveWithinRoot } from './lib/media-path.js';
 
 let workerHandles: ReturnType<typeof startWorkers> | null = null;
 let cacheMaintenanceTimer: ReturnType<typeof setInterval> | null = null;
@@ -1135,12 +1135,11 @@ fastify.post('/api/upload', async (request, reply) => {
   let targetDir = rootPath;
 
   if (rawTargetPath) {
-    const resolved = path.resolve(rawTargetPath);
-    if (resolved === rootPath || resolved.startsWith(`${rootPath}${path.sep}`)) {
-      targetDir = resolved;
-    } else {
+    const resolved = resolveWithinRoot(rootPath, rawTargetPath);
+    if (resolved === null) {
       return reply.code(400).send({ error: 'Invalid target path' });
     }
+    targetDir = resolved;
   }
 
   try {
