@@ -328,7 +328,7 @@ fastify.put('/file-preview/:id/content', async (request, reply) => {
 });
 
 // Bulk ZIP download — streams a zip of the requested asset IDs
-fastify.get('/download-zip', async (request, reply) => {
+fastify.get('/download-zip', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (request, reply) => {
   const query = request.query as { ids?: string; name?: string };
   const rawIds = (query.ids ?? '').split(',').map((s) => s.trim()).filter(Boolean);
   if (rawIds.length === 0) {
@@ -887,7 +887,7 @@ fastify.post('/api/compress/preview', async (request, reply) => {
 });
 
 // Enqueue compression job — creates BullMQ job + initial Redis state
-fastify.post('/api/compress/enqueue', async (request, reply) => {
+fastify.post('/api/compress/enqueue', { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } }, async (request, reply) => {
   const authHeader = request.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {
     return reply.code(401).send({ error: 'Unauthorized' });
@@ -952,7 +952,7 @@ fastify.post('/api/compress/enqueue', async (request, reply) => {
 
 // Enqueue a batch video-transcode job (shares the queue panel + cancel endpoint
 // with compression jobs via the same per-user Redis queue)
-fastify.post('/api/transcode/enqueue', async (request, reply) => {
+fastify.post('/api/transcode/enqueue', { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } }, async (request, reply) => {
   const authHeader = request.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {
     return reply.code(401).send({ error: 'Unauthorized' });
@@ -1120,7 +1120,7 @@ fastify.put('/api/queue-state', async (request, reply) => {
 });
 
 // Upload endpoint
-fastify.post('/api/upload', async (request, reply) => {
+fastify.post('/api/upload', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (request, reply) => {
   const authHeader = request.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {
     return reply.code(401).send({ error: 'Unauthorized' });
