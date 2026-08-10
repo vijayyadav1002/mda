@@ -24,6 +24,7 @@ import { pipeline } from 'node:stream/promises';
 import { ZipArchive } from 'archiver';
 import { indexFile } from './services/media-indexer.js';
 import { canCompressFile, classifyFile } from './services/file-types.js';
+import { isValidAssetId } from './lib/media-path.js';
 
 let workerHandles: ReturnType<typeof startWorkers> | null = null;
 let cacheMaintenanceTimer: ReturnType<typeof setInterval> | null = null;
@@ -492,6 +493,9 @@ fastify.get('/image/:id', async (request, reply) => {
 // Lightweight playback negotiation — does not block on transcoding
 fastify.get('/video/:id/prepare', async (request, reply) => {
   const { id } = request.params as { id: string };
+  if (!isValidAssetId(id)) {
+    return reply.code(400).send({ error: 'Invalid asset id' });
+  }
 
   try {
     const result = await db.query(
@@ -572,6 +576,9 @@ fastify.get('/video/:id/prepare', async (request, reply) => {
 // Transcoding progress polling endpoint
 fastify.get('/video/:id/progress', async (request, reply) => {
   const { id } = request.params as { id: string };
+  if (!isValidAssetId(id)) {
+    return reply.code(400).send({ error: 'Invalid asset id' });
+  }
   const playlistPath = path.resolve(
     path.dirname(config.thumbnailCachePath),
     'hls',
