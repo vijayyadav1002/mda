@@ -50,5 +50,6 @@ export const config = {
   thumbnailCacheMaxBytes: toNumber(process.env.THUMBNAIL_CACHE_MAX_MB, thumbnailCacheMaxMbDefault) * 1024 * 1024,
   previewCacheMaxBytes: toNumber(process.env.PREVIEW_CACHE_MAX_MB, previewCacheMaxMbDefault) * 1024 * 1024,
   hlsCacheMaxBytes: toNumber(process.env.HLS_CACHE_MAX_MB, hlsCacheMaxMbDefault) * 1024 * 1024,
-  transcodedCacheMaxBytes: toNumber(process.env.TRANSCODED_CACHE_MAX_MB, transcodedCacheMaxMbDefault) * 1024 * 1024
+  transcodedCacheMaxBytes: toNumber(process.env.TRANSCODED_CACHE_MAX_MB, transcodedCacheMaxMbDefault) * 1024 * 1024,
+  trashRetentionDays: toNumber(process.env.TRASH_RETENTION_DAYS, 30)
 };

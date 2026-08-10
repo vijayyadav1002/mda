@@ -18,9 +18,10 @@ interface CompressPreviewResult {
 
 export interface CompressJob {
   id: string;
+  kind?: "compress" | "transcode";
   assets: MediaAsset[];
-  options: { resolution: string; quality: number };
-  status: "pending" | "compressing" | "preview_ready" | "confirming" | "done" | "error" | "cancelled";
+  options?: { resolution: string; quality: number };
+  status: "pending" | "compressing" | "transcoding" | "preview_ready" | "confirming" | "done" | "error" | "cancelled";
   progress: Record<string, { percent: number; etaSeconds: number | null }>;
   currentFileId: string | null;
   previews: CompressPreviewResult[];
@@ -65,6 +66,7 @@ function eta(s: number | null): string {
 const STATUS: Record<CompressJob["status"], { label: string; color: string; bg: string; spin?: boolean }> = {
   pending:       { label: "Pending",        color: "text-muted-foreground", bg: "bg-muted" },
   compressing:   { label: "Compressing",    color: "text-brand-primary",    bg: "bg-brand-primary/10", spin: true },
+  transcoding:   { label: "Transcoding",    color: "text-brand-primary",    bg: "bg-brand-primary/10", spin: true },
   preview_ready: { label: "Review Needed",  color: "text-amber-400",        bg: "bg-amber-400/10" },
   confirming:    { label: "Applying",       color: "text-brand-primary",    bg: "bg-brand-primary/10", spin: true },
   done:          { label: "Done",           color: "text-emerald-400",      bg: "bg-emerald-400/10" },
@@ -96,7 +98,7 @@ export function CompressQueuePanel({
   return (
     <Dialog open={isOpen} onOpenChange={open => !open && onClose()}>
       <DialogContent className="w-[95vw] max-w-xl max-h-[85vh] overflow-hidden p-0 flex flex-col bg-card border-border/10 shadow-ambient rounded-2xl">
-        <DialogHeader className="px-6 py-4 bg-muted/40 flex-shrink-0 border-b border-border/10">
+        <DialogHeader className="px-6 py-4 bg-muted/40 shrink-0 border-b border-border/10">
           <DialogTitle className="font-manrope text-foreground flex items-center justify-between">
             <span>Compression Queue</span>
             {activeCount > 0 && (
@@ -132,7 +134,7 @@ export function CompressQueuePanel({
                   onClick={() => { setExpandedId(isExpanded ? null : job.id); setPreviewAssetId(null); }}
                   className="w-full flex items-center gap-3 px-5 py-4 hover:bg-accent/30 transition-colors text-left"
                 >
-                  <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 ${cfg.bg}`}>
+                  <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${cfg.bg}`}>
                     <StatusIcon status={job.status} />
                   </div>
                   <div className="flex-1 min-w-0">
@@ -140,16 +142,17 @@ export function CompressQueuePanel({
                       {job.assets.length === 1 ? job.assets[0].fileName : `${job.assets.length} files`}
                     </p>
                     <p className={`text-xs mt-0.5 ${cfg.color}`}>
+                      {job.kind === "transcode" && "Transcode · "}
                       {cfg.label}
-                      {job.status === "compressing" && currentAsset && ` · ${currentAsset.fileName}`}
+                      {(job.status === "compressing" || job.status === "transcoding") && currentAsset && ` · ${currentAsset.fileName}`}
                       {(job.status === "done" || job.status === "preview_ready") && job.previews.length > 0 && (
                         <span className="text-emerald-400"> · {savings(totalOrig.toString(), totalComp.toString())} saved</span>
                       )}
                     </p>
                   </div>
                   {isExpanded
-                    ? <ChevronDown className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-                    : <ChevronRight className="w-4 h-4 text-muted-foreground flex-shrink-0" />}
+                    ? <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />
+                    : <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />}
                 </button>
 
                 {/* Detail */}
@@ -161,13 +164,16 @@ export function CompressQueuePanel({
                       <div className="pt-3 flex items-center justify-between gap-3">
                         <p className="text-xs text-muted-foreground">
                           Waiting · {job.assets.length} file{job.assets.length !== 1 ? "s" : ""}
-                          {" · "}Quality {job.options.quality}%
-                          {job.options.resolution !== "original" ? ` · ${job.options.resolution}` : ""}
+                          {job.kind === "transcode"
+                            ? " · Transcode to web format"
+                            : job.options
+                              ? ` · Quality ${job.options.quality}%${job.options.resolution !== "original" ? ` · ${job.options.resolution}` : ""}`
+                              : ""}
                         </p>
                         <button
                           type="button"
                           onClick={() => onCancel(job.id)}
-                          className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs text-destructive hover:bg-destructive/10 transition-all flex-shrink-0"
+                          className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs text-destructive hover:bg-destructive/10 transition-all shrink-0"
                           title="Cancel job"
                         >
                           <Ban className="w-3.5 h-3.5" />
@@ -176,8 +182,8 @@ export function CompressQueuePanel({
                       </div>
                     )}
 
-                    {/* COMPRESSING */}
-                    {job.status === "compressing" && (
+                    {/* COMPRESSING / TRANSCODING */}
+                    {(job.status === "compressing" || job.status === "transcoding") && (
                       <div className="pt-3 space-y-3">
                         <div className="flex justify-end">
                           <button
@@ -197,7 +203,7 @@ export function CompressQueuePanel({
                             <div key={asset.id} className={!isCurrent && !p ? "opacity-40" : ""}>
                               <div className="flex justify-between text-xs mb-1">
                                 <span className="text-foreground truncate flex-1 mr-2">{asset.fileName}</span>
-                                <span className="text-muted-foreground flex-shrink-0">
+                                <span className="text-muted-foreground shrink-0">
                                   {p ? `${p.percent}%` : "waiting…"}
                                 </span>
                               </div>
@@ -377,8 +383,20 @@ export function CompressQueuePanel({
                       </div>
                     )}
 
+                    {/* DONE (transcode) */}
+                    {job.status === "done" && job.kind === "transcode" && (
+                      <div className="pt-3 flex items-center justify-between gap-3">
+                        <p className="text-xs text-emerald-400">
+                          Transcoding complete — videos now play instantly from the cache.
+                        </p>
+                        <button type="button" onClick={() => onDismiss(job.id)} className="text-xs text-muted-foreground hover:text-foreground transition-colors shrink-0">
+                          Dismiss
+                        </button>
+                      </div>
+                    )}
+
                     {/* DONE */}
-                    {job.status === "done" && job.previews.length > 0 && (
+                    {job.status === "done" && job.kind !== "transcode" && job.previews.length > 0 && (
                       <div className="pt-3 flex items-center justify-between">
                         <p className="text-xs text-emerald-400">
                           Saved {savings(totalOrig.toString(), totalComp.toString())}
@@ -394,7 +412,7 @@ export function CompressQueuePanel({
                     {job.status === "error" && (
                       <div className="pt-3 flex items-center justify-between gap-3">
                         <p className="text-xs text-destructive truncate">{job.errorMessage ?? "Unknown error"}</p>
-                        <button type="button" onClick={() => onDismiss(job.id)} className="text-xs text-muted-foreground hover:text-foreground transition-colors flex-shrink-0">
+                        <button type="button" onClick={() => onDismiss(job.id)} className="text-xs text-muted-foreground hover:text-foreground transition-colors shrink-0">
                           Dismiss
                         </button>
                       </div>
@@ -404,7 +422,7 @@ export function CompressQueuePanel({
                     {job.status === "cancelled" && (
                       <div className="pt-3 flex items-center justify-between gap-3">
                         <p className="text-xs text-muted-foreground">Job cancelled.</p>
-                        <button type="button" onClick={() => onDismiss(job.id)} className="text-xs text-muted-foreground hover:text-foreground transition-colors flex-shrink-0">
+                        <button type="button" onClick={() => onDismiss(job.id)} className="text-xs text-muted-foreground hover:text-foreground transition-colors shrink-0">
                           Dismiss
                         </button>
                       </div>

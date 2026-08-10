@@ -4,14 +4,25 @@ import { logAudit } from '../services/audit.js';
 import { compressImage, compressVideo, compressImageAdvanced, compressVideoAdvanced, compressPdfAdvanced } from '../services/thumbnail.js';
 import { enqueueMediaRefresh, addToThumbnailQueue, cancelThumbnailSession } from '../services/queue.js';
 import { cleanupDeletedAssetCaches } from '../services/media-cleanup.js';
-import { getCacheStats, clearCacheByType } from '../services/cache-maintenance.js';
+import { getCacheStats, clearCacheByType, runCacheMaintenanceOnce } from '../services/cache-maintenance.js';
+import { getCacheSettings, updateCacheSettings as updateCacheSettingsService, getTimelineSettings, updateTimelineSettings, type TimelineDateSource } from '../services/settings.js';
 import { indexFile } from '../services/media-indexer.js';
+import { updateCaptureDateForAsset, recomputeAllCaptureDates } from '../services/capture-date.js';
+import { parseSearchTerm, toLikePattern, toDirLikePattern, buildNameMatcher } from '../services/search-query.js';
+import {
+  moveToTrash,
+  listTrashItems,
+  restoreTrashItem as restoreTrashItemService,
+  purgeTrashItem as purgeTrashItemService,
+  emptyTrash as emptyTrashService
+} from '../services/trash.js';
 import { canCompressFile, canThumbnailFile } from '../services/file-types.js';
 import {
   normalizeTagName,
   upsertTag,
   attachTags,
   detachTag,
+  detachTagsBulk,
   listTags,
   getTagByName,
   getTagsForAssets,
@@ -24,6 +35,15 @@ import fs from 'fs/promises';
 import path from 'path';
 import { config } from '../config.js';
 
+// Thumbnail filenames are derived from the file path, so a regenerated
+// thumbnail keeps the same URL. Version the URL with the row's updated_at
+// (bumped on every thumbnail save) so browsers fetch the fresh image.
+const buildThumbnailUrl = (row: any): string | null => {
+  if (!row.thumbnail_path) return null;
+  const version = row.updated_at instanceof Date ? `?v=${row.updated_at.getTime()}` : '';
+  return `/thumbnails/${path.basename(row.thumbnail_path)}${version}`;
+};
+
 const mapMediaAssetRow = (row: any) => ({
   id: row.id,
   filePath: row.file_path,
@@ -34,12 +54,14 @@ const mapMediaAssetRow = (row: any) => ({
   height: row.height,
   duration: row.duration,
   thumbnailPath: row.thumbnail_path,
-  thumbnailUrl: row.thumbnail_path ? `/thumbnails/${path.basename(row.thumbnail_path)}` : null,
+  thumbnailUrl: buildThumbnailUrl(row),
   transcodedPath: row.transcoded_path,
   transcodedUrl: row.transcoded_path ? `/transcoded/${path.basename(row.transcoded_path)}` : null,
   indexedAt: row.indexed_at.toISOString(),
   createdAt: row.created_at.toISOString(),
-  updatedAt: row.updated_at.toISOString()
+  updatedAt: row.updated_at.toISOString(),
+  capturedAt: row.captured_at ? row.captured_at.toISOString() : null,
+  capturedAtPrecision: row.captured_at_precision ?? null
 });
 
 const mapTagRow = (row: any) => ({
@@ -148,7 +170,7 @@ const SEARCH_HARD_CAP = 2000;
 
 const collectMatchingFolders = async (
   rootDir: string,
-  needleLower: string,
+  matches: (folderName: string) => boolean,
   limit: number
 ): Promise<{ name: string; path: string; parentPath: string | null }[]> => {
   const results: { name: string; path: string; parentPath: string | null }[] = [];
@@ -170,7 +192,7 @@ const collectMatchingFolders = async (
       if (!entry.isDirectory()) continue;
 
       const fullPath = path.join(dir, entry.name);
-      if (entry.name.toLowerCase().includes(needleLower)) {
+      if (matches(entry.name)) {
         results.push({ name: entry.name, path: fullPath, parentPath: dir });
       }
       await walk(fullPath, depth + 1, dir);
@@ -180,6 +202,7 @@ const collectMatchingFolders = async (
   await walk(rootDir, 0, null);
   return results;
 };
+
 
 const buildDirectoryNode = async (dirPath: string): Promise<any> => {
   const stats = await fs.stat(dirPath);
@@ -422,6 +445,117 @@ export const resolvers = {
       return getCacheStats();
     },
 
+    cacheSettings: async (_: any, __: any, context: GraphQLContext) => {
+      if (!context.user || context.user.role !== 'admin') {
+        throw new Error('Admin access required');
+      }
+      return getCacheSettings();
+    },
+
+    timelineSettings: async (_: any, __: any, context: GraphQLContext) => {
+      if (!context.user) throw new Error('Unauthorized');
+      return getTimelineSettings();
+    },
+
+    trashItems: async (_: any, __: any, context: GraphQLContext) => {
+      if (!context.user || !['admin', 'editor'].includes(context.user.role)) {
+        throw new Error('Admin or Editor access required');
+      }
+      const retentionMs = config.trashRetentionDays * 24 * 60 * 60 * 1000;
+      const items = await listTrashItems();
+      return items.map((item) => ({
+        id: item.id,
+        fileName: item.file_name,
+        originalPath: item.original_path,
+        itemType: item.item_type,
+        fileSize: item.file_size != null ? String(item.file_size) : null,
+        mimeType: item.mime_type,
+        thumbnailUrl: item.thumbnail_path
+          ? `/thumbnails/${path.basename(item.thumbnail_path)}?v=${item.deleted_at.getTime()}`
+          : null,
+        deletedAt: item.deleted_at.toISOString(),
+        expiresAt: new Date(item.deleted_at.getTime() + retentionMs).toISOString()
+      }));
+    },
+
+    timelineBuckets: async (
+      _: any,
+      args: { granularity: string; coverLimit?: number },
+      context: GraphQLContext
+    ) => {
+      if (!context.user) throw new Error('Unauthorized');
+
+      const granularity = ['year', 'month', 'day'].includes(args.granularity) ? args.granularity : 'month';
+      const coverLimit = Math.min(Math.max(args.coverLimit ?? 0, 0), 12);
+
+      const buckets = await db.query(
+        `SELECT date_trunc('${granularity}', captured_at) AS period, COUNT(*)::int AS count
+         FROM media_assets
+         WHERE captured_at IS NOT NULL
+           AND (mime_type LIKE 'image/%' OR mime_type LIKE 'video/%')
+         GROUP BY period
+         ORDER BY period DESC`
+      );
+
+      const results = [];
+      for (const bucket of buckets.rows) {
+        let coverAssets: any[] = [];
+        if (coverLimit > 0) {
+          const covers = await db.query(
+            `SELECT * FROM media_assets
+             WHERE captured_at IS NOT NULL
+               AND (mime_type LIKE 'image/%' OR mime_type LIKE 'video/%')
+               AND date_trunc('${granularity}', captured_at) = $1
+             ORDER BY thumbnail_path IS NULL, captured_at DESC, file_name ASC
+             LIMIT $2`,
+            [bucket.period, coverLimit]
+          );
+          coverAssets = covers.rows.map(mapMediaAssetRow);
+        }
+        results.push({
+          period: bucket.period.toISOString(),
+          count: bucket.count,
+          coverAssets
+        });
+      }
+      return results;
+    },
+
+    timelineAssets: async (
+      _: any,
+      args: { from: string; to: string; limit?: number; offset?: number },
+      context: GraphQLContext
+    ) => {
+      if (!context.user) throw new Error('Unauthorized');
+
+      const from = new Date(args.from);
+      const to = new Date(args.to);
+      if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+        throw new Error('Invalid date range');
+      }
+      const limit = Math.min(args.limit ?? 200, 500);
+      const offset = args.offset ?? 0;
+
+      const where = `captured_at >= $1 AND captured_at < $2
+           AND (mime_type LIKE 'image/%' OR mime_type LIKE 'video/%')`;
+
+      const [assets, total] = await Promise.all([
+        db.query(
+          `SELECT * FROM media_assets
+           WHERE ${where}
+           ORDER BY captured_at DESC, file_name ASC
+           LIMIT $3 OFFSET $4`,
+          [from, to, limit, offset]
+        ),
+        db.query(`SELECT COUNT(*)::int AS count FROM media_assets WHERE ${where}`, [from, to])
+      ]);
+
+      return {
+        assets: assets.rows.map(mapMediaAssetRow),
+        totalCount: total.rows[0].count
+      };
+    },
+
     search: async (
       _: any,
       args: { term?: string; mediaType?: string; sortBy?: string; limit?: number; minSize?: number; maxSize?: number; path?: string },
@@ -429,16 +563,22 @@ export const resolvers = {
     ) => {
       if (!context.user) throw new Error('Unauthorized');
 
-      const trimmed = (args.term ?? '').trim();
-      const mediaType = args.mediaType === 'image' || args.mediaType === 'video' ? args.mediaType : null;
+      const parsed = parseSearchTerm((args.term ?? '').trim());
+
+      // In-field operators take precedence over UI-level filters
+      const mediaType = parsed.type
+        ?? (args.mediaType === 'image' || args.mediaType === 'video' ? args.mediaType : null);
       const sortBy = ['size-asc', 'size-desc', 'date-asc', 'date-desc'].includes(args.sortBy ?? '')
         ? args.sortBy!
         : null;
 
-      const minSize = typeof args.minSize === 'number' && args.minSize > 0 ? Math.floor(args.minSize) : null;
-      const maxSize = typeof args.maxSize === 'number' && args.maxSize > 0 ? Math.floor(args.maxSize) : null;
+      const minSize = parsed.minSize
+        ?? (typeof args.minSize === 'number' && args.minSize > 0 ? Math.floor(args.minSize) : null);
+      const maxSize = parsed.maxSize
+        ?? (typeof args.maxSize === 'number' && args.maxSize > 0 ? Math.floor(args.maxSize) : null);
 
-      if (trimmed.length === 0 && !mediaType && !minSize && !maxSize) {
+      const hasNamePattern = parsed.nameTerm !== null || parsed.dirTerms.length > 0;
+      if (!hasNamePattern && !mediaType && !minSize && !maxSize && !parsed.tag && !parsed.ext) {
         return { files: [], folders: [] };
       }
 
@@ -451,10 +591,29 @@ export const resolvers = {
       const queryParams: unknown[] = [];
       const conditions: string[] = [];
 
-      if (trimmed.length > 0) {
-        const escapedTerm = trimmed.replace(/[\\%_]/g, (ch) => `\\${ch}`);
-        queryParams.push(`%${escapedTerm}%`);
+      if (parsed.nameTerm) {
+        queryParams.push(toLikePattern(parsed.nameTerm));
         conditions.push(`file_name ILIKE $${queryParams.length} ESCAPE '\\'`);
+      }
+
+      // Each dir term must appear as (part of) a folder component in the path
+      for (const dirTerm of parsed.dirTerms) {
+        queryParams.push(toDirLikePattern(dirTerm));
+        conditions.push(`file_path ILIKE $${queryParams.length} ESCAPE '\\'`);
+      }
+
+      if (parsed.ext) {
+        queryParams.push(`%.${parsed.ext.replace(/[\\%_]/g, (ch) => `\\${ch}`)}`);
+        conditions.push(`file_name ILIKE $${queryParams.length} ESCAPE '\\'`);
+      }
+
+      if (parsed.tag) {
+        queryParams.push(parsed.tag);
+        conditions.push(`EXISTS (
+          SELECT 1 FROM media_asset_tags mat
+          JOIN tags t ON t.id = mat.tag_id
+          WHERE mat.media_asset_id = media_assets.id AND t.name = $${queryParams.length}
+        )`);
       }
 
       if (mediaType) {
@@ -489,10 +648,10 @@ export const resolvers = {
         orderClause = 'ORDER BY created_at ASC';
       } else if (sortBy === 'date-desc') {
         orderClause = 'ORDER BY created_at DESC';
-      } else if (trimmed.length > 0) {
-        const escapedTerm = trimmed.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+      } else if (parsed.nameTerm && !/[*?]/.test(parsed.nameTerm)) {
+        const escapedTerm = parsed.nameTerm.replace(/[\\%_]/g, (ch) => `\\${ch}`);
         const base = queryParams.length;
-        queryParams.push(trimmed, `${escapedTerm}%`);
+        queryParams.push(parsed.nameTerm, `${escapedTerm}%`);
         orderClause = `ORDER BY CASE WHEN LOWER(file_name) = LOWER($${base + 1}) THEN 0 WHEN LOWER(file_name) LIKE LOWER($${base + 2}) THEN 1 ELSE 2 END, file_name ASC`;
       } else {
         orderClause = 'ORDER BY file_name ASC';
@@ -504,9 +663,19 @@ export const resolvers = {
         queryParams
       );
 
-      // Only search folders when there's a text term (folders have no media type)
-      const folders = trimmed.length > 0 && !mediaType
-        ? await collectMatchingFolders(scopedPath ?? resolveLibraryPath(null), trimmed.toLowerCase(), folderSearchLimit)
+      // Folders are searched whenever any name/folder pattern exists — even
+      // with a media-type filter active, so switching Images/Videos in the UI
+      // never hides matching folders.
+      const folderTerms = [
+        ...(parsed.nameTerm ? [parsed.nameTerm] : []),
+        ...parsed.dirTerms
+      ];
+      const folders = folderTerms.length > 0
+        ? await collectMatchingFolders(
+            scopedPath ?? resolveLibraryPath(null),
+            buildNameMatcher(folderTerms),
+            folderSearchLimit
+          )
         : [];
 
       return {
@@ -761,6 +930,7 @@ export const resolvers = {
         'UPDATE media_assets SET file_path = $1, updated_at = NOW() WHERE id = $2',
         [newPath, args.id]
       );
+      await updateCaptureDateForAsset(args.id, newPath);
 
       await logAudit(context.user.id, 'MOVE_ASSET', 'media_asset', parseInt(args.id, 10), {
         oldPath,
@@ -776,7 +946,7 @@ export const resolvers = {
         fileName: row.file_name,
         fileSize: row.file_size.toString(),
         mimeType: row.mime_type,
-        thumbnailUrl: row.thumbnail_path ? `/thumbnails/${path.basename(row.thumbnail_path)}` : null,
+        thumbnailUrl: buildThumbnailUrl(row),
         indexedAt: row.indexed_at.toISOString(),
         createdAt: row.created_at.toISOString(),
         updatedAt: row.updated_at.toISOString()
@@ -812,6 +982,7 @@ export const resolvers = {
         'UPDATE media_assets SET file_path = $1, file_name = $2, updated_at = NOW() WHERE id = $3',
         [newPath, args.newName, args.id]
       );
+      await updateCaptureDateForAsset(args.id, newPath);
 
       await logAudit(context.user.id, 'RENAME_ASSET', 'media_asset', parseInt(args.id, 10), {
         oldName: asset.file_name,
@@ -827,7 +998,7 @@ export const resolvers = {
         fileName: row.file_name,
         fileSize: row.file_size.toString(),
         mimeType: row.mime_type,
-        thumbnailUrl: row.thumbnail_path ? `/thumbnails/${path.basename(row.thumbnail_path)}` : null,
+        thumbnailUrl: buildThumbnailUrl(row),
         indexedAt: row.indexed_at.toISOString(),
         createdAt: row.created_at.toISOString(),
         updatedAt: row.updated_at.toISOString()
@@ -889,12 +1060,23 @@ export const resolvers = {
 
       const asset = result.rows[0];
 
-      // Remove generated caches first while source file metadata is still available.
-      await cleanupDeletedAssetCaches(asset, { removeTranscoded: true });
+      // Remove generated caches, but keep the thumbnail so the trash page
+      // can show what the deleted item looked like.
+      await cleanupDeletedAssetCaches(asset, { removeTranscoded: true, preserveThumbnail: true });
 
-      // Delete the file
+      // Soft delete: move the file to the trash bin instead of unlinking.
+      // Permanent deletion happens only from the trash (explicitly or after
+      // the retention window expires).
       try {
-        await fs.unlink(asset.file_path);
+        await moveToTrash({
+          originalPath: asset.file_path,
+          itemType: 'file',
+          fileName: asset.file_name,
+          fileSize: asset.file_size,
+          mimeType: asset.mime_type,
+          thumbnailPath: asset.thumbnail_path,
+          deletedBy: context.user.id
+        });
       } catch (error: any) {
         if (error?.code !== 'ENOENT') {
           throw error;
@@ -905,7 +1087,8 @@ export const resolvers = {
       await db.query('DELETE FROM media_assets WHERE id = $1', [args.id]);
 
       await logAudit(context.user.id, 'DELETE_ASSET', 'media_asset', parseInt(args.id, 10), {
-        filePath: asset.file_path
+        filePath: asset.file_path,
+        movedToTrash: true
       });
 
       return true;
@@ -985,7 +1168,7 @@ export const resolvers = {
         fileName: row.file_name,
         fileSize: row.file_size.toString(),
         mimeType: row.mime_type,
-        thumbnailUrl: row.thumbnail_path ? `/thumbnails/${path.basename(row.thumbnail_path)}` : null,
+        thumbnailUrl: buildThumbnailUrl(row),
         indexedAt: row.indexed_at.toISOString(),
         createdAt: row.created_at.toISOString(),
         updatedAt: row.updated_at.toISOString()
@@ -1045,7 +1228,7 @@ export const resolvers = {
       return queuedCount;
     },
 
-    generateThumbnailsForAssets: async (_: any, args: { ids: string[]; sessionId?: string | null }, context: GraphQLContext) => {
+    generateThumbnailsForAssets: async (_: any, args: { ids: string[]; sessionId?: string | null; force?: boolean | null }, context: GraphQLContext) => {
       if (!context.user) throw new Error('Unauthorized');
 
       const numericIds = Array.from(
@@ -1072,17 +1255,27 @@ export const resolvers = {
 
       let queuedCount = 0;
       for (const row of result.rows) {
-        const thumbPath = row.thumbnail_path as string | null;
-        let hasUsableThumbnail = false;
-        if (thumbPath) {
-          try {
-            const thumbStat = await fs.stat(thumbPath);
-            hasUsableThumbnail = thumbStat.size > 0;
-          } catch {
-            hasUsableThumbnail = false;
+        if (args.force) {
+          // Force-regenerate: remove the existing thumbnail file first —
+          // the generator returns early when one already exists on disk.
+          const thumbPath = row.thumbnail_path as string | null;
+          if (thumbPath) {
+            await fs.unlink(thumbPath).catch(() => {});
+            await db.query('UPDATE media_assets SET thumbnail_path = NULL WHERE id = $1', [row.id]);
           }
+        } else {
+          const thumbPath = row.thumbnail_path as string | null;
+          let hasUsableThumbnail = false;
+          if (thumbPath) {
+            try {
+              const thumbStat = await fs.stat(thumbPath);
+              hasUsableThumbnail = thumbStat.size > 0;
+            } catch {
+              hasUsableThumbnail = false;
+            }
+          }
+          if (hasUsableThumbnail) continue;
         }
-        if (hasUsableThumbnail) continue;
 
         const filePath = row.file_path as string;
         const mimeType = (row.mime_type as string | null) ?? '';
@@ -1288,6 +1481,58 @@ export const resolvers = {
       return true;
     },
 
+    createTextFile: async (
+      _: any,
+      args: { parentPath?: string | null; name: string },
+      context: GraphQLContext
+    ) => {
+      if (!context.user || !['admin', 'editor'].includes(context.user.role)) {
+        throw new Error('Admin or Editor access required');
+      }
+
+      const name = (args.name ?? '').trim();
+      if (!name || /[/\\]/.test(name) || name.includes('..') || name.startsWith('.')) {
+        throw new Error('Invalid file name');
+      }
+      const ext = path.extname(name).toLowerCase();
+      if (!['.txt', '.md', '.markdown'].includes(ext)) {
+        throw new Error('Only .txt, .md, and .markdown files can be created');
+      }
+
+      const parentPath = resolveLibraryPath(args.parentPath ?? null);
+      const parentStat = await fs.stat(parentPath);
+      if (!parentStat.isDirectory()) {
+        throw new Error('Parent path is not a directory');
+      }
+
+      const newFilePath = path.join(parentPath, name);
+      const rootPath = path.resolve(config.mediaLibraryPath);
+      if (!newFilePath.startsWith(`${rootPath}${path.sep}`)) {
+        throw new Error('Invalid file path');
+      }
+
+      // 'wx' fails if the file already exists — no silent overwrite
+      try {
+        await fs.writeFile(newFilePath, '', { flag: 'wx' });
+      } catch (err: any) {
+        if (err?.code === 'EEXIST') throw new Error('A file with that name already exists');
+        throw err;
+      }
+
+      await indexFile(newFilePath);
+
+      const created = await db.query('SELECT * FROM media_assets WHERE file_path = $1', [newFilePath]);
+      if (created.rows.length === 0) {
+        throw new Error('File was created but could not be indexed');
+      }
+
+      await logAudit(context.user.id, 'CREATE_FILE', 'media_asset', created.rows[0].id, {
+        path: newFilePath
+      });
+
+      return mapMediaAssetRow(created.rows[0]);
+    },
+
     createFolder: async (
       _: any,
       args: { parentPath?: string | null; name: string },
@@ -1359,11 +1604,17 @@ export const resolvers = {
         );
       }
 
-      // Delete folder from filesystem
-      await fs.rm(targetPath, { recursive: true, force: true });
+      // Soft delete: move the whole folder to the trash bin.
+      await moveToTrash({
+        originalPath: targetPath,
+        itemType: 'folder',
+        fileName: path.basename(targetPath),
+        deletedBy: context.user.id
+      });
 
       await logAudit(context.user.id, 'DELETE_FOLDER', 'directory', undefined, {
         path: targetPath,
+        movedToTrash: true,
         assetsDeleted: assetsResult.rows.length
       });
 
@@ -1414,6 +1665,7 @@ export const resolvers = {
           'UPDATE media_assets SET file_path = $1, updated_at = NOW() WHERE id = $2',
           [newAssetPath, asset.id]
         );
+        await updateCaptureDateForAsset(asset.id, newAssetPath);
       }
 
       await logAudit(context.user.id, 'RENAME_FOLDER', 'directory', undefined, {
@@ -1479,6 +1731,7 @@ export const resolvers = {
           'UPDATE media_assets SET file_path = $1, updated_at = NOW() WHERE id = $2',
           [newAssetPath, asset.id]
         );
+        await updateCaptureDateForAsset(asset.id, newAssetPath);
       }
 
       await logAudit(context.user.id, 'MOVE_FOLDER', 'directory', undefined, {
@@ -1624,6 +1877,36 @@ export const resolvers = {
       return mapMediaAssetRow(assetResult.rows[0]);
     },
 
+    removeTagsFromAssets: async (
+      _: any,
+      args: { assetIds: string[]; tagNames: string[] },
+      context: GraphQLContext
+    ) => {
+      if (!context.user || !['admin', 'editor'].includes(context.user.role)) {
+        throw new Error('Admin or Editor access required');
+      }
+
+      const assetIds = Array.from(
+        new Set(
+          (args.assetIds ?? [])
+            .map((raw) => Number.parseInt(String(raw), 10))
+            .filter((n) => Number.isInteger(n) && n > 0)
+        )
+      );
+      const tagNames = (args.tagNames ?? []).map((t) => String(t)).filter(Boolean);
+      if (assetIds.length === 0 || tagNames.length === 0) return 0;
+
+      const removed = await detachTagsBulk(assetIds, tagNames);
+
+      await logAudit(context.user.id, 'REMOVE_TAGS_BULK', 'media_asset', undefined, {
+        assetIds,
+        tagNames,
+        removed
+      });
+
+      return removed;
+    },
+
     deleteTag: async (_: any, args: { name: string }, context: GraphQLContext) => {
       if (!context.user || context.user.role !== 'admin') {
         throw new Error('Admin access required');
@@ -1677,6 +1960,74 @@ export const resolvers = {
       if (!allowed.includes(args.type)) throw new Error(`Unknown cache type: ${args.type}`);
       await clearCacheByType(args.type as 'thumbnails' | 'previews' | 'hls' | 'transcoded' | 'all');
       return getCacheStats();
+    },
+
+    updateCacheSettings: async (
+      _: any,
+      args: { input: Partial<import('../services/settings.js').CacheSettings> },
+      context: GraphQLContext
+    ) => {
+      if (!context.user || context.user.role !== 'admin') {
+        throw new Error('Admin access required');
+      }
+      const updated = await updateCacheSettingsService(args.input);
+      await logAudit(context.user.id, 'UPDATE_CACHE_SETTINGS', 'settings', undefined, { ...args.input });
+      // Apply new limits right away so shrinking a cache takes effect immediately.
+      void runCacheMaintenanceOnce().catch((error) => {
+        console.error('[CacheMaintenance] Post-settings-update run failed:', error);
+      });
+      return updated;
+    },
+
+    restoreTrashItem: async (_: any, args: { id: string }, context: GraphQLContext) => {
+      if (!context.user || !['admin', 'editor'].includes(context.user.role)) {
+        throw new Error('Admin or Editor access required');
+      }
+      const id = Number.parseInt(String(args.id), 10);
+      if (!Number.isFinite(id)) throw new Error('Invalid trash item id');
+      const restoredPath = await restoreTrashItemService(id);
+      await logAudit(context.user.id, 'RESTORE_TRASH_ITEM', 'trash', id, { restoredPath });
+      return true;
+    },
+
+    purgeTrashItem: async (_: any, args: { id: string }, context: GraphQLContext) => {
+      if (!context.user || !['admin', 'editor'].includes(context.user.role)) {
+        throw new Error('Admin or Editor access required');
+      }
+      const id = Number.parseInt(String(args.id), 10);
+      if (!Number.isFinite(id)) throw new Error('Invalid trash item id');
+      await purgeTrashItemService(id);
+      await logAudit(context.user.id, 'PURGE_TRASH_ITEM', 'trash', id);
+      return true;
+    },
+
+    emptyTrash: async (_: any, __: any, context: GraphQLContext) => {
+      if (!context.user || !['admin', 'editor'].includes(context.user.role)) {
+        throw new Error('Admin or Editor access required');
+      }
+      const purged = await emptyTrashService();
+      await logAudit(context.user.id, 'EMPTY_TRASH', 'trash', undefined, { purged });
+      return purged;
+    },
+
+    updateTimelineDateSource: async (
+      _: any,
+      args: { dateSource: string },
+      context: GraphQLContext
+    ) => {
+      if (!context.user || context.user.role !== 'admin') {
+        throw new Error('Admin access required');
+      }
+      const updated = await updateTimelineSettings({ dateSource: args.dateSource as TimelineDateSource });
+      await logAudit(context.user.id, 'UPDATE_TIMELINE_DATE_SOURCE', 'settings', undefined, {
+        dateSource: updated.dateSource
+      });
+      // Re-date the whole library in the background; the timeline reflects
+      // the new ordering as batches complete.
+      void recomputeAllCaptureDates().catch((error) => {
+        console.error('[CaptureDate] Recompute after date-source change failed:', error);
+      });
+      return updated;
     }
   }
 };

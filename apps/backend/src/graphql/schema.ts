@@ -22,7 +22,20 @@ export const schema = `
     indexedAt: String!
     createdAt: String!
     updatedAt: String!
+    capturedAt: String
+    capturedAtPrecision: String
     tags: [Tag!]!
+  }
+
+  type TimelineBucket {
+    period: String!
+    count: Int!
+    coverAssets: [MediaAsset!]!
+  }
+
+  type TimelineAssetsResult {
+    assets: [MediaAsset!]!
+    totalCount: Int!
   }
 
   type Tag {
@@ -82,6 +95,27 @@ export const schema = `
     mediaAssetsByTag(tagName: String!, limit: Int, offset: Int): [MediaAsset!]!
     cacheStats: CacheStats!
     search(term: String, mediaType: String, sortBy: String, limit: Int, minSize: Float, maxSize: Float, path: String): SearchResults!
+    timelineBuckets(granularity: String!, coverLimit: Int): [TimelineBucket!]!
+    timelineAssets(from: String!, to: String!, limit: Int, offset: Int): TimelineAssetsResult!
+    cacheSettings: CacheSettings!
+    timelineSettings: TimelineSettings!
+    trashItems: [TrashItem!]!
+  }
+
+  type TrashItem {
+    id: ID!
+    fileName: String!
+    originalPath: String!
+    itemType: String!
+    fileSize: String
+    mimeType: String
+    thumbnailUrl: String
+    deletedAt: String!
+    expiresAt: String!
+  }
+
+  type TimelineSettings {
+    dateSource: String!
   }
 
   type Mutation {
@@ -100,12 +134,13 @@ export const schema = `
     compressMediaAsset(id: ID!, quality: Int, overwrite: Boolean): MediaAsset!
     refreshMediaLibrary: String!
     generateThumbnailsForPath(path: String): Int!
-    generateThumbnailsForAssets(ids: [ID!]!, sessionId: String): Int!
+    generateThumbnailsForAssets(ids: [ID!]!, sessionId: String, force: Boolean): Int!
     cancelThumbnailJobsForSession(sessionId: String!): Int!
     previewCompressAssets(ids: [ID!]!, options: CompressOptionsInput!): [CompressPreviewResult!]!
     confirmCompressReplace(ids: [ID!]!): [MediaAsset!]!
     cancelCompressPreview(ids: [ID!]!): Boolean!
 
+    createTextFile(parentPath: String, name: String!): MediaAsset!
     createFolder(parentPath: String, name: String!): DirectoryNode!
     deleteFolder(path: String!): Boolean!
     renameFolder(path: String!, newName: String!): DirectoryNode!
@@ -114,10 +149,34 @@ export const schema = `
 
     applyTagsToAssets(assetIds: [ID!]!, tagNames: [String!]!): [MediaAsset!]!
     removeTagFromAsset(assetId: ID!, tagName: String!): MediaAsset!
+    removeTagsFromAssets(assetIds: [ID!]!, tagNames: [String!]!): Int!
     renameTag(oldName: String!, newName: String!): Tag!
     deleteTag(name: String!): Boolean!
     clearCache(type: String!): CacheStats!
     clearAuditLogs(startDate: String!, endDate: String!): Int!
+    updateCacheSettings(input: CacheSettingsInput!): CacheSettings!
+    updateTimelineDateSource(dateSource: String!): TimelineSettings!
+    restoreTrashItem(id: ID!): Boolean!
+    purgeTrashItem(id: ID!): Boolean!
+    emptyTrash: Int!
+  }
+
+  type CacheSettings {
+    thumbnailCacheMaxMb: Int!
+    previewCacheMaxMb: Int!
+    hlsCacheMaxMb: Int!
+    transcodedCacheMaxMb: Int!
+    previewCacheMaxAgeDays: Int!
+    hlsCacheMaxAgeHours: Int!
+  }
+
+  input CacheSettingsInput {
+    thumbnailCacheMaxMb: Int
+    previewCacheMaxMb: Int
+    hlsCacheMaxMb: Int
+    transcodedCacheMaxMb: Int
+    previewCacheMaxAgeDays: Int
+    hlsCacheMaxAgeHours: Int
   }
 
   input CompressOptionsInput {

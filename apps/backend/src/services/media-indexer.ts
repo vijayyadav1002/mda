@@ -5,6 +5,7 @@ import { config } from '../config.js';
 import { addToThumbnailQueue } from './queue.js';
 import { cleanupDeletedAssetCaches } from './media-cleanup.js';
 import { classifyFile } from './file-types.js';
+import { resolveCaptureDateAuto, updateCaptureDateForAsset } from './capture-date.js';
 
 type IndexFileResult = 'indexed' | 'up_to_date' | 'thumbnail_requeued' | 'unsupported';
 type IndexOptions = {
@@ -86,6 +87,10 @@ async function scanDirectory(dir: string, maxDepth: number = 20, currentDepth: n
     const entries = await fs.readdir(dir, { withFileTypes: true });
 
     for (const entry of entries) {
+      // Skip hidden entries entirely — including dot-directories like the
+      // `.trash` bin, which must never be re-indexed.
+      if (entry.name.startsWith('.')) continue;
+
       const fullPath = path.join(dir, entry.name);
 
       try {
@@ -138,13 +143,17 @@ export async function indexFile(filePath: string, options: IndexOptions = {}): P
 
     // Check if already indexed and up to date
     const existing = await db.query(
-      'SELECT id, updated_at, thumbnail_path FROM media_assets WHERE file_path = $1',
+      'SELECT id, updated_at, thumbnail_path, captured_at FROM media_assets WHERE file_path = $1',
       [filePath]
     );
 
     if (existing.rows.length > 0) {
       const existingUpdated = new Date(existing.rows[0].updated_at);
       if (existingUpdated >= stats.mtime) {
+        // Backfill missing capture dates without forcing a re-index.
+        if (!existing.rows[0].captured_at) {
+          await updateCaptureDateForAsset(existing.rows[0].id, filePath);
+        }
         // Backfill missing thumbnails without forcing a re-index.
         const thumbPath = existing.rows[0].thumbnail_path as string | null;
         let hasUsableThumbnail = false;
@@ -194,12 +203,13 @@ export async function indexFile(filePath: string, options: IndexOptions = {}): P
     }
 
     // Insert into database (without transcoded path - will be generated on-demand)
+    const captureDate = await resolveCaptureDateAuto(filePath, { mtime: stats.mtime, birthtime: stats.birthtime });
     const result = await db.query(
-      `INSERT INTO media_assets 
-       (file_path, file_name, file_size, mime_type, thumbnail_path) 
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO media_assets
+       (file_path, file_name, file_size, mime_type, thumbnail_path, captured_at, captured_at_precision, captured_at_source)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING id`,
-      [filePath, fileName, stats.size, classification.mimeType, null]
+      [filePath, fileName, stats.size, classification.mimeType, null, captureDate.capturedAt, captureDate.precision, captureDate.source]
     );
 
     const assetId = result.rows[0].id;

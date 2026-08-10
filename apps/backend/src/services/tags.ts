@@ -64,6 +64,22 @@ export async function detachTag(assetId: number, tagId: number): Promise<void> {
   );
 }
 
+/** Remove the given tags from all listed assets. Returns removed link count. */
+export async function detachTagsBulk(assetIds: number[], tagNames: string[]): Promise<number> {
+  if (assetIds.length === 0 || tagNames.length === 0) return 0;
+  const normalized = tagNames.map(normalizeTagName).filter(Boolean);
+  if (normalized.length === 0) return 0;
+
+  const result = await db.query(
+    `DELETE FROM media_asset_tags
+     WHERE media_asset_id = ANY($1::int[])
+       AND tag_id IN (SELECT id FROM tags WHERE name = ANY($2))
+     RETURNING media_asset_id`,
+    [assetIds, normalized]
+  );
+  return result.rowCount ?? 0;
+}
+
 export async function listTags(): Promise<TagWithCount[]> {
   const result = await db.query(
     `SELECT t.id, t.name, t.created_at,

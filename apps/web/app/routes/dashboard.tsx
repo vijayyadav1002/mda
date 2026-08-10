@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { useNavigate, useSearchParams } from "@remix-run/react";
+import { useNavigate, useSearchParams } from "react-router";
 import { createGraphQLClient, getApiUrl, getAuthToken, clearAuthToken } from "~/lib/api";
 import { Input } from "~/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "~/components/ui/dialog";
@@ -7,6 +7,7 @@ import { MediaAssetViewer } from "~/components/MediaAssetViewer";
 import { CompressDialog } from "~/components/CompressDialog";
 import { CompressQueuePanel, type CompressJob } from "~/components/CompressQueuePanel";
 import { TagDialog, type TagSuggestion } from "~/components/TagDialog";
+import { RemoveTagsDialog } from "~/components/RemoveTagsDialog";
 import { ConfirmDialog } from "~/components/ConfirmDialog";
 import { SearchBar } from "~/components/SearchBar";
 import {
@@ -15,7 +16,7 @@ import {
   Menu, X, ImagePlus, ArrowUpDown, Minimize2,
   Upload, LogOut, Download, FolderPlus, ListTodo,
   Moon, Sun, User, Tag as TagIcon, Pencil, HardDrive, FolderOpen,
-  Copy, ScrollText,
+  Copy, ScrollText, CalendarDays, Film, RefreshCw, Zap,
 } from "lucide-react";
 
 const API_URL = getApiUrl();
@@ -45,8 +46,8 @@ const GENERATE_THUMBNAILS_FOR_PATH_MUTATION = `
 `;
 
 const GENERATE_THUMBNAILS_FOR_ASSETS_MUTATION = `
-  mutation GenerateThumbnailsForAssets($ids: [ID!]!, $sessionId: String) {
-    generateThumbnailsForAssets(ids: $ids, sessionId: $sessionId)
+  mutation GenerateThumbnailsForAssets($ids: [ID!]!, $sessionId: String, $force: Boolean) {
+    generateThumbnailsForAssets(ids: $ids, sessionId: $sessionId, force: $force)
   }
 `;
 
@@ -82,6 +83,14 @@ const CANCEL_COMPRESS_MUTATION = `
   }
 `;
 
+const CREATE_TEXT_FILE_MUTATION = `
+  mutation CreateTextFile($parentPath: String, $name: String!) {
+    createTextFile(parentPath: $parentPath, name: $name) {
+      id fileName filePath mimeType fileSize thumbnailUrl transcodedUrl createdAt capturedAt tags { id name }
+    }
+  }
+`;
+
 const CREATE_FOLDER_MUTATION = `
   mutation CreateFolder($parentPath: String, $name: String!) {
     createFolder(parentPath: $parentPath, name: $name) {
@@ -101,7 +110,7 @@ const DELETE_FOLDER_MUTATION = `
 const RENAME_MEDIA_ASSET_MUTATION = `
   mutation RenameMediaAsset($id: ID!, $newName: String!) {
     renameMediaAsset(id: $id, newName: $newName) {
-      id fileName filePath mimeType fileSize thumbnailUrl transcodedUrl createdAt tags { id name }
+      id fileName filePath mimeType fileSize thumbnailUrl transcodedUrl createdAt capturedAt tags { id name }
     }
   }
 `;
@@ -109,7 +118,7 @@ const RENAME_MEDIA_ASSET_MUTATION = `
 const MOVE_MEDIA_ASSET_MUTATION = `
   mutation MoveMediaAsset($id: ID!, $newPath: String!) {
     moveMediaAsset(id: $id, newPath: $newPath) {
-      id fileName filePath mimeType fileSize thumbnailUrl transcodedUrl createdAt tags { id name }
+      id fileName filePath mimeType fileSize thumbnailUrl transcodedUrl createdAt capturedAt tags { id name }
     }
   }
 `;
@@ -117,7 +126,7 @@ const MOVE_MEDIA_ASSET_MUTATION = `
 const DUPLICATE_MEDIA_ASSET_MUTATION = `
   mutation DuplicateMediaAsset($id: ID!, $destinationFolder: String) {
     duplicateMediaAsset(id: $id, destinationFolder: $destinationFolder) {
-      id fileName filePath mimeType fileSize thumbnailUrl transcodedUrl createdAt tags { id name }
+      id fileName filePath mimeType fileSize thumbnailUrl transcodedUrl createdAt capturedAt tags { id name }
     }
   }
 `;
@@ -156,6 +165,7 @@ const DIRECTORY_NODE_QUERY = `
     thumbnailUrl
     transcodedUrl
     createdAt
+    capturedAt
     tags { id name }
   }
 
@@ -196,6 +206,7 @@ const MEDIA_ASSETS_BY_TAG_QUERY = `
       thumbnailUrl
       transcodedUrl
       createdAt
+      capturedAt
       tags { id name }
     }
   }
@@ -207,6 +218,12 @@ const APPLY_TAGS_MUTATION = `
       id
       tags { id name }
     }
+  }
+`;
+
+const REMOVE_TAGS_FROM_ASSETS_MUTATION = `
+  mutation RemoveTagsFromAssets($assetIds: [ID!]!, $tagNames: [String!]!) {
+    removeTagsFromAssets(assetIds: $assetIds, tagNames: $tagNames)
   }
 `;
 
@@ -242,6 +259,7 @@ const MEDIA_ASSET_QUERY = `
       thumbnailUrl
       transcodedUrl
       createdAt
+      capturedAt
       tags { id name }
     }
   }
@@ -271,13 +289,28 @@ const CLEAR_CACHE_MUTATION = `
   }
 `;
 
+const CACHE_SETTINGS_FIELDS = `
+  thumbnailCacheMaxMb previewCacheMaxMb hlsCacheMaxMb transcodedCacheMaxMb
+  previewCacheMaxAgeDays hlsCacheMaxAgeHours
+`;
+
+const CACHE_SETTINGS_QUERY = `
+  query CacheSettings { cacheSettings { ${CACHE_SETTINGS_FIELDS} } }
+`;
+
+const UPDATE_CACHE_SETTINGS_MUTATION = `
+  mutation UpdateCacheSettings($input: CacheSettingsInput!) {
+    updateCacheSettings(input: $input) { ${CACHE_SETTINGS_FIELDS} }
+  }
+`;
+
 const SEARCH_RESULTS_QUERY = `
   query SearchResults($term: String, $mediaType: String, $sortBy: String, $limit: Int, $minSize: Float, $maxSize: Float, $path: String) {
     search(term: $term, mediaType: $mediaType, sortBy: $sortBy, limit: $limit, minSize: $minSize, maxSize: $maxSize, path: $path) {
       files {
         id fileName filePath fileSize mimeType
         thumbnailUrl transcodedUrl
-        indexedAt createdAt updatedAt
+        indexedAt createdAt updatedAt capturedAt
         tags { id name }
       }
       folders { name path parentPath }
@@ -297,7 +330,9 @@ interface MediaAsset {
   mimeType: string;
   fileSize: string;
   thumbnailUrl: string | null;
+  transcodedUrl?: string | null;
   createdAt: string;
+  capturedAt?: string | null;
   tags?: TagSummary[];
 }
 
@@ -323,6 +358,15 @@ interface CacheStats {
   hls: CacheTypeStats;
   transcoded: CacheTypeStats;
   totalBytes: number;
+}
+
+interface CacheSettingsData {
+  thumbnailCacheMaxMb: number;
+  previewCacheMaxMb: number;
+  hlsCacheMaxMb: number;
+  transcodedCacheMaxMb: number;
+  previewCacheMaxAgeDays: number;
+  hlsCacheMaxAgeHours: number;
 }
 
 function formatBytes(bytes: string | number) {
@@ -379,6 +423,143 @@ function FileTypeIcon({ asset, className }: { asset: MediaAsset; className: stri
   return <File className={className} />;
 }
 
+const CACHE_LIMIT_FIELDS: Array<{ key: keyof CacheSettingsData; label: string; unit: string }> = [
+  { key: "thumbnailCacheMaxMb", label: "Thumbnails", unit: "MB" },
+  { key: "previewCacheMaxMb", label: "Previews", unit: "MB" },
+  { key: "hlsCacheMaxMb", label: "HLS", unit: "MB" },
+  { key: "transcodedCacheMaxMb", label: "Transcoded", unit: "MB" },
+  { key: "previewCacheMaxAgeDays", label: "Preview age", unit: "days" },
+  { key: "hlsCacheMaxAgeHours", label: "HLS age", unit: "hrs" },
+];
+
+function CachePanelBody({
+  cacheStats,
+  cacheSettings,
+  onClear,
+  onSaveSettings,
+}: Readonly<{
+  cacheStats: CacheStats;
+  cacheSettings: CacheSettingsData | null;
+  onClear: (type: "thumbnails" | "previews" | "hls" | "transcoded" | "all") => void;
+  onSaveSettings: (input: Partial<CacheSettingsData>) => Promise<void>;
+}>) {
+  const [showLimits, setShowLimits] = useState(false);
+  const [draft, setDraft] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  const openEditor = () => {
+    if (!showLimits && cacheSettings) {
+      setDraft(Object.fromEntries(CACHE_LIMIT_FIELDS.map(({ key }) => [key, String(cacheSettings[key])])));
+      setSaveError(null);
+    }
+    setShowLimits((p) => !p);
+  };
+
+  const handleSave = async () => {
+    const input: Partial<CacheSettingsData> = {};
+    for (const { key } of CACHE_LIMIT_FIELDS) {
+      const value = Number.parseInt(draft[key] ?? "", 10);
+      if (!Number.isFinite(value) || value <= 0) {
+        setSaveError("All values must be positive numbers");
+        return;
+      }
+      input[key] = value;
+    }
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await onSaveSettings(input);
+      setShowLimits(false);
+    } catch (err: any) {
+      setSaveError(err?.response?.errors?.[0]?.message ?? err?.message ?? "Failed to save");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="px-3 pb-3 pt-2 space-y-2 border-t border-border/20">
+      {(["thumbnails", "previews", "hls", "transcoded"] as const).map((key) => {
+        const s = cacheStats[key];
+        const usage = s.maxBytes > 0 ? Math.min(100, (s.bytes / s.maxBytes) * 100) : 0;
+        return (
+          <div key={key} className="space-y-1">
+            <div className="flex items-center justify-between gap-2 text-xs">
+              <span className="text-muted-foreground truncate">{s.label}</span>
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="font-mono text-foreground">
+                  {formatBytes(s.bytes)}
+                  <span className="text-muted-foreground"> / {formatBytes(s.maxBytes)}</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onClear(key)}
+                  className="text-destructive hover:underline"
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+            <div className="h-1 rounded-full bg-muted/60 overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-[width] duration-500 ${usage > 90 ? "bg-destructive" : "gradient-brand"}`}
+                style={{ width: `${Math.max(usage, 2)}%` }}
+              />
+            </div>
+          </div>
+        );
+      })}
+
+      {cacheSettings && (
+        <button
+          type="button"
+          onClick={openEditor}
+          className="w-full text-xs text-muted-foreground border border-border/40 rounded-lg py-1.5 hover:text-foreground hover:bg-accent transition-colors"
+        >
+          {showLimits ? "Hide limits" : "Configure limits"}
+        </button>
+      )}
+
+      {showLimits && cacheSettings && (
+        <div className="space-y-2 pt-1">
+          <div className="grid grid-cols-2 gap-2">
+            {CACHE_LIMIT_FIELDS.map(({ key, label, unit }) => (
+              <label key={key} className="text-[10px] text-muted-foreground space-y-0.5 block">
+                <span className="block truncate">{label} ({unit})</span>
+                <input
+                  type="number"
+                  min={1}
+                  value={draft[key] ?? ""}
+                  onChange={(e) => setDraft((prev) => ({ ...prev, [key]: e.target.value }))}
+                  className="w-full px-2 py-1 rounded-lg bg-background border border-border/40 text-xs font-mono text-foreground focus:outline-hidden focus:border-brand-primary"
+                />
+              </label>
+            ))}
+          </div>
+          {saveError && <p className="text-[10px] text-destructive">{saveError}</p>}
+          <button
+            type="button"
+            onClick={() => void handleSave()}
+            disabled={saving}
+            className="w-full text-xs font-semibold gradient-brand text-[#060e20] rounded-lg py-1.5 hover:opacity-90 transition-opacity disabled:opacity-50"
+          >
+            {saving ? "Saving…" : "Save Limits"}
+          </button>
+        </div>
+      )}
+
+      <button
+        type="button"
+        onClick={() => onClear("all")}
+        className="w-full text-xs text-destructive border border-destructive/40 rounded-lg py-1.5 hover:bg-destructive/10 transition-colors"
+      >
+        Clear All
+      </button>
+    </div>
+  );
+}
+
 function SidebarNavItem({
   icon: Icon,
   label,
@@ -402,7 +583,7 @@ function SidebarNavItem({
           : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
       }`}
     >
-      <Icon className="w-4 h-4 flex-shrink-0" />
+      <Icon className="w-4 h-4 shrink-0" />
       {label}
       {badge != null && badge > 0 && (
         <span className="ml-auto w-5 h-5 gradient-brand rounded-full flex items-center justify-center text-[10px] font-bold text-[#060e20]">
@@ -446,10 +627,14 @@ export default function Dashboard() {
   const [sortOption, setSortOption] = useState<"default" | "size-asc" | "size-desc" | "date-asc" | "date-desc">("default");
   const [showSortMenu, setShowSortMenu] = useState(false);
   const sortMenuRef = useRef<HTMLDivElement>(null);
+  const [showSelectionActionsMenu, setShowSelectionActionsMenu] = useState(false);
+  const selectionActionsMenuRef = useRef<HTMLDivElement>(null);
   const [isCompressDialogOpen, setIsCompressDialogOpen] = useState(false);
   const [compressDialogAssets, setCompressDialogAssets] = useState<MediaAsset[]>([]);
   const [isTagDialogOpen, setIsTagDialogOpen] = useState(false);
   const [tagDialogAssets, setTagDialogAssets] = useState<MediaAsset[]>([]);
+  const [isRemoveTagsDialogOpen, setIsRemoveTagsDialogOpen] = useState(false);
+  const [removeTagsAssets, setRemoveTagsAssets] = useState<MediaAsset[]>([]);
   const [tagSuggestions, setTagSuggestions] = useState<TagSuggestion[]>([]);
   const [showTagFilterMenu, setShowTagFilterMenu] = useState(false);
   const [activeTagFilter, setActiveTagFilter] = useState<string | null>(null);
@@ -469,6 +654,11 @@ export default function Dashboard() {
   const [showNewFolderDialog, setShowNewFolderDialog] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
+  const [showNewFileDialog, setShowNewFileDialog] = useState(false);
+  const [newFileName, setNewFileName] = useState('');
+  const [newFileType, setNewFileType] = useState<'md' | 'txt'>('md');
+  const [isCreatingFile, setIsCreatingFile] = useState(false);
+  const [autoEditAssetId, setAutoEditAssetId] = useState<string | null>(null);
   const [showMoveDialog, setShowMoveDialog] = useState(false);
   const [moveTargetFolderPath, setMoveTargetFolderPath] = useState('');
   const [isMoving, setIsMoving] = useState(false);
@@ -480,6 +670,7 @@ export default function Dashboard() {
   const [renameFolderValue, setRenameFolderValue] = useState('');
   const [isRenamingFolder, setIsRenamingFolder] = useState(false);
   const [cacheStats, setCacheStats] = useState<CacheStats | null>(null);
+  const [cacheSettings, setCacheSettings] = useState<CacheSettingsData | null>(null);
   const [showCachePanel, setShowCachePanel] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState<{
     open: boolean;
@@ -491,6 +682,7 @@ export default function Dashboard() {
   }>({ open: false, title: "", description: "", onConfirm: async () => {} });
   const [searchQuery, setSearchQuery] = useState<{ term: string; mediaType: string } | null>(null);
   const [searchAssets, setSearchAssets] = useState<MediaAsset[]>([]);
+  const [searchFolders, setSearchFolders] = useState<{ name: string; path: string; parentPath?: string | null }[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchLimit, setSearchLimit] = useState<25 | 50 | 100 | 250 | 0>(25);
   const [minSizeBytes, setMinSizeBytes] = useState<number>(0); // 0 = no filter
@@ -670,6 +862,17 @@ export default function Dashboard() {
     if (rootPath && rootPath !== currentPath) await loadDirectoryIntoCache(rootPath);
     if (activeTagFilter) await loadTagFilterAssets(activeTagFilter);
     return data.applyTagsToAssets as Array<{ id: string; tags: Array<{ id: string; name: string }> }>;
+  }, [activeTagFilter, currentPath, loadTagFilterAssets, refreshTagSuggestions, rootPath]);
+
+  const removeTagsFromAssets = useCallback(async (assetIds: string[], tagNames: string[]) => {
+    const token = getAuthToken();
+    if (!token) throw new Error("Not authenticated");
+    const client = createGraphQLClient(token);
+    await client.request(REMOVE_TAGS_FROM_ASSETS_MUTATION, { assetIds, tagNames });
+    await refreshTagSuggestions();
+    if (currentPath) await loadDirectoryIntoCache(currentPath);
+    if (rootPath && rootPath !== currentPath) await loadDirectoryIntoCache(rootPath);
+    if (activeTagFilter) await loadTagFilterAssets(activeTagFilter);
   }, [activeTagFilter, currentPath, loadTagFilterAssets, refreshTagSuggestions, rootPath]);
 
   const removeTagFromAsset = useCallback(async (assetId: string, tagName: string) => {
@@ -1037,7 +1240,7 @@ export default function Dashboard() {
     openConfirm({
       title: "Delete Items",
       description: `Delete ${count} selected item${count === 1 ? "" : "s"}?`,
-      warning: "This cannot be undone.",
+      warning: "Items are moved to the Trash and kept for 30 days before permanent deletion.",
       onConfirm: async () => {
         try {
           const token = getAuthToken();
@@ -1060,7 +1263,7 @@ export default function Dashboard() {
     openConfirm({
       title: "Delete File",
       description: `Delete "${fileName}"?`,
-      warning: "This cannot be undone.",
+      warning: "The file is moved to the Trash and kept for 30 days before permanent deletion.",
       onConfirm: async () => {
         try {
           const token = getAuthToken();
@@ -1102,6 +1305,7 @@ export default function Dashboard() {
             ),
             status: (
               job.status === "compressing" ? "pending"       // BullMQ retries the job
+              : job.status === "transcoding" ? "pending"     // BullMQ retries the job
               : job.status === "confirming" ? "preview_ready" // let user retry confirm
               : job.status
             ) as CompressJob["status"],
@@ -1112,7 +1316,7 @@ export default function Dashboard() {
   }, [user?.username]);
 
   // Poll for queue updates every 5 s when jobs are active
-  const hasActiveJobs = compressQueue.some(j => j.status === "pending" || j.status === "compressing");
+  const hasActiveJobs = compressQueue.some(j => j.status === "pending" || j.status === "compressing" || j.status === "transcoding");
   useEffect(() => {
     if (!hasActiveJobs || !user) return;
     const token = getAuthToken();
@@ -1340,6 +1544,37 @@ export default function Dashboard() {
     });
   }, [saveQueueToServer]);
 
+  const handleCreateFile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = newFileName.trim();
+    if (!trimmed || isCreatingFile) return;
+    // Append the chosen extension unless the user already typed a valid one
+    const hasValidExt = /\.(txt|md|markdown)$/i.test(trimmed);
+    const finalName = hasValidExt ? trimmed : `${trimmed}.${newFileType}`;
+    try {
+      setIsCreatingFile(true);
+      const token = getAuthToken();
+      if (!token) return;
+      const client = createGraphQLClient(token);
+      const data: any = await client.request(CREATE_TEXT_FILE_MUTATION, {
+        parentPath: currentPath,
+        name: finalName,
+      });
+      setShowNewFileDialog(false);
+      setNewFileName('');
+      if (currentPath) await loadDirectoryIntoCache(currentPath);
+      // Open the new document straight in the editor
+      const created = data.createTextFile as MediaAsset;
+      setAutoEditAssetId(created.id);
+      setSelectedAsset(created);
+      setIsViewerOpen(true);
+    } catch (err: any) {
+      alert(`Failed to create file: ${err?.response?.errors?.[0]?.message || err.message || 'Unknown error'}`);
+    } finally {
+      setIsCreatingFile(false);
+    }
+  };
+
   const handleCreateFolder = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newFolderName.trim() || isCreatingFolder) return;
@@ -1363,7 +1598,7 @@ export default function Dashboard() {
     openConfirm({
       title: "Delete Folder",
       description: `Delete folder "${folderName}" and all its contents?`,
-      warning: "This cannot be undone.",
+      warning: "The folder is moved to the Trash and kept for 30 days before permanent deletion.",
       onConfirm: async () => {
         try {
           const token = getAuthToken();
@@ -1598,6 +1833,12 @@ export default function Dashboard() {
       toggleFolderSelection(folder.path);
       return;
     }
+    // Opening a folder from search results exits search and navigates into it
+    if (searchQuery) {
+      setSearchQuery(null);
+      setSearchAssets([]);
+      setSearchFolders([]);
+    }
     if (currentPath) setFolderHistory((prev) => [...prev, currentPath]);
     setCurrentPath(folder.path);
     const cachedNode = directoryCache[folder.path];
@@ -1648,6 +1889,7 @@ export default function Dashboard() {
     if (!trimmed && mediaType === "all") {
       setSearchQuery(null);
       setSearchAssets([]);
+      setSearchFolders([]);
       return;
     }
     setSearchQuery({ term: trimmed, mediaType });
@@ -1664,9 +1906,11 @@ export default function Dashboard() {
       if (currentPath && currentPath !== rootPath) vars.path = currentPath;
       const data: any = await client.request(SEARCH_RESULTS_QUERY, vars);
       setSearchAssets((data?.search?.files ?? []) as MediaAsset[]);
+      setSearchFolders(data?.search?.folders ?? []);
     } catch (err) {
       console.error("Search failed:", err);
       setSearchAssets([]);
+      setSearchFolders([]);
     } finally {
       setSearchLoading(false);
     }
@@ -1675,6 +1919,7 @@ export default function Dashboard() {
   const handleClearSearch = useCallback(() => {
     setSearchQuery(null);
     setSearchAssets([]);
+    setSearchFolders([]);
     setMinSizeBytes(0);
   }, []);
 
@@ -1712,6 +1957,7 @@ export default function Dashboard() {
   const handleCloseViewer = () => {
     setIsViewerOpen(false);
     setSelectedAsset(null);
+    setAutoEditAssetId(null);
   };
 
   const toggleFolder = async (directoryPath: string) => {
@@ -1765,14 +2011,21 @@ export default function Dashboard() {
   }, [tagFilterAssets]);
 
   const searchResultNodes = useMemo<DirectoryNode[]>(() => {
-    return searchAssets.map((asset) => ({
+    const folderNodes: DirectoryNode[] = searchFolders.map((folder) => ({
+      name: folder.name,
+      path: folder.path,
+      type: "directory",
+      children: null,
+    }));
+    const fileNodes: DirectoryNode[] = searchAssets.map((asset) => ({
       name: asset.fileName,
       path: asset.filePath,
       type: "file",
       children: null,
       mediaAsset: asset,
     }));
-  }, [searchAssets]);
+    return [...folderNodes, ...fileNodes];
+  }, [searchAssets, searchFolders]);
 
   const sortedFolderChildren = useMemo(() => {
     const baseChildren = searchQuery
@@ -1787,8 +2040,8 @@ export default function Dashboard() {
         const sizeB = b.mediaAsset ? parseInt(b.mediaAsset.fileSize) || 0 : 0;
         return sortOption === "size-asc" ? sizeA - sizeB : sizeB - sizeA;
       }
-      const dateA = a.mediaAsset ? new Date(a.mediaAsset.createdAt).getTime() : 0;
-      const dateB = b.mediaAsset ? new Date(b.mediaAsset.createdAt).getTime() : 0;
+      const dateA = a.mediaAsset ? new Date(a.mediaAsset.capturedAt ?? a.mediaAsset.createdAt).getTime() : 0;
+      const dateB = b.mediaAsset ? new Date(b.mediaAsset.capturedAt ?? b.mediaAsset.createdAt).getTime() : 0;
       return sortOption === "date-asc" ? dateA - dateB : dateB - dateA;
     });
     return [...folders, ...sorted];
@@ -1804,6 +2057,104 @@ export default function Dashboard() {
     return selectedAssets.filter(canCompressAsset);
   }, [selectedAssets]);
 
+  const selectedVideoAssets = useMemo(() => {
+    return selectedAssets.filter((a) => a.mimeType.startsWith("video/"));
+  }, [selectedAssets]);
+
+  const selectedThumbableAssets = useMemo(() => {
+    return selectedAssets.filter(
+      (a) => a.mimeType.startsWith("image/") || a.mimeType.startsWith("video/")
+    );
+  }, [selectedAssets]);
+
+  // Force-regenerate thumbnails for the selected assets (works in folder,
+  // search, and tag-filter views — mirrors the timeline action)
+  const handleRegenerateThumbnailsSelected = useCallback(async () => {
+    const thumbable = selectedAssets.filter(
+      (a) => a.mimeType.startsWith("image/") || a.mimeType.startsWith("video/")
+    );
+    if (thumbable.length === 0) return;
+    const token = getAuthToken();
+    if (!token) return;
+    try {
+      const client = createGraphQLClient(token);
+      await client.request(GENERATE_THUMBNAILS_FOR_ASSETS_MUTATION, {
+        ids: thumbable.map((a) => a.id),
+        sessionId: thumbnailSessionIdRef.current,
+        force: true,
+      });
+      setSelectionMode(false);
+      setSelectedAssetIds(new Set());
+      // Pick up the fresh thumbnails once the queue has had a moment to work
+      window.setTimeout(() => {
+        if (searchQuery) {
+          void handleSearch(searchQuery.term, searchQuery.mediaType);
+        } else if (currentPath) {
+          void loadDirectoryIntoCache(currentPath);
+        }
+      }, 6000);
+    } catch (err: any) {
+      console.error("Failed to queue thumbnail regeneration:", err.message);
+      alert(`Failed to queue thumbnails: ${err.message}`);
+    }
+  }, [selectedAssets, searchQuery, currentPath, handleSearch]);
+
+  const handleTranscodeSelected = useCallback(async () => {
+    if (selectedVideoAssets.length === 0) return;
+    const token = getAuthToken();
+    if (!token) return;
+    try {
+      const res = await fetch(`${API_URL}/api/transcode/enqueue`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ ids: selectedVideoAssets.map((a) => a.id) }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error ?? `Server error ${res.status}`);
+      }
+      const { jobId } = await res.json();
+      setCompressQueue(prev => [...prev, {
+        id: jobId,
+        kind: "transcode" as const,
+        assets: selectedVideoAssets,
+        status: "pending" as const,
+        progress: {},
+        currentFileId: null,
+        previews: [],
+        fileStatuses: Object.fromEntries(selectedVideoAssets.map(a => [a.id, "pending" as const])),
+        addedAt: Date.now(),
+      }]);
+      setShowQueuePanel(true);
+      setSelectionMode(false);
+      setSelectedAssetIds(new Set());
+    } catch (err: any) {
+      console.error("Failed to enqueue transcode job:", err.message);
+      alert(`Failed to queue transcode: ${err.message}`);
+    }
+  }, [selectedVideoAssets]);
+
+  // Ordered list of files in the current view, used for viewer prev/next navigation
+  const viewerNavAssets = useMemo(() => {
+    return sortedFolderChildren
+      .filter((node) => node.type === "file" && node.mediaAsset)
+      .map((node) => node.mediaAsset!);
+  }, [sortedFolderChildren]);
+
+  const viewerNavIndex = useMemo(() => {
+    if (!selectedAsset) return -1;
+    return viewerNavAssets.findIndex((a) => a.id === selectedAsset.id);
+  }, [selectedAsset, viewerNavAssets]);
+
+  const handleViewerNavigate = useCallback((direction: 1 | -1) => {
+    setSelectedAsset((prev) => {
+      if (!prev) return prev;
+      const idx = viewerNavAssets.findIndex((a) => a.id === prev.id);
+      if (idx === -1) return prev;
+      return viewerNavAssets[idx + direction] ?? prev;
+    });
+  }, [viewerNavAssets]);
+
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (sortMenuRef.current && !sortMenuRef.current.contains(e.target as Node)) {
@@ -1813,6 +2164,16 @@ export default function Dashboard() {
     if (showSortMenu) document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [showSortMenu]);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (selectionActionsMenuRef.current && !selectionActionsMenuRef.current.contains(e.target as Node)) {
+        setShowSelectionActionsMenu(false);
+      }
+    };
+    if (showSelectionActionsMenu) document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showSelectionActionsMenu]);
 
   useEffect(() => {
     if (!searchQuery) return;
@@ -1846,6 +2207,29 @@ export default function Dashboard() {
     const id = window.setInterval(fetchCacheStats, 10_000);
     return () => window.clearInterval(id);
   }, [user?.role, fetchCacheStats]);
+
+  useEffect(() => {
+    if (user?.role !== "admin") return;
+    const token = getAuthToken();
+    if (!token) return;
+    const client = createGraphQLClient(token);
+    client
+      .request<{ cacheSettings: CacheSettingsData }>(CACHE_SETTINGS_QUERY)
+      .then((data) => setCacheSettings(data.cacheSettings))
+      .catch(() => { /* non-critical */ });
+  }, [user?.role]);
+
+  const handleSaveCacheSettings = useCallback(async (input: Partial<CacheSettingsData>) => {
+    const token = getAuthToken();
+    if (!token) throw new Error("Not authenticated");
+    const client = createGraphQLClient(token);
+    const data = await client.request<{ updateCacheSettings: CacheSettingsData }>(
+      UPDATE_CACHE_SETTINGS_MUTATION,
+      { input }
+    );
+    setCacheSettings(data.updateCacheSettings);
+    void fetchCacheStats();
+  }, [fetchCacheStats]);
 
   useEffect(() => {
     if (!currentPath) return;
@@ -1896,13 +2280,13 @@ export default function Dashboard() {
         <div key={node.path} className="relative group">
           <button
             type="button"
-            className={`w-full pl-6 py-2.5 flex items-center gap-3 cursor-pointer hover:bg-accent rounded-xl transition-all duration-150 outline-none focus:ring-2 focus:ring-brand-primary/30 text-left ${
+            className={`w-full pl-6 py-2.5 flex items-center gap-3 cursor-pointer hover:bg-accent rounded-xl transition-all duration-150 outline-hidden focus:ring-2 focus:ring-brand-primary/30 text-left ${
               isSelected ? "bg-accent" : ""
             }`}
             onClick={() => node.mediaAsset && handleAssetClick(node.mediaAsset)}
           >
             {selectionMode && (
-              <div className="flex-shrink-0">
+              <div className="shrink-0">
                 {isSelected ? (
                   <CheckSquare className="w-4 h-4 text-brand-primary" />
                 ) : (
@@ -1910,7 +2294,7 @@ export default function Dashboard() {
                 )}
               </div>
             )}
-            <FileImage className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+            <FileImage className="w-4 h-4 text-muted-foreground shrink-0" />
             <span className="text-sm truncate text-foreground flex-1">{node.name}</span>
             {!selectionMode && node.mediaAsset && (user?.role === "admin" || user?.role === "editor") && (
               <button
@@ -1938,19 +2322,19 @@ export default function Dashboard() {
         <div className="group relative flex items-center">
           <button
             type="button"
-            className="flex-1 py-2.5 flex items-center gap-3 font-medium text-foreground hover:bg-accent rounded-xl transition-all duration-150 outline-none focus:ring-2 focus:ring-brand-primary/30 text-left px-2"
+            className="flex-1 py-2.5 flex items-center gap-3 font-medium text-foreground hover:bg-accent rounded-xl transition-all duration-150 outline-hidden focus:ring-2 focus:ring-brand-primary/30 text-left px-2"
             onClick={() => void toggleFolder(node.path)}
           >
             {isExpanded ? (
-              <ChevronDown className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+              <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />
             ) : (
-              <ChevronRight className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+              <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
             )}
-            <div className="w-8 h-8 gradient-brand rounded-lg flex items-center justify-center flex-shrink-0">
+            <div className="w-8 h-8 gradient-brand rounded-lg flex items-center justify-center shrink-0">
               <Folder className="w-4 h-4 text-[#060e20]" />
             </div>
             <span className="text-sm">{node.name}</span>
-            <span className="flex items-center gap-1.5 ml-auto mr-2 flex-shrink-0">
+            <span className="flex items-center gap-1.5 ml-auto mr-2 shrink-0">
               {node.size != null && node.size > 0 && (
                 <span className="text-xs text-muted-foreground font-mono">
                   {formatBytes(node.size)}
@@ -1968,7 +2352,7 @@ export default function Dashboard() {
               <button
                 type="button"
                 onClick={() => { setRenamingFolder({ path: node.path, name: node.name }); setRenameFolderValue(node.name); }}
-                className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-accent rounded-lg transition-all duration-150 flex-shrink-0"
+                className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-accent rounded-lg transition-all duration-150 shrink-0"
                 title="Rename folder"
               >
                 <Pencil className="w-3.5 h-3.5 text-foreground" />
@@ -1976,7 +2360,7 @@ export default function Dashboard() {
               <button
                 type="button"
                 onClick={() => openDuplicateFolderDialog({ path: node.path, name: node.name })}
-                className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-accent rounded-lg transition-all duration-150 flex-shrink-0"
+                className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-accent rounded-lg transition-all duration-150 shrink-0"
                 title="Duplicate folder"
               >
                 <Copy className="w-3.5 h-3.5 text-foreground" />
@@ -1984,7 +2368,7 @@ export default function Dashboard() {
               <button
                 type="button"
                 onClick={() => void handleDeleteFolder(node.path, node.name)}
-                className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-destructive/10 rounded-lg transition-all duration-150 mr-1 flex-shrink-0"
+                className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-destructive/10 rounded-lg transition-all duration-150 mr-1 shrink-0"
                 title="Delete folder"
               >
                 <Trash2 className="w-3.5 h-3.5 text-destructive" />
@@ -2044,7 +2428,7 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen flex bg-background">
       {/* ── Sidebar ──────────────────────────────────────────────── */}
-      <aside className="hidden md:flex flex-col fixed left-0 top-0 h-screen w-64 bg-card z-30 flex-shrink-0">
+      <aside className="hidden md:flex flex-col fixed left-0 top-0 h-screen w-64 bg-card z-30 shrink-0">
         {/* Brand */}
         <div className="px-5 py-6">
           <button
@@ -2052,7 +2436,7 @@ export default function Dashboard() {
             onClick={() => { setCurrentPath(rootPath); setFolderHistory([]); }}
             className="flex items-center gap-3 hover:opacity-80 transition-opacity"
           >
-            <div className="w-9 h-9 rounded-xl gradient-brand flex items-center justify-center shadow-ambient flex-shrink-0">
+            <div className="w-9 h-9 rounded-xl gradient-brand flex items-center justify-center shadow-ambient shrink-0">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#060e20" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
               </svg>
@@ -2067,6 +2451,10 @@ export default function Dashboard() {
         {/* Nav */}
         <nav className="flex-1 px-3 space-y-0.5">
           <SidebarNavItem icon={Folder} label="Collections" active onClick={() => { setCurrentPath(rootPath); setFolderHistory([]); }} />
+          <SidebarNavItem icon={CalendarDays} label="Timeline" onClick={() => navigate("/timeline")} />
+          {(user?.role === "admin" || user?.role === "editor") && (
+            <SidebarNavItem icon={Trash2} label="Trash" onClick={() => navigate("/trash")} />
+          )}
           {(user?.role === "admin" || user?.role === "editor") && (
             <SidebarNavItem
               icon={ListTodo}
@@ -2088,7 +2476,7 @@ export default function Dashboard() {
           {rootSize != null && rootSize > 0 && (
             <div className="flex items-center justify-between px-3 py-2 rounded-xl border border-border/20 text-xs text-muted-foreground">
               <span className="flex items-center gap-1.5">
-                <HardDrive className="w-3.5 h-3.5 flex-shrink-0" />
+                <HardDrive className="w-3.5 h-3.5 shrink-0" />
                 Media Total
               </span>
               <span className="font-mono">{formatBytes(rootSize)}</span>
@@ -2103,42 +2491,21 @@ export default function Dashboard() {
                 className="w-full flex items-center justify-between px-3 py-2.5 text-sm text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-all"
               >
                 <span className="flex items-center gap-2">
-                  <HardDrive className="w-4 h-4 flex-shrink-0" />
+                  <HardDrive className="w-4 h-4 shrink-0" />
                   Cache
                 </span>
                 <span className="flex items-center gap-1.5 min-w-0">
                   <span className="font-mono text-xs truncate">{formatBytes(cacheStats.totalBytes)}</span>
-                  <ChevronDown className={`w-3.5 h-3.5 flex-shrink-0 transition-transform duration-200 ${showCachePanel ? "rotate-180" : ""}`} />
+                  <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform duration-200 ${showCachePanel ? "rotate-180" : ""}`} />
                 </span>
               </button>
               {showCachePanel && (
-                <div className="px-3 pb-3 pt-2 space-y-2 border-t border-border/20">
-                  {(["thumbnails", "previews", "hls", "transcoded"] as const).map((key) => {
-                    const s = cacheStats[key];
-                    return (
-                      <div key={key} className="flex items-center justify-between gap-2 text-xs">
-                        <span className="text-muted-foreground truncate">{s.label}</span>
-                        <div className="flex items-center gap-2 flex-shrink-0">
-                          <span className="font-mono text-foreground">{formatBytes(s.bytes)}</span>
-                          <button
-                            type="button"
-                            onClick={() => void handleClearCache(key)}
-                            className="text-destructive hover:underline"
-                          >
-                            Clear
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                  <button
-                    type="button"
-                    onClick={() => void handleClearCache("all")}
-                    className="w-full text-xs text-destructive border border-destructive/40 rounded-lg py-1.5 hover:bg-destructive/10 transition-colors"
-                  >
-                    Clear All
-                  </button>
-                </div>
+                <CachePanelBody
+                  cacheStats={cacheStats}
+                  cacheSettings={cacheSettings}
+                  onClear={(type) => void handleClearCache(type)}
+                  onSaveSettings={handleSaveCacheSettings}
+                />
               )}
             </div>
           )}
@@ -2169,7 +2536,7 @@ export default function Dashboard() {
           {/* User row */}
           {user && (
             <div className="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-accent/50 transition-colors group">
-              <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
+              <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center shrink-0">
                 <User className="w-4 h-4 text-muted-foreground" />
               </div>
               <div className="flex-1 min-w-0">
@@ -2203,7 +2570,7 @@ export default function Dashboard() {
       <div className="flex-1 md:ml-64 min-h-screen flex flex-col">
 
         {/* Mobile top bar */}
-        <div className="md:hidden flex items-center justify-between px-4 py-4 bg-card/80 backdrop-blur-sm sticky top-0 z-20">
+        <div className="md:hidden flex items-center justify-between px-4 py-4 bg-card/80 backdrop-blur-xs sticky top-0 z-20">
           <button
             type="button"
             onClick={() => { setCurrentPath(rootPath); setFolderHistory([]); }}
@@ -2229,6 +2596,10 @@ export default function Dashboard() {
             <div className="absolute inset-0 bg-black/50" onClick={() => setMobileMenuOpen(false)} />
             <div className="relative w-64 bg-card h-full flex flex-col p-4 space-y-1 shadow-ambient">
               <SidebarNavItem icon={Folder} label="Collections" active onClick={() => { setCurrentPath(rootPath); setFolderHistory([]); setMobileMenuOpen(false); }} />
+              <SidebarNavItem icon={CalendarDays} label="Timeline" onClick={() => { navigate("/timeline"); setMobileMenuOpen(false); }} />
+              {(user?.role === "admin" || user?.role === "editor") && (
+                <SidebarNavItem icon={Trash2} label="Trash" onClick={() => { navigate("/trash"); setMobileMenuOpen(false); }} />
+              )}
               {(user?.role === "admin" || user?.role === "editor") && (
                 <SidebarNavItem
                   icon={ListTodo}
@@ -2292,7 +2663,7 @@ export default function Dashboard() {
                 {rootSize != null && rootSize > 0 && (
                   <div className="flex items-center justify-between px-3 py-2 rounded-xl border border-border/20 text-xs text-muted-foreground">
                     <span className="flex items-center gap-1.5">
-                      <HardDrive className="w-3.5 h-3.5 flex-shrink-0" />
+                      <HardDrive className="w-3.5 h-3.5 shrink-0" />
                       Media Total
                     </span>
                     <span className="font-mono">{formatBytes(rootSize)}</span>
@@ -2306,42 +2677,21 @@ export default function Dashboard() {
                       className="w-full flex items-center justify-between px-3 py-2.5 text-sm text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-all"
                     >
                       <span className="flex items-center gap-2">
-                        <HardDrive className="w-4 h-4 flex-shrink-0" />
+                        <HardDrive className="w-4 h-4 shrink-0" />
                         Cache
                       </span>
                       <span className="flex items-center gap-1.5 min-w-0">
                         <span className="font-mono text-xs truncate">{formatBytes(cacheStats.totalBytes)}</span>
-                        <ChevronDown className={`w-3.5 h-3.5 flex-shrink-0 transition-transform duration-200 ${showCachePanel ? "rotate-180" : ""}`} />
+                        <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform duration-200 ${showCachePanel ? "rotate-180" : ""}`} />
                       </span>
                     </button>
                     {showCachePanel && (
-                      <div className="px-3 pb-3 pt-2 space-y-2 border-t border-border/20">
-                        {(["thumbnails", "previews", "hls", "transcoded"] as const).map((key) => {
-                          const s = cacheStats[key];
-                          return (
-                            <div key={key} className="flex items-center justify-between gap-2 text-xs">
-                              <span className="text-muted-foreground truncate">{s.label}</span>
-                              <div className="flex items-center gap-2 flex-shrink-0">
-                                <span className="font-mono text-foreground">{formatBytes(s.bytes)}</span>
-                                <button
-                                  type="button"
-                                  onClick={() => void handleClearCache(key)}
-                                  className="text-destructive hover:underline"
-                                >
-                                  Clear
-                                </button>
-                              </div>
-                            </div>
-                          );
-                        })}
-                        <button
-                          type="button"
-                          onClick={() => void handleClearCache("all")}
-                          className="w-full text-xs text-destructive border border-destructive/40 rounded-lg py-1.5 hover:bg-destructive/10 transition-colors"
-                        >
-                          Clear All
-                        </button>
-                      </div>
+                      <CachePanelBody
+                        cacheStats={cacheStats}
+                        cacheSettings={cacheSettings}
+                        onClear={(type) => void handleClearCache(type)}
+                        onSaveSettings={handleSaveCacheSettings}
+                      />
                     )}
                   </div>
                 )}
@@ -2358,7 +2708,7 @@ export default function Dashboard() {
         )}
 
         {/* Search bar */}
-        <div className="md:sticky md:top-0 z-20 bg-background/80 backdrop-blur-sm px-4 md:px-10 pt-3 pb-1.5">
+        <div className="md:sticky md:top-0 z-20 bg-background/80 backdrop-blur-xs px-4 md:px-10 pt-3 pb-1.5">
           <SearchBar
             onSearch={handleSearch}
             onClear={handleClearSearch}
@@ -2367,7 +2717,7 @@ export default function Dashboard() {
         </div>
 
         {/* Toolbar */}
-        <div className="relative z-30 bg-background/80 backdrop-blur-sm px-4 md:px-10 pb-3 pt-1 flex items-center justify-between gap-2 md:gap-4">
+        <div className="relative z-30 bg-background/80 backdrop-blur-xs px-4 md:px-10 pb-3 pt-1 flex items-center justify-between gap-2 md:gap-4">
           <div className="flex items-center gap-3 min-w-0">
             {searchQuery && (
               <button
@@ -2439,8 +2789,33 @@ export default function Dashboard() {
                   <CheckSquare className="w-4 h-4" />
                   <span className="hidden sm:inline">{selectionMode ? "Cancel" : "Select"}</span>
                 </button>
+                {selectionMode && viewerNavAssets.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const allSelected = viewerNavAssets.every((a) => selectedAssetIds.has(a.id));
+                      setSelectedAssetIds(allSelected ? new Set() : new Set(viewerNavAssets.map((a) => a.id)));
+                    }}
+                    className="flex items-center gap-1 px-2.5 py-2 rounded-xl text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
+                    title={viewerNavAssets.every((a) => selectedAssetIds.has(a.id)) ? "Unselect all files in this view" : "Select all files in this view"}
+                  >
+                    {viewerNavAssets.every((a) => selectedAssetIds.has(a.id)) ? (
+                      <>
+                        <Square className="w-4 h-4" />
+                        <span className="hidden sm:inline">Unselect All</span>
+                      </>
+                    ) : (
+                      <>
+                        <CheckSquare className="w-4 h-4" />
+                        <span className="hidden sm:inline">Select All</span>
+                        <span className="text-xs">({viewerNavAssets.length})</span>
+                      </>
+                    )}
+                  </button>
+                )}
                 {selectionMode && (selectedAssetIds.size > 0 || selectedFolderPaths.size > 0) && (
                   <>
+                    <div className="hidden md:flex items-center gap-1.5 md:gap-2 flex-wrap justify-end">
                     {selectedAssetIds.size > 0 && (
                       <button
                         type="button"
@@ -2474,6 +2849,32 @@ export default function Dashboard() {
                         <span className="text-xs">({selectedCompressibleAssets.length})</span>
                       </button>
                     )}
+                    {(user?.role === "admin" || user?.role === "editor") && selectedAssetIds.size > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => void handleTranscodeSelected()}
+                        disabled={selectedVideoAssets.length === 0}
+                        title={selectedVideoAssets.length === 0 ? "No videos selected" : "Transcode selected videos to web format"}
+                        className="flex items-center gap-1 px-2.5 py-2 rounded-xl text-sm text-brand-primary hover:bg-accent transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        <Film className="w-4 h-4" />
+                        <span className="hidden sm:inline">Transcode</span>
+                        <span className="text-xs">({selectedVideoAssets.length})</span>
+                      </button>
+                    )}
+                    {selectedAssetIds.size > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => void handleRegenerateThumbnailsSelected()}
+                        disabled={selectedThumbableAssets.length === 0}
+                        title={selectedThumbableAssets.length === 0 ? "No selected files support thumbnails" : "Regenerate thumbnails for selected items"}
+                        className="flex items-center gap-1 px-2.5 py-2 rounded-xl text-sm text-brand-primary hover:bg-accent transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        <RefreshCw className="w-4 h-4" />
+                        <span className="hidden sm:inline">Thumbnails</span>
+                        <span className="text-xs">({selectedThumbableAssets.length})</span>
+                      </button>
+                    )}
                     {selectedAssetIds.size > 0 && (
                       <button
                         type="button"
@@ -2490,6 +2891,26 @@ export default function Dashboard() {
                       >
                         <TagIcon className="w-4 h-4" />
                         <span className="hidden sm:inline">Tag</span>
+                        <span className="text-xs">({selectedAssetIds.size})</span>
+                      </button>
+                    )}
+                    {(user?.role === "admin" || user?.role === "editor") && selectedAssetIds.size > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const pool: MediaAsset[] = activeTagFilter
+                            ? tagFilterAssets
+                            : sortedFolderChildren
+                                .filter((n) => n.type === "file" && n.mediaAsset)
+                                .map((n) => n.mediaAsset!);
+                          setRemoveTagsAssets(pool.filter((a) => selectedAssetIds.has(a.id)));
+                          setIsRemoveTagsDialogOpen(true);
+                        }}
+                        className="flex items-center gap-1 px-2.5 py-2 rounded-xl text-sm text-brand-primary hover:bg-accent transition-all"
+                        title="Remove tags from selected items"
+                      >
+                        <TagIcon className="w-4 h-4" />
+                        <span className="hidden sm:inline">Untag</span>
                         <span className="text-xs">({selectedAssetIds.size})</span>
                       </button>
                     )}
@@ -2513,6 +2934,61 @@ export default function Dashboard() {
                       <span className="hidden sm:inline">Delete</span>
                       <span className="text-xs">({selectedAssetIds.size})</span>
                     </button>
+                    </div>
+
+                    {/* Mobile: selection actions dropdown */}
+                    <div className="relative md:hidden" ref={selectionActionsMenuRef}>
+                      <button
+                        type="button"
+                        onClick={() => setShowSelectionActionsMenu((p) => !p)}
+                        className="flex items-center gap-1 px-3 py-2 rounded-xl text-sm font-medium text-foreground bg-muted transition-all"
+                      >
+                        Actions
+                        <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${showSelectionActionsMenu ? "rotate-180" : ""}`} />
+                      </button>
+                      {showSelectionActionsMenu && (
+                        <div className="absolute right-0 top-full mt-2 w-56 rounded-2xl bg-card border border-border/30 shadow-ambient p-1.5 z-40">
+                          {[
+                            { label: `Download (${selectedAssetIds.size})`, icon: Download, disabled: selectedAssetIds.size === 0, destructive: false, show: true, run: () => handleDownloadSelected() },
+                            { label: `Compress (${selectedCompressibleAssets.length})`, icon: Minimize2, disabled: selectedCompressibleAssets.length === 0, destructive: false, show: selectedAssetIds.size > 0, run: () => {
+                              const skipped = selectedAssets.length - selectedCompressibleAssets.length;
+                              if (skipped > 0) alert(`${skipped} unsupported file${skipped === 1 ? "" : "s"} will be skipped.`);
+                              setCompressDialogAssets(selectedCompressibleAssets);
+                              setIsCompressDialogOpen(true);
+                            } },
+                            { label: `Transcode (${selectedVideoAssets.length})`, icon: Film, disabled: selectedVideoAssets.length === 0, destructive: false, show: user?.role === "admin" || user?.role === "editor", run: () => void handleTranscodeSelected() },
+                            { label: `Thumbnails (${selectedThumbableAssets.length})`, icon: RefreshCw, disabled: selectedThumbableAssets.length === 0, destructive: false, show: true, run: () => void handleRegenerateThumbnailsSelected() },
+                            { label: `Add tags (${selectedAssetIds.size})`, icon: TagIcon, disabled: selectedAssetIds.size === 0, destructive: false, show: true, run: () => {
+                              const pool: MediaAsset[] = activeTagFilter ? tagFilterAssets : sortedFolderChildren.filter((n) => n.type === "file" && n.mediaAsset).map((n) => n.mediaAsset!);
+                              setTagDialogAssets(pool.filter((a) => selectedAssetIds.has(a.id)));
+                              setIsTagDialogOpen(true);
+                            } },
+                            { label: `Remove tags (${selectedAssetIds.size})`, icon: TagIcon, disabled: selectedAssetIds.size === 0, destructive: false, show: user?.role === "admin" || user?.role === "editor", run: () => {
+                              const pool: MediaAsset[] = activeTagFilter ? tagFilterAssets : sortedFolderChildren.filter((n) => n.type === "file" && n.mediaAsset).map((n) => n.mediaAsset!);
+                              setRemoveTagsAssets(pool.filter((a) => selectedAssetIds.has(a.id)));
+                              setIsRemoveTagsDialogOpen(true);
+                            } },
+                            { label: `Move (${selectedAssetIds.size + selectedFolderPaths.size})`, icon: FolderOpen, disabled: false, destructive: false, show: user?.role === "admin" || user?.role === "editor", run: () => { setMoveTargetFolderPath(''); setShowMoveDialog(true); } },
+                            { label: `Delete (${selectedAssetIds.size})`, icon: Trash2, disabled: false, destructive: true, show: true, run: () => handleDeleteSelected() },
+                          ].filter((item) => item.show).map((item) => (
+                            <button
+                              key={item.label}
+                              type="button"
+                              onClick={() => { setShowSelectionActionsMenu(false); item.run(); }}
+                              disabled={item.disabled}
+                              className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-xl text-left text-sm disabled:opacity-40 transition-colors ${
+                                item.destructive
+                                  ? "text-destructive hover:bg-destructive/10"
+                                  : "text-muted-foreground hover:text-foreground hover:bg-accent"
+                              }`}
+                            >
+                              <item.icon className="w-4 h-4 shrink-0" />
+                              {item.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </>
                 )}
               </>
@@ -2528,6 +3004,19 @@ export default function Dashboard() {
               >
                 <FolderPlus className="w-4 h-4" />
                 <span className="hidden md:inline">New Folder</span>
+              </button>
+            )}
+
+            {/* New File */}
+            {(user?.role === "admin" || user?.role === "editor") && !selectionMode && (
+              <button
+                type="button"
+                onClick={() => setShowNewFileDialog(true)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
+                title="New text or Markdown file"
+              >
+                <FileText className="w-4 h-4" />
+                <span className="hidden md:inline">New File</span>
               </button>
             )}
 
@@ -2692,7 +3181,7 @@ export default function Dashboard() {
               <select
                 value={searchLimit}
                 onChange={(e) => setSearchLimit(Number(e.target.value) as typeof searchLimit)}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm bg-muted text-muted-foreground focus:outline-none focus:ring-2 focus:ring-brand-primary/30 cursor-pointer"
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm bg-muted text-muted-foreground focus:outline-hidden focus:ring-2 focus:ring-brand-primary/30 cursor-pointer"
                 aria-label="Max search results"
               >
                 <option value={25}>25 results</option>
@@ -2708,7 +3197,7 @@ export default function Dashboard() {
               <select
                 value={minSizeBytes}
                 onChange={(e) => setMinSizeBytes(Number(e.target.value))}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary/30 cursor-pointer ${
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm focus:outline-hidden focus:ring-2 focus:ring-brand-primary/30 cursor-pointer ${
                   minSizeBytes > 0
                     ? "text-brand-primary bg-brand-primary/10"
                     : "bg-muted text-muted-foreground"
@@ -2734,7 +3223,7 @@ export default function Dashboard() {
                   onClick={() => setView(v)}
                   className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all capitalize ${
                     view === v
-                      ? "bg-card text-foreground shadow-sm"
+                      ? "bg-card text-foreground shadow-xs"
                       : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
@@ -2754,7 +3243,7 @@ export default function Dashboard() {
               </h1>
               <p className="text-muted-foreground mt-1.5 text-sm">{heroSubtitle}</p>
             </div>
-            <div className="text-right flex-shrink-0">
+            <div className="text-right shrink-0">
               <p className="label-meta">Total Items</p>
               <p className="font-manrope text-2xl font-bold text-foreground">
                 {activeTagFilter ? tagFilterAssets.length : currentFolderChildren.length}
@@ -2781,8 +3270,8 @@ export default function Dashboard() {
                         {selectionMode && (
                           <div className="absolute top-3 left-3 z-10">
                             {selectedFolderPaths.has(node.path)
-                              ? <CheckSquare className="w-5 h-5 text-brand-primary drop-shadow" />
-                              : <Square className="w-5 h-5 text-white drop-shadow" />}
+                              ? <CheckSquare className="w-5 h-5 text-brand-primary drop-shadow-sm" />
+                              : <Square className="w-5 h-5 text-white drop-shadow-sm" />}
                           </div>
                         )}
                         <div className="w-16 h-16 rounded-2xl gradient-brand flex items-center justify-center shadow-ambient group-hover:scale-110 transition-transform duration-300">
@@ -2802,7 +3291,7 @@ export default function Dashboard() {
                           <button
                             type="button"
                             onClick={(e) => { e.stopPropagation(); setRenamingFolder({ path: node.path, name: node.name }); setRenameFolderValue(node.name); }}
-                            className="w-8 h-8 bg-background/80 backdrop-blur-sm rounded-xl flex items-center justify-center hover:bg-accent transition-all duration-200"
+                            className="w-8 h-8 bg-background/80 backdrop-blur-xs rounded-xl flex items-center justify-center hover:bg-accent transition-all duration-200"
                             title="Rename folder"
                           >
                             <Pencil className="w-3.5 h-3.5 text-foreground" />
@@ -2810,7 +3299,7 @@ export default function Dashboard() {
                           <button
                             type="button"
                             onClick={(e) => { e.stopPropagation(); openDuplicateFolderDialog({ path: node.path, name: node.name }); }}
-                            className="w-8 h-8 bg-background/80 backdrop-blur-sm rounded-xl flex items-center justify-center hover:bg-accent transition-all duration-200"
+                            className="w-8 h-8 bg-background/80 backdrop-blur-xs rounded-xl flex items-center justify-center hover:bg-accent transition-all duration-200"
                             title="Duplicate folder"
                           >
                             <Copy className="w-3.5 h-3.5 text-foreground" />
@@ -2818,7 +3307,7 @@ export default function Dashboard() {
                           <button
                             type="button"
                             onClick={(e) => { e.stopPropagation(); void handleDeleteFolder(node.path, node.name); }}
-                            className="w-8 h-8 bg-background/80 backdrop-blur-sm rounded-xl flex items-center justify-center hover:bg-destructive/20 transition-all duration-200"
+                            className="w-8 h-8 bg-background/80 backdrop-blur-xs rounded-xl flex items-center justify-center hover:bg-destructive/20 transition-all duration-200"
                             title="Delete folder"
                           >
                             <Trash2 className="w-3.5 h-3.5 text-destructive" />
@@ -2842,9 +3331,9 @@ export default function Dashboard() {
                       {selectionMode && (
                         <div className="absolute top-3 left-3 z-10">
                           {isSelected ? (
-                            <CheckSquare className="w-5 h-5 text-brand-primary drop-shadow" />
+                            <CheckSquare className="w-5 h-5 text-brand-primary drop-shadow-sm" />
                           ) : (
-                            <Square className="w-5 h-5 text-white drop-shadow" />
+                            <Square className="w-5 h-5 text-white drop-shadow-sm" />
                           )}
                         </div>
                       )}
@@ -2857,7 +3346,7 @@ export default function Dashboard() {
                             e.stopPropagation();
                             handleDeleteSingle(asset.id, asset.fileName);
                           }}
-                          className="absolute top-3 right-3 z-10 opacity-0 group-hover:opacity-100 w-8 h-8 bg-background/80 backdrop-blur-sm rounded-xl flex items-center justify-center hover:bg-destructive/20 transition-all duration-200"
+                          className="absolute top-3 right-3 z-10 opacity-0 group-hover:opacity-100 w-8 h-8 bg-background/80 backdrop-blur-xs rounded-xl flex items-center justify-center hover:bg-destructive/20 transition-all duration-200"
                         >
                           <Trash2 className="w-3.5 h-3.5 text-destructive" />
                         </button>
@@ -2889,8 +3378,19 @@ export default function Dashboard() {
                         </div>
 
                         {/* Type badge */}
-                        <div className="absolute top-3 left-3 z-10 bg-background/70 backdrop-blur-sm px-2 py-0.5 rounded-lg">
-                          <span className="label-meta">{getFileCategoryLabel(asset)}</span>
+                        <div className="absolute top-3 left-3 z-10 flex items-center gap-1">
+                          <div className="bg-background/70 backdrop-blur-xs px-2 py-0.5 rounded-lg">
+                            <span className="label-meta">{getFileCategoryLabel(asset)}</span>
+                          </div>
+                          {asset.mimeType.startsWith("video/") && asset.transcodedUrl && (
+                            <div
+                              className="bg-emerald-500/20 backdrop-blur-xs px-1.5 py-0.5 rounded-lg flex items-center gap-0.5"
+                              title="Transcoded — plays instantly"
+                            >
+                              <Zap className="w-2.5 h-2.5 text-emerald-400 fill-emerald-400" />
+                              <span className="text-[10px] font-medium text-emerald-400">Transcoded</span>
+                            </div>
+                          )}
                         </div>
 
                         {/* Download button */}
@@ -2898,7 +3398,7 @@ export default function Dashboard() {
                           <a
                             href={`${API_URL}/download/${asset.id}`}
                             onClick={(e) => e.stopPropagation()}
-                            className="absolute bottom-3 right-3 z-10 opacity-0 group-hover:opacity-100 w-8 h-8 bg-background/80 backdrop-blur-sm rounded-xl flex items-center justify-center hover:bg-accent transition-all duration-200"
+                            className="absolute bottom-3 right-3 z-10 opacity-0 group-hover:opacity-100 w-8 h-8 bg-background/80 backdrop-blur-xs rounded-xl flex items-center justify-center hover:bg-accent transition-all duration-200"
                             title={`Download ${asset.fileName}`}
                           >
                             <Download className="w-3.5 h-3.5 text-foreground" />
@@ -2910,7 +3410,7 @@ export default function Dashboard() {
                       <div className="p-3">
                         <p className="font-medium text-sm text-foreground truncate">{asset.fileName}</p>
                         <p className="label-meta mt-1">
-                          {formatBytes(asset.fileSize)} · {formatDate(asset.createdAt)}
+                          {formatBytes(asset.fileSize)} · {formatDate(asset.capturedAt ?? asset.createdAt)}
                         </p>
                         {searchQuery && rootPath && (
                           <p className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground/70">
@@ -3014,6 +3514,10 @@ export default function Dashboard() {
         onClose={handleCloseViewer}
         apiUrl={API_URL}
         userRole={user?.role}
+        onNavigate={handleViewerNavigate}
+        hasPrev={viewerNavIndex > 0}
+        hasNext={viewerNavIndex >= 0 && viewerNavIndex < viewerNavAssets.length - 1}
+        autoEdit={selectedAsset != null && selectedAsset.id === autoEditAssetId}
         onCompress={selectedAsset && canCompressAsset(selectedAsset) ? () => {
           if (selectedAsset) {
             setCompressDialogAssets([selectedAsset]);
@@ -3092,6 +3596,23 @@ export default function Dashboard() {
         }}
       />
 
+      <RemoveTagsDialog
+        isOpen={isRemoveTagsDialogOpen}
+        onClose={() => setIsRemoveTagsDialogOpen(false)}
+        selectedAssets={removeTagsAssets}
+        onRemove={async (tagNames) => {
+          await removeTagsFromAssets(removeTagsAssets.map((a) => a.id), tagNames);
+          if (searchQuery) await handleSearch(searchQuery.term, searchQuery.mediaType);
+          if (isViewerOpen && selectedAsset && removeTagsAssets.some((a) => a.id === selectedAsset.id)) {
+            setSelectedAsset((prev) =>
+              prev ? { ...prev, tags: (prev.tags ?? []).filter((t) => !tagNames.includes(t.name)) } : prev
+            );
+          }
+          setSelectionMode(false);
+          setSelectedAssetIds(new Set());
+        }}
+      />
+
       <CompressQueuePanel
         isOpen={showQueuePanel}
         onClose={() => setShowQueuePanel(false)}
@@ -3147,7 +3668,7 @@ export default function Dashboard() {
                         : 'hover:bg-accent text-foreground'
                   }`}
                 >
-                  <Folder className="w-4 h-4 flex-shrink-0" />
+                  <Folder className="w-4 h-4 shrink-0" />
                   <span className="font-mono text-xs truncate">{relPath}</span>
                   {isCurrent && <span className="ml-auto text-xs text-muted-foreground">current</span>}
                   {isInvalidDest && <span className="ml-auto text-xs text-muted-foreground">inside source</span>}
@@ -3221,7 +3742,7 @@ export default function Dashboard() {
                         : 'hover:bg-accent text-foreground'
                   }`}
                 >
-                  <Folder className="w-4 h-4 flex-shrink-0" />
+                  <Folder className="w-4 h-4 shrink-0" />
                   <span className="font-mono text-xs truncate">{relPath}</span>
                   {isCurrent && <span className="ml-auto text-xs text-muted-foreground">current</span>}
                   {isInvalidDest && <span className="ml-auto text-xs text-muted-foreground">selected</span>}
@@ -3338,6 +3859,72 @@ export default function Dashboard() {
         </DialogContent>
       </Dialog>
 
+      {/* New File Dialog */}
+      <Dialog open={showNewFileDialog} onOpenChange={(open) => { setShowNewFileDialog(open); if (!open) setNewFileName(''); }}>
+        <DialogContent className="bg-card border-border/20 shadow-ambient rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="font-manrope text-foreground">New File</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleCreateFile} className="space-y-4 mt-2">
+            <div className="space-y-1.5">
+              <label className="label-meta">File Name</label>
+              <div className="flex items-center gap-2">
+                <Input
+                  value={newFileName}
+                  onChange={(e) => setNewFileName(e.target.value)}
+                  placeholder="e.g. notes"
+                  required
+                  autoFocus
+                  className="bg-muted border-border/20 text-foreground placeholder:text-muted-foreground"
+                />
+                {!/\.(txt|md|markdown)$/i.test(newFileName.trim()) && (
+                  <div className="flex items-center gap-1 shrink-0">
+                    {(["md", "txt"] as const).map((type) => (
+                      <button
+                        key={type}
+                        type="button"
+                        onClick={() => setNewFileType(type)}
+                        className={`px-2.5 py-1.5 rounded-lg text-xs font-mono transition-colors ${
+                          newFileType === type
+                            ? "bg-brand-primary text-[#060e20] font-semibold"
+                            : "bg-muted text-muted-foreground hover:text-foreground"
+                        }`}
+                      >
+                        .{type}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {currentFolder && (
+                <p className="text-xs text-muted-foreground">
+                  Will be created inside: <span className="text-foreground font-medium">{currentFolder.name}</span>
+                </p>
+              )}
+              <p className="text-xs text-muted-foreground">
+                Opens in the editor right away. Markdown files render as a formatted preview after saving.
+              </p>
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <button
+                type="button"
+                onClick={() => { setShowNewFileDialog(false); setNewFileName(''); }}
+                className="px-4 py-2 rounded-xl text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isCreatingFile || !newFileName.trim()}
+                className="px-4 py-2 rounded-xl gradient-brand text-[#060e20] font-manrope font-bold text-sm shadow-ambient hover:opacity-90 transition-opacity disabled:opacity-50"
+              >
+                {isCreatingFile ? 'Creating…' : 'Create File'}
+              </button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
       {/* New Folder Dialog */}
       <Dialog open={showNewFolderDialog} onOpenChange={(open) => { setShowNewFolderDialog(open); if (!open) setNewFolderName(''); }}>
         <DialogContent className="bg-card border-border/20 shadow-ambient rounded-2xl">
@@ -3394,7 +3981,7 @@ export default function Dashboard() {
               <select
                 value={uploadTargetPath}
                 onChange={(e) => setUploadTargetPath(e.target.value)}
-                className="w-full bg-muted border border-border/20 rounded-xl px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-brand-primary/30"
+                className="w-full bg-muted border border-border/20 rounded-xl px-3 py-2 text-sm text-foreground focus:outline-hidden focus:ring-2 focus:ring-brand-primary/30"
               >
                 {allDirectories.map((dir) => (
                   <option key={dir.path} value={dir.path}>{dir.displayName}</option>
@@ -3436,7 +4023,7 @@ export default function Dashboard() {
               <div className="space-y-2 max-h-44 overflow-y-auto pr-1">
                 {uploadFiles.map((file) => (
                   <div key={file.name} className="flex items-center gap-3 bg-muted rounded-xl px-3 py-2">
-                    <FileImage className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                    <FileImage className="w-4 h-4 text-muted-foreground shrink-0" />
                     <div className="flex-1 min-w-0">
                       <p className="text-xs text-foreground truncate">{file.name}</p>
                       {isUploading && (
@@ -3448,12 +4035,12 @@ export default function Dashboard() {
                         </div>
                       )}
                     </div>
-                    <span className="text-xs text-muted-foreground flex-shrink-0">{formatBytes(file.size)}</span>
+                    <span className="text-xs text-muted-foreground shrink-0">{formatBytes(file.size)}</span>
                     {!isUploading && (
                       <button
                         type="button"
                         onClick={() => setUploadFiles((prev) => prev.filter((f) => f.name !== file.name))}
-                        className="p-1 rounded-lg hover:bg-accent text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
+                        className="p-1 rounded-lg hover:bg-accent text-muted-foreground hover:text-foreground transition-colors shrink-0"
                       >
                         <X className="w-3 h-3" />
                       </button>
@@ -3497,7 +4084,7 @@ export default function Dashboard() {
 
       {/* Logout Confirmation */}
       {showLogoutConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs">
           <div className="bg-card rounded-2xl p-8 max-w-sm w-full mx-4 shadow-ambient border border-border/10 text-center">
             <div className="w-12 h-12 rounded-2xl bg-muted flex items-center justify-center mx-auto mb-4">
               <LogOut className="w-5 h-5 text-muted-foreground" />

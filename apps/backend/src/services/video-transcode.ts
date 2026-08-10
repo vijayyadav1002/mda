@@ -9,11 +9,6 @@ const TRANSCODE_CACHE_PATH = path.join(config.thumbnailCachePath, '../transcoded
 // Track active transcoding sessions
 const activeTranscodes = new Map<string, { startTime: number; lastAccessed: number }>();
 
-// Cleanup interval (run every 5 minutes)
-const CLEANUP_INTERVAL = 5 * 60 * 1000;
-// Delete transcoded files after 10 minutes of inactivity
-const INACTIVITY_TIMEOUT = 10 * 60 * 1000;
-
 // Web-compatible video codecs
 const WEB_COMPATIBLE_CODECS = new Set(['h264', 'vp8', 'vp9', 'av1']);
 const WEB_COMPATIBLE_CONTAINERS = new Set(['.mp4', '.webm']);
@@ -22,47 +17,6 @@ interface VideoInfo {
   codec: string;
   container: string;
   needsTranscoding: boolean;
-}
-
-/**
- * Start cleanup timer for inactive transcoded videos
- */
-export function startTranscodeCleanup() {
-  setInterval(async () => {
-    await cleanupInactiveTranscodes();
-  }, CLEANUP_INTERVAL);
-
-  console.log('Transcode cleanup service started');
-}
-
-/**
- * Clean up transcoded videos that haven't been accessed recently
- */
-async function cleanupInactiveTranscodes() {
-  const now = Date.now();
-  const toDelete: string[] = [];
-
-  for (const [filePath, info] of activeTranscodes.entries()) {
-    if (now - info.lastAccessed > INACTIVITY_TIMEOUT) {
-      toDelete.push(filePath);
-    }
-  }
-
-  for (const filePath of toDelete) {
-    try {
-      await fs.unlink(filePath);
-      activeTranscodes.delete(filePath);
-      console.log(`✓ Cleaned up inactive transcode: ${path.basename(filePath)}`);
-    } catch (error) {
-      // File might already be deleted, log and continue
-      console.warn(`Could not delete transcode ${path.basename(filePath)}:`, error);
-      activeTranscodes.delete(filePath);
-    }
-  }
-
-  if (toDelete.length > 0) {
-    console.log(`Cleaned up ${toDelete.length} inactive transcoded video(s)`);
-  }
 }
 
 /**
@@ -106,7 +60,11 @@ export async function checkVideoCompatibility(videoPath: string): Promise<VideoI
 /**
  * Transcode video to web-compatible format (H.264/MP4)
  */
-export async function transcodeVideo(videoPath: string, assetId: string): Promise<string> {
+export async function transcodeVideo(
+  videoPath: string,
+  assetId: string,
+  opts?: { onProgress?: (percent: number) => void; signal?: AbortSignal }
+): Promise<string> {
   // Ensure transcode cache directory exists
   await fs.mkdir(TRANSCODE_CACHE_PATH, { recursive: true });
 
@@ -137,10 +95,12 @@ export async function transcodeVideo(videoPath: string, assetId: string): Promis
 
   console.log(`Transcoding video on-demand: ${path.basename(videoPath)} to MP4/H.264`);
 
+  const duration = await probeDurationSeconds(videoPath);
+
   return new Promise((resolve, reject) => {
     const startTime = Date.now();
 
-    ffmpeg(videoPath)
+    const command = ffmpeg(videoPath)
       .outputOptions([
         '-c:v libx264',        // H.264 video codec
         '-preset fast',         // Encoding speed/quality trade-off
@@ -150,16 +110,35 @@ export async function transcodeVideo(videoPath: string, assetId: string): Promis
         '-movflags +faststart', // Enable streaming
         '-pix_fmt yuv420p'     // Pixel format for compatibility
       ])
-      .output(transcodedPath)
+      .output(transcodedPath);
+
+    const onAbort = () => {
+      command.kill('SIGKILL');
+    };
+    if (opts?.signal) {
+      if (opts.signal.aborted) {
+        reject(new Error('Transcoding aborted'));
+        return;
+      }
+      opts.signal.addEventListener('abort', onAbort, { once: true });
+    }
+
+    command
       .on('start', (commandLine) => {
         console.log('FFmpeg command:', commandLine);
       })
       .on('progress', (progress) => {
-        if (progress.percent) {
-          console.log(`Transcoding progress: ${Math.round(progress.percent)}%`);
+        let percent = 0;
+        if (duration > 0 && progress.timemark) {
+          const elapsed = parseTimemarkToSeconds(progress.timemark);
+          percent = Math.min(99, Math.max(0, Math.round((elapsed / duration) * 100)));
+        } else if (typeof progress.percent === 'number' && !Number.isNaN(progress.percent)) {
+          percent = Math.min(99, Math.max(0, Math.round(progress.percent)));
         }
+        opts?.onProgress?.(percent);
       })
       .on('end', () => {
+        opts?.signal?.removeEventListener('abort', onAbort);
         console.log(`✓ Transcoding complete: ${transcodedPath}`);
 
         // Track this transcode
@@ -171,6 +150,13 @@ export async function transcodeVideo(videoPath: string, assetId: string): Promis
         resolve(transcodedPath);
       })
       .on('error', (err) => {
+        opts?.signal?.removeEventListener('abort', onAbort);
+        // Remove partial output so the cache never serves a truncated file
+        fs.unlink(transcodedPath).catch(() => {});
+        if (opts?.signal?.aborted) {
+          reject(new Error('Transcoding aborted'));
+          return;
+        }
         console.error('Transcoding error:', err);
         reject(err);
       })

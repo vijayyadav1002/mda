@@ -5,10 +5,12 @@ A full-stack file library for media, documents, and general files, built with a 
 ## Features
 
 - 📁 **File Library Management** - Index and manage all regular non-hidden files under the library path
-- 🖼️ **Thumbnail Generation** - On-demand thumbnail generation for images, videos, PDFs, Word, Excel, text, and Markdown files
+- 🗓️ **Timeline View** - iOS-Photos-style timeline of photos and videos with Years / Months / Grid / Dense zoom levels (pinch, Ctrl+wheel, or on-screen controls — a segmented control on desktop, a compact dropdown on small screens), virtualized scrolling, a year scrubber, and multi-select actions. By default dates come from folder names (`2022-02`, `2022/02`, `2021-12-25`), filename patterns (`IMG_20240115...`), or file modified time; admins can switch the timeline date source to embedded EXIF metadata (camera capture date, with folder-name fallback), file creation time, or file modified time from the timeline's settings menu (the whole library is re-dated in the background)
+- 🖼️ **Thumbnail Generation** - On-demand thumbnail generation for images, videos, PDFs, Word, Excel, text, and Markdown files, plus force-regeneration for selected items from any view (folder grid, tree, search, or timeline)
 - 📄 **Document Preview** - Preview PDFs, `.docx`, `.xlsx`, `.txt`, and `.md` files inside the app
-- ✏️ **Text Editing** - Edit `.txt` and Markdown files in place
+- ✏️ **Text Editing** - Create and edit `.txt` and Markdown files in place; new files open straight in the editor, and Markdown renders as a formatted preview after saving
 - 📋 **Copy and Move** - Move, rename, delete, duplicate, upload, and download files and folders
+- 🗑️ **Trash Bin** - Deleting files or folders moves them to a trash bin instead of erasing them. A dedicated Trash page shows deleted items with their thumbnails, grouped by deletion date with per-item expiry countdowns; select items visually to restore them to their original location or delete them permanently. Anything left in the trash is auto-purged after 30 days (configurable via `TRASH_RETENTION_DAYS`)
 - 🔒 **Role-Based Access Control** - Admin, Editor, and ReadOnly roles
 - 🎨 **Modern UI** - React with Remix Router and shadcn UI components
 - 🚀 **Fast Backend** - Fastify server with Mercurius GraphQL
@@ -17,7 +19,10 @@ A full-stack file library for media, documents, and general files, built with a 
 - 🔐 **JWT Authentication** - Secure token-based authentication
 - 📝 **Audit Logging** - Track operations such as move, delete, rename, duplicate, and tagging
 - 🗜️ **Compression Queue** - Compress images, videos, and PDFs with preview/confirm/cancel flow
-- 🏷️ **Tags and Search** - Apply tags, filter by tag, and search files/folders
+- 🎞️ **Transcode Queue** - Batch-transcode selected videos to web-compatible MP4 from any view (folder grid, tree, search, or timeline); finished transcodes persist on disk and play instantly (evicted only when the size cap is exceeded, oldest first), and transcoded videos are marked with a ⚡ badge on tiles, cards, and in the viewer
+- ✅ **Multi-Select Everywhere** - Selection mode with Select All / Unselect All in the dashboard (per view) and per-month sections in the timeline; bulk actions include download, compress, transcode, tag, untag, thumbnail regeneration, move, and delete. On small screens the action buttons collapse into a compact "Actions" dropdown
+- ⚙️ **In-App Cache Settings** - Admins can adjust per-cache size limits and retention from the Cache panel; changes are stored in the database and applied immediately
+- 🏷️ **Tags and Search** - Apply and remove tags in bulk or per item, filter by tag, and search files/folders with in-field query syntax: wildcards (`IMG_20*`, `*.mp4`), folder scoping (`vacation/beach`, `in:"summer trip"`), and parameters (`type:video`, `tag:family`, `ext:heic`, `size:>10mb`). Folder matches appear alongside files and persist when switching between the All/Images/Videos tabs
 - ⚙️ **Monorepo Structure** - Turborepo for efficient build caching and task orchestration
 
 ## Architecture
@@ -194,6 +199,32 @@ query {
     }
   }
 }
+
+# Timeline: photo/video counts per year, month, or day (with optional covers)
+query {
+  timelineBuckets(granularity: "month", coverLimit: 4) {
+    period
+    count
+    coverAssets { id thumbnailUrl }
+  }
+}
+
+# Timeline: assets within a date range
+query {
+  timelineAssets(from: "2022-02-01", to: "2022-03-01", limit: 200, offset: 0) {
+    totalCount
+    assets { id fileName capturedAt capturedAtPrecision thumbnailUrl }
+  }
+}
+
+# Cache settings (admin): read and update runtime cache limits
+query { cacheSettings { thumbnailCacheMaxMb transcodedCacheMaxMb } }
+
+mutation {
+  updateCacheSettings(input: { thumbnailCacheMaxMb: 500 }) {
+    thumbnailCacheMaxMb
+  }
+}
 ```
 
 ### File Mutations (Admin or Editor)
@@ -246,6 +277,27 @@ mutation {
     previewUrl
   }
 }
+
+# Create a new text or Markdown file (opens empty; edit in the app)
+mutation {
+  createTextFile(parentPath: "/library/notes", name: "todo.md") {
+    id
+    fileName
+    filePath
+  }
+}
+
+# Bulk tag management
+mutation {
+  applyTagsToAssets(assetIds: ["1", "2"], tagNames: ["family", "trip"]) {
+    id
+    tags { name }
+  }
+}
+
+mutation {
+  removeTagsFromAssets(assetIds: ["1", "2"], tagNames: ["trip"])
+}
 ```
 
 ## REST API
@@ -256,8 +308,9 @@ mutation {
 - `GET /file-preview/:id/pdf` - Stream a PDF inline.
 - `GET /file-preview/:id/content` - Return preview content for `.txt`, `.md`, `.docx`, and `.xlsx`.
 - `PUT /file-preview/:id/content` - Save edits to `.txt` and Markdown files in place.
-- `GET /video/:id/prepare` and related `/video` endpoints - Prepare web playback and HLS.
+- `GET /video/:id/prepare` and related `/video` endpoints - Prepare web playback and HLS. Prefers a cached transcode when one exists.
 - `/api/compress/*` and `/api/queue-state` - Compression preview queue support.
+- `POST /api/transcode/enqueue` - Queue selected videos for background transcoding to web-compatible MP4 (shares the queue panel and cancel endpoint with compression jobs).
 
 ## Project Structure
 
@@ -277,11 +330,13 @@ backend/
 │   ├── services/
 │   │   ├── auth.ts           # Authentication logic
 │   │   ├── audit.ts          # Audit logging
-│   │   ├── cache-maintenance.ts
+│   │   ├── cache-maintenance.ts  # Size/age eviction + stale DB reference sweeps
+│   │   ├── capture-date.ts   # Timeline capture dates (folder name → filename → mtime)
 │   │   ├── file-types.ts     # File classification and capabilities
 │   │   ├── media-indexer.ts  # Media library indexing
 │   │   ├── media-watcher.ts  # Filesystem watcher
-│   │   ├── queue.ts          # BullMQ queues and workers
+│   │   ├── queue.ts          # BullMQ queues and workers (thumbnails, compression, transcode)
+│   │   ├── settings.ts       # DB-backed runtime cache settings (env values as defaults)
 │   │   ├── tags.ts           # Tag management
 │   │   ├── thumbnail.ts      # Thumbnail, document snapshots, compression helpers
 │   │   └── video-transcode.ts
@@ -309,6 +364,9 @@ web/
 │   │   ├── _index.tsx       # Home route
 │   │   ├── login.tsx        # Login page
 │   │   ├── dashboard.tsx    # Main file library dashboard
+│   │   ├── timeline.tsx     # Date-based timeline view (zoomable grid + multi-select)
+│   │   ├── trash.tsx        # Trash page (thumbnails grouped by deletion date, restore/purge)
+│   │   ├── audit.tsx        # Audit log viewer
 │   │   └── users.tsx        # User administration
 │   ├── styles/
 │   │   └── globals.css      # Global styles
@@ -364,7 +422,10 @@ npm start
 - `THUMBNAIL_SIZE` / `THUMBNAIL_QUALITY` - Thumbnail size and JPEG quality
 - `PREVIEW_MAX_DIMENSION` / `PREVIEW_QUALITY` - Preview image size and quality
 - `CACHE_CLEANUP_INTERVAL_MINUTES` - Cache cleanup interval
-- `*_CACHE_MAX_AGE_*` / `*_CACHE_MAX_MB` - TTL and size caps for thumbnail/preview/HLS/transcoded caches
+- `*_CACHE_MAX_MB` - Size caps for thumbnail/preview/HLS/transcoded caches
+- `PREVIEW_CACHE_MAX_AGE_DAYS` / `HLS_CACHE_MAX_AGE_HOURS` - Age limits for previews and HLS only
+
+Thumbnails and transcoded videos are never expired by age — once generated they stay until their size cap is exceeded, then the oldest files are evicted first. Cache limits set via env are defaults only; admins can override them at runtime from the app (sidebar → Cache → Configure limits), and overrides are persisted in the `app_settings` table.
 
 ### Frontend
 
@@ -392,9 +453,11 @@ All regular non-hidden files under `MEDIA_LIBRARY_PATH` can be indexed, uploaded
 - Text (`.txt`)
 - Markdown (`.md`, `.markdown`)
 
-### Editable In-App
+### Creatable and Editable In-App
 - Text (`.txt`)
-- Markdown (`.md`, `.markdown`)
+- Markdown (`.md`, `.markdown`) — rendered as a formatted preview outside of edit mode
+
+New files are created via the dashboard's "New File" button (admin/editor) and open directly in the editor.
 
 ### Thumbnail Generation
 - Images and videos

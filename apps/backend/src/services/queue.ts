@@ -105,6 +105,120 @@ export interface CompressJobData {
     options: { resolution: string; quality: number };
 }
 
+export interface TranscodeJobData {
+    userId: string;
+    jobId: string;
+    assets: CompressAssetData[];
+}
+
+// Runs on the compression queue (same worker, concurrency 1) so at most one
+// heavy ffmpeg pipeline runs at a time on constrained hardware.
+export const addToTranscodeQueue = (data: TranscodeJobData) =>
+    compressionQueue.add('transcode', data);
+
+async function runTranscodeJob(data: TranscodeJobData): Promise<void> {
+    const { userId, jobId, assets } = data;
+    const queueKey = `compress_queue:${userId}`;
+
+    const abortController = new AbortController();
+    activeCompressionAborts.set(jobId, abortController);
+    const signal = abortController.signal;
+
+    const updateJob = async (updater: (j: any) => any) => {
+        const raw = await redis.get(queueKey);
+        const queue: any[] = raw ? JSON.parse(raw) : [];
+        const idx = queue.findIndex((j: any) => j.id === jobId);
+        if (idx >= 0) {
+            queue[idx] = updater(queue[idx]);
+            await redis.set(queueKey, JSON.stringify(queue), 'EX', 604800);
+        }
+    };
+
+    try {
+        // Skip work entirely if the user cancelled before the worker started.
+        const currentRaw = await redis.get(queueKey);
+        const currentQueue: any[] = currentRaw ? JSON.parse(currentRaw) : [];
+        if (currentQueue.find((j: any) => j.id === jobId)?.status === 'cancelled') {
+            console.log(`[Worker] Skipping cancelled transcode job ${jobId}`);
+            return;
+        }
+
+        await updateJob(j => ({ ...j, status: 'transcoding', progress: {}, currentFileId: null }));
+
+        const { transcodeVideo, checkVideoCompatibility } = await import('./video-transcode.js');
+        const { db } = await import('../db/index.js');
+
+        for (const asset of assets) {
+            if (signal.aborted) break;
+            await updateJob(j => ({ ...j, currentFileId: asset.id }));
+
+            try {
+                let needsTranscoding = true;
+                try {
+                    needsTranscoding = (await checkVideoCompatibility(asset.filePath)).needsTranscoding;
+                } catch {
+                    // Probe failed — attempt the transcode anyway.
+                }
+
+                if (!needsTranscoding) {
+                    // Already web-compatible: nothing to do for this file.
+                    await updateJob(j => ({
+                        ...j,
+                        progress: { ...j.progress, [asset.id]: { percent: 100, etaSeconds: null } },
+                    }));
+                    continue;
+                }
+
+                let lastSent = 0;
+                const fileStartTime = Date.now();
+                const transcodedPath = await transcodeVideo(asset.filePath, asset.id, {
+                    signal,
+                    onProgress: (percent: number) => {
+                        if (percent - lastSent >= 2 || percent >= 100) {
+                            lastSent = percent;
+                            const elapsed = (Date.now() - fileStartTime) / 1000;
+                            const etaSeconds = percent > 0 ? Math.round((elapsed / percent) * (100 - percent)) : null;
+                            updateJob(j => ({
+                                ...j,
+                                progress: { ...j.progress, [asset.id]: { percent, etaSeconds } },
+                            })).catch(() => {});
+                        }
+                    },
+                });
+                if (signal.aborted) break;
+
+                // Persist so playback finds the cached transcode instantly.
+                await db.query(
+                    'UPDATE media_assets SET transcoded_path = $1 WHERE id = $2',
+                    [transcodedPath, asset.id]
+                );
+                await updateJob(j => ({
+                    ...j,
+                    progress: { ...j.progress, [asset.id]: { percent: 100, etaSeconds: null } },
+                }));
+            } catch (err: any) {
+                if (signal.aborted) break;
+                console.error(`[Worker] Error transcoding asset ${asset.id}: ${err.message}`);
+                await updateJob(j => ({
+                    ...j,
+                    progress: { ...j.progress, [asset.id]: { percent: 0, etaSeconds: null } },
+                }));
+            }
+        }
+
+        if (signal.aborted) {
+            await updateJob(j => ({ ...j, status: 'cancelled', currentFileId: null }));
+            console.log(`[Worker] Transcode job ${jobId} cancelled`);
+            return;
+        }
+
+        await updateJob(j => ({ ...j, status: 'done', currentFileId: null }));
+        console.log(`[Worker] Finished transcode job ${jobId}`);
+    } finally {
+        activeCompressionAborts.delete(jobId);
+    }
+}
+
 export function startWorkers() {
     const encodingWorker = new Worker<EncodingJobData>('encoding', async (job) => {
         console.log(`[Worker] Sarting encoding job ${job.id} for ${job.data.filePath}`);
@@ -194,9 +308,14 @@ export function startWorkers() {
         concurrency: 1
     });
 
-    const compressionWorker = new Worker<CompressJobData>('compression', async (job) => {
+    const compressionWorker = new Worker<CompressJobData | TranscodeJobData>('compression', async (job) => {
+        if (job.name === 'transcode') {
+            console.log(`[Worker] Starting transcode job ${job.id} (jobId=${job.data.jobId})`);
+            await runTranscodeJob(job.data as TranscodeJobData);
+            return;
+        }
         console.log(`[Worker] Starting compression job ${job.id} (jobId=${job.data.jobId})`);
-        const { userId, jobId, assets, options } = job.data;
+        const { userId, jobId, assets, options } = job.data as CompressJobData;
         const queueKey = `compress_queue:${userId}`;
 
         const abortController = new AbortController();

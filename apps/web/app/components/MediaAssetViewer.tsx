@@ -1,4 +1,4 @@
-import { Download, File, Maximize2, Minimize2, X, ListTodo, Tag as TagIcon, Plus, Pencil, FolderOpen, Save, Copy } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, File, Maximize2, Minimize2, X, ListTodo, Tag as TagIcon, Plus, Pencil, FolderOpen, Save, Copy } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import Hls from "hls.js";
 import ReactMarkdown from "react-markdown";
@@ -30,6 +30,7 @@ interface MediaAsset {
   transcodedUrl?: string;
   createdAt: string;
   updatedAt: string;
+  capturedAt?: string | null;
   tags?: AssetTag[];
 }
 
@@ -46,6 +47,11 @@ interface MediaAssetViewerProps {
   readonly onMove?: () => void;
   readonly onDuplicate?: () => void;
   readonly onAssetUpdated?: (updates: Partial<Pick<MediaAsset, "fileSize" | "updatedAt">>) => void;
+  readonly onNavigate?: (direction: 1 | -1) => void;
+  readonly hasPrev?: boolean;
+  readonly hasNext?: boolean;
+  /** Open text/markdown documents directly in edit mode (used for newly created files). */
+  readonly autoEdit?: boolean;
 }
 
 type FileCategory = "image" | "video" | "pdf" | "word" | "excel" | "text" | "markdown" | "other";
@@ -113,6 +119,10 @@ export function MediaAssetViewer({
   onMove,
   onDuplicate,
   onAssetUpdated,
+  onNavigate,
+  hasPrev = false,
+  hasNext = false,
+  autoEdit = false,
 }: Readonly<MediaAssetViewerProps>) {
   const canEdit = userRole === "admin" || userRole === "editor";
   const canEditTags = canEdit;
@@ -132,6 +142,8 @@ export function MediaAssetViewer({
   const [isEditingDocument, setIsEditingDocument] = useState(false);
   const [editorText, setEditorText] = useState("");
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "error">("idle");
+  const autoEditConsumedRef = useRef<string | null>(null);
+  const documentScrollRef = useRef<HTMLDivElement | null>(null);
   const videoSourceKindRef = useRef<VideoSource["kind"] | null>(null);
   const splitVideoRef = useRef<HTMLVideoElement | null>(null);
   const fullscreenVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -157,6 +169,25 @@ export function MediaAssetViewer({
       setCurrentVideoId(asset.id);
     }
   }, [isOpen, asset]);
+
+  // Start at the top when switching between edit and preview so the editor's
+  // top edge (and the beginning of the document) is never hidden under the
+  // sticky toolbar.
+  useEffect(() => {
+    documentScrollRef.current?.scrollTo({ top: 0 });
+  }, [isEditingDocument, documentPreview]);
+
+  // Jump straight into the editor for a freshly created document (once per asset)
+  useEffect(() => {
+    if (!isOpen || !autoEdit || !asset) return;
+    if (autoEditConsumedRef.current === asset.id) return;
+    const isEditableKind =
+      documentPreview && (documentPreview.kind === "text" || documentPreview.kind === "markdown");
+    if (isEditableKind && (userRole === "admin" || userRole === "editor")) {
+      autoEditConsumedRef.current = asset.id;
+      setIsEditingDocument(true);
+    }
+  }, [isOpen, autoEdit, asset, documentPreview, userRole]);
 
   useEffect(() => {
     if (!isOpen || !asset) return;
@@ -318,26 +349,34 @@ export function MediaAssetViewer({
 
   useEffect(() => {
     if (!isOpen && currentVideoId) {
-      // Only clean up transient MP4 transcode cache; keep HLS segments for fast re-open.
-      if (videoSourceKindRef.current === "mp4") {
-        fetch(`${apiUrl}/video/${currentVideoId}/cleanup`, { method: "DELETE" }).catch(() => {});
-      }
+      // Transcoded MP4s are kept on disk (evicted only by the size-based
+      // cache limit), so closing the viewer no longer deletes them.
       videoSourceKindRef.current = null;
       setCurrentVideoId(null);
     }
   }, [isOpen, currentVideoId, apiUrl]);
 
-  // Close on Escape
+  // Close on Escape; navigate with arrow keys
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         if (isFullscreen) setIsFullscreen(false);
         else onClose();
+        return;
+      }
+      // Don't hijack arrows while typing in a rename field or document editor
+      if (isRenaming || isEditingDocument) return;
+      if (e.key === "ArrowLeft" && onNavigate && hasPrev) {
+        e.preventDefault();
+        onNavigate(-1);
+      } else if (e.key === "ArrowRight" && onNavigate && hasNext) {
+        e.preventDefault();
+        onNavigate(1);
       }
     };
     if (isOpen) document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
-  }, [isOpen, isFullscreen, onClose]);
+  }, [isOpen, isFullscreen, onClose, onNavigate, hasPrev, hasNext, isRenaming, isEditingDocument]);
 
   if (!asset || !isOpen) return null;
 
@@ -347,7 +386,8 @@ export function MediaAssetViewer({
   const isVideo = fileCategory === "video";
   const isPdf = fileCategory === "pdf";
   const isEditableDocument = fileCategory === "text" || fileCategory === "markdown";
-  const canFullscreen = isImage || isVideo || isPdf;
+  const isDocument = ["text", "markdown", "word", "excel"].includes(fileCategory);
+  const canFullscreen = isImage || isVideo || isPdf || isDocument;
   const token = getAuthToken();
   const pdfPreviewUrl = `${apiUrl}/file-preview/${asset.id}/pdf${token ? `?token=${encodeURIComponent(token)}` : ""}`;
   const originalDocumentText =
@@ -393,15 +433,65 @@ export function MediaAssetViewer({
     setImageDimensions({ width: img.naturalWidth, height: img.naturalHeight });
   };
 
+  // Prev/next chevrons + mobile tap zones, overlaid on the media area
+  const navigationOverlay = onNavigate ? (
+    <>
+      {/* Mobile tap zones (images only, so video controls stay usable) */}
+      {isImage && (
+        <>
+          {hasPrev && (
+            <button
+              type="button"
+              aria-label="Previous"
+              onClick={(e) => { e.stopPropagation(); onNavigate(-1); }}
+              className="md:hidden absolute left-0 top-0 h-full w-[15%] z-10 focus:outline-hidden"
+            />
+          )}
+          {hasNext && (
+            <button
+              type="button"
+              aria-label="Next"
+              onClick={(e) => { e.stopPropagation(); onNavigate(1); }}
+              className="md:hidden absolute right-0 top-0 h-full w-[15%] z-10 focus:outline-hidden"
+            />
+          )}
+        </>
+      )}
+      {hasPrev && (
+        <button
+          type="button"
+          aria-label="Previous"
+          onClick={(e) => { e.stopPropagation(); onNavigate(-1); }}
+          className="absolute left-3 top-1/2 -translate-y-1/2 z-20 p-2.5 rounded-full bg-black/40 hover:bg-black/70 text-white backdrop-blur-xs transition-all opacity-100 md:opacity-0 md:group-hover:opacity-100"
+        >
+          <ChevronLeft className="w-6 h-6" />
+        </button>
+      )}
+      {hasNext && (
+        <button
+          type="button"
+          aria-label="Next"
+          onClick={(e) => { e.stopPropagation(); onNavigate(1); }}
+          className="absolute right-3 top-1/2 -translate-y-1/2 z-20 p-2.5 rounded-full bg-black/40 hover:bg-black/70 text-white backdrop-blur-xs transition-all opacity-100 md:opacity-0 md:group-hover:opacity-100"
+        >
+          <ChevronRight className="w-6 h-6" />
+        </button>
+      )}
+    </>
+  ) : null;
+
   // ── Fullscreen overlay ────────────────────────────────────────────
-  if (isFullscreen) {
+  // Documents go fullscreen in place (the media pane expands to cover the
+  // viewport) so the editor/preview state carries over seamlessly.
+  if (isFullscreen && !isDocument) {
     return (
-      <div className="fixed inset-0 z-50 bg-black flex items-center justify-center">
-        <div className="absolute top-4 right-4 z-10 flex gap-2">
+      <div className="fixed inset-0 z-50 bg-black flex items-center justify-center group">
+        {navigationOverlay}
+        <div className="absolute top-4 right-4 z-30 flex gap-2">
           <button
             type="button"
             onClick={() => setIsFullscreen(false)}
-            className="p-3 bg-black/50 hover:bg-black/70 text-white rounded-xl backdrop-blur-sm transition-all"
+            className="p-3 bg-black/50 hover:bg-black/70 text-white rounded-xl backdrop-blur-xs transition-all"
             title="Exit Fullscreen"
           >
             <Minimize2 className="w-5 h-5" />
@@ -409,7 +499,7 @@ export function MediaAssetViewer({
           <button
             type="button"
             onClick={onClose}
-            className="p-3 bg-black/50 hover:bg-black/70 text-white rounded-xl backdrop-blur-sm transition-all"
+            className="p-3 bg-black/50 hover:bg-black/70 text-white rounded-xl backdrop-blur-xs transition-all"
             title="Close"
           >
             <X className="w-5 h-5" />
@@ -417,7 +507,7 @@ export function MediaAssetViewer({
         </div>
 
         {isImage && (
-          <button type="button" onClick={() => setIsFullscreen(false)} className="focus:outline-none">
+          <button type="button" onClick={() => setIsFullscreen(false)} className="focus:outline-hidden">
             <img
               src={originalImageUrl}
               alt={asset.fileName}
@@ -437,7 +527,7 @@ export function MediaAssetViewer({
               <track kind="captions" />
             </video>
             {transcodeProgress && transcodeProgress.status !== "ready" && transcodeProgress.status !== "unknown" && (
-              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center bg-black/50 backdrop-blur-sm text-white">
+              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center bg-black/50 backdrop-blur-xs text-white">
                 <p className="font-manrope font-semibold mb-3">
                   {transcodeProgress.status === "queued" ? "Preparing video…" : "Transcoding for playback"}
                 </p>
@@ -479,23 +569,37 @@ export function MediaAssetViewer({
   // ── Split-panel dialog ────────────────────────────────────────────
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div className="relative w-full max-w-5xl max-h-[90vh] rounded-2xl overflow-hidden flex flex-col md:flex-row bg-card shadow-ambient border border-border/10">
 
-        {/* Left — media preview */}
-        <div className="relative flex-1 bg-[#060e20] flex items-center justify-center group min-h-[220px] md:min-h-[400px]">
+        {/* Left — media preview (expands over the whole viewport for fullscreen documents) */}
+        <div
+          className={
+            isFullscreen && isDocument
+              ? "fixed inset-0 z-[60] bg-background group"
+              : "relative flex-1 bg-[#060e20] flex items-center justify-center group min-h-[220px] md:min-h-[400px]"
+          }
+        >
+          {navigationOverlay}
           {isImage && (
-            <img
-              src={originalImageUrl}
-              alt={asset.fileName}
-              className="w-full h-full object-contain max-h-[40vh] md:max-h-[90vh]"
-              onLoad={handleImageLoad}
-              onError={(e) => {
-                if (asset.thumbnailUrl) e.currentTarget.src = `${apiUrl}${asset.thumbnailUrl}`;
-              }}
-            />
+            <button
+              type="button"
+              onClick={() => setIsFullscreen(true)}
+              className="w-full h-full focus:outline-hidden cursor-zoom-in"
+              title="View fullscreen"
+            >
+              <img
+                src={originalImageUrl}
+                alt={asset.fileName}
+                className="w-full h-full object-contain max-h-[40vh] md:max-h-[90vh]"
+                onLoad={handleImageLoad}
+                onError={(e) => {
+                  if (asset.thumbnailUrl) e.currentTarget.src = `${apiUrl}${asset.thumbnailUrl}`;
+                }}
+              />
+            </button>
           )}
           {isVideo && (
             <div className="relative w-full h-full flex items-center justify-center">
@@ -508,7 +612,7 @@ export function MediaAssetViewer({
                 <track kind="captions" />
               </video>
               {transcodeProgress && transcodeProgress.status !== "ready" && transcodeProgress.status !== "unknown" && (
-                <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center bg-black/50 backdrop-blur-sm text-white">
+                <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center bg-black/50 backdrop-blur-xs text-white">
                   <p className="font-manrope font-semibold mb-3">
                     {transcodeProgress.status === "queued" ? "Preparing video…" : "Transcoding for playback"}
                   </p>
@@ -532,8 +636,13 @@ export function MediaAssetViewer({
               className="w-full h-full min-h-[400px] max-h-[40vh] md:max-h-[90vh] border-0 bg-white"
             />
           )}
-          {(fileCategory === "text" || fileCategory === "markdown" || fileCategory === "word" || fileCategory === "excel") && (
-            <div className="w-full h-full max-h-[40vh] md:max-h-[90vh] overflow-auto bg-background text-foreground p-5">
+          {isDocument && (
+            <div
+              ref={documentScrollRef}
+              className={`w-full h-full overflow-auto bg-background text-foreground ${
+                isFullscreen ? "" : "max-h-[40vh] md:max-h-[90vh]"
+              }`}
+            >
               {documentPreviewStatus === "loading" && (
                 <div className="h-full min-h-[260px] flex items-center justify-center text-sm text-muted-foreground">
                   Loading preview…
@@ -544,15 +653,36 @@ export function MediaAssetViewer({
                   Preview could not be loaded
                 </div>
               )}
-              {isEditableDocument && documentPreview && (documentPreview.kind === "text" || documentPreview.kind === "markdown") && (
-                <div className="sticky top-0 z-10 -mx-5 -mt-5 mb-4 flex items-center justify-between gap-3 border-b border-border/20 bg-background/95 px-5 py-3 backdrop-blur">
+              {documentPreview && (
+                <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-border/20 bg-background/95 px-5 py-3 backdrop-blur">
                   <div className="min-w-0">
                     <p className="text-xs font-medium text-muted-foreground">
                       {isEditingDocument ? "Editing" : "Previewing"} {getFileCategoryLabel(fileCategory).toLowerCase()}
+                      {isFullscreen ? " — fullscreen" : ""}
                     </p>
                     {saveStatus === "error" && <p className="text-xs text-red-400 mt-0.5">Could not save changes</p>}
                   </div>
-                  {canEdit && (
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsFullscreen(!isFullscreen)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border/30 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
+                    title={isFullscreen ? "Exit fullscreen" : "View fullscreen"}
+                  >
+                    {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+                    <span className="hidden sm:inline">{isFullscreen ? "Exit" : "Fullscreen"}</span>
+                  </button>
+                  {isFullscreen && (
+                    <button
+                      type="button"
+                      onClick={() => { setIsFullscreen(false); onClose(); }}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border/30 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
+                      title="Close"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                  {canEdit && isEditableDocument && (
                     <div className="flex flex-wrap justify-end gap-2">
                       {isEditingDocument ? (
                         <>
@@ -593,8 +723,10 @@ export function MediaAssetViewer({
                       )}
                     </div>
                   )}
+                  </div>
                 </div>
               )}
+              <div className="p-5">
               {documentPreview?.kind === "text" && isEditingDocument && (
                 <textarea
                   value={editorText}
@@ -602,7 +734,7 @@ export function MediaAssetViewer({
                     setEditorText(e.target.value);
                     if (saveStatus === "error") setSaveStatus("idle");
                   }}
-                  className="min-h-[360px] w-full resize-y rounded-xl border border-border/30 bg-muted/20 p-4 font-mono text-sm leading-6 text-foreground outline-none focus:border-brand-primary/70 focus:ring-2 focus:ring-brand-primary/20"
+                  className="min-h-[360px] w-full resize-y rounded-xl border border-border/30 bg-muted/20 p-4 font-mono text-sm leading-6 text-foreground outline-hidden focus:border-brand-primary/70 focus:ring-2 focus:ring-brand-primary/20"
                   spellCheck={false}
                 />
               )}
@@ -616,7 +748,7 @@ export function MediaAssetViewer({
                     setEditorText(e.target.value);
                     if (saveStatus === "error") setSaveStatus("idle");
                   }}
-                  className="min-h-[360px] w-full resize-y rounded-xl border border-border/30 bg-muted/20 p-4 font-mono text-sm leading-6 text-foreground outline-none focus:border-brand-primary/70 focus:ring-2 focus:ring-brand-primary/20"
+                  className="min-h-[360px] w-full resize-y rounded-xl border border-border/30 bg-muted/20 p-4 font-mono text-sm leading-6 text-foreground outline-hidden focus:border-brand-primary/70 focus:ring-2 focus:ring-brand-primary/20"
                   spellCheck={false}
                 />
               )}
@@ -639,7 +771,7 @@ export function MediaAssetViewer({
                         key={sheet.name}
                         type="button"
                         onClick={() => setActiveSheetIndex(index)}
-                        className={`px-3 py-1.5 rounded-lg text-xs flex-shrink-0 ${
+                        className={`px-3 py-1.5 rounded-lg text-xs shrink-0 ${
                           activeSheetIndex === index ? "bg-brand-primary text-[#060e20]" : "bg-muted text-muted-foreground"
                         }`}
                       >
@@ -664,6 +796,7 @@ export function MediaAssetViewer({
                   </div>
                 </div>
               )}
+              </div>
             </div>
           )}
           {!isImage && !isVideo && !isPdf && !["word", "excel", "text", "markdown"].includes(fileCategory) && (
@@ -673,27 +806,29 @@ export function MediaAssetViewer({
             </div>
           )}
 
-          {/* Fullscreen button */}
-          {canFullscreen && (
+          {/* Fullscreen button — always visible on touch screens (no hover there) */}
+          {canFullscreen && !isFullscreen && (
             <button
               type="button"
               onClick={() => setIsFullscreen(true)}
-              className="absolute top-4 right-4 p-2.5 bg-black/40 hover:bg-black/60 text-white rounded-xl backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-all"
+              className="absolute top-4 right-4 z-20 p-2.5 bg-black/40 hover:bg-black/60 text-white rounded-xl backdrop-blur-xs opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all"
               title="View Fullscreen"
             >
               <Maximize2 className="w-4 h-4" />
             </button>
           )}
 
-          {/* Asset status */}
-          <div className="absolute bottom-4 left-4 flex items-center gap-2 bg-black/40 backdrop-blur-sm px-3 py-1.5 rounded-full">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-            <span className="label-meta text-white/80">Active in Gallery</span>
-          </div>
+          {/* Asset status (hidden while a document fills the screen) */}
+          {!(isFullscreen && isDocument) && (
+            <div className="absolute bottom-4 left-4 flex items-center gap-2 bg-black/40 backdrop-blur-xs px-3 py-1.5 rounded-full">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+              <span className="label-meta text-white/80">Active in Gallery</span>
+            </div>
+          )}
         </div>
 
         {/* Right — metadata panel */}
-        <div className="w-full md:w-80 flex-shrink-0 flex flex-col bg-card overflow-y-auto max-h-[50vh] md:max-h-[90vh]">
+        <div className="w-full md:w-80 shrink-0 flex flex-col bg-card overflow-y-auto max-h-[50vh] md:max-h-[90vh]">
           {/* Header */}
           <div className="px-6 pt-6 pb-4 flex items-start justify-between">
             {isRenaming ? (
@@ -719,7 +854,7 @@ export function MediaAssetViewer({
                   autoFocus
                   value={renameValue}
                   onChange={(e) => setRenameValue(e.target.value)}
-                  className="w-full font-manrope font-bold text-base text-foreground mt-1 bg-transparent border-b border-brand-primary/50 focus:outline-none focus:border-brand-primary pb-0.5"
+                  className="w-full font-manrope font-bold text-base text-foreground mt-1 bg-transparent border-b border-brand-primary/50 focus:outline-hidden focus:border-brand-primary pb-0.5"
                 />
                 <div className="flex gap-3 mt-2">
                   <button
@@ -750,7 +885,7 @@ export function MediaAssetViewer({
             <button
               type="button"
               onClick={onClose}
-              className="ml-3 p-1.5 rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent transition-all flex-shrink-0"
+              className="ml-3 p-1.5 rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent transition-all shrink-0"
             >
               <X className="w-4 h-4" />
             </button>
@@ -843,10 +978,17 @@ export function MediaAssetViewer({
                   sub: asset.mimeType,
                 },
                 {
-                  label: "Created",
-                  value: formatDate(asset.createdAt),
-                  sub: new Date(asset.createdAt).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
+                  label: "Date",
+                  value: formatDate(asset.capturedAt ?? asset.createdAt),
+                  sub: new Date(asset.capturedAt ?? asset.createdAt).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
                 },
+                ...(isVideo
+                  ? [{
+                      label: "Playback",
+                      value: asset.transcodedUrl ? "⚡ Transcoded" : "Original",
+                      sub: asset.transcodedUrl ? "Cached web-ready MP4 — plays instantly" : "Transcodes on demand if needed",
+                    }]
+                  : []),
               ].map((item) => (
                 <div key={item.label}>
                   <p className="label-meta">{item.label}</p>

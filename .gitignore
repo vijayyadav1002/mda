@@ -1,9 +1,11 @@
 node_modules
 dist
 build
+.react-router
 .next
 .turbo
 .env*.local
+/.env
 *.log
 .DS_Store
 coverage

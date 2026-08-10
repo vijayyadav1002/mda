@@ -40,6 +40,51 @@ BEGIN
   END IF;
 END $$;
 
+-- Add capture date columns if they don't exist (for existing databases)
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'media_assets' AND column_name = 'captured_at'
+  ) THEN
+    ALTER TABLE media_assets ADD COLUMN captured_at TIMESTAMP;
+    ALTER TABLE media_assets ADD COLUMN captured_at_precision VARCHAR(10);
+    ALTER TABLE media_assets ADD COLUMN captured_at_source VARCHAR(20);
+  END IF;
+END $$;
+
+-- App settings table (key/value overrides for runtime configuration)
+CREATE TABLE IF NOT EXISTS app_settings (
+  key VARCHAR(100) PRIMARY KEY,
+  value JSONB NOT NULL,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Trash bin: soft-deleted files/folders awaiting restore or purge
+CREATE TABLE IF NOT EXISTS trash_items (
+  id SERIAL PRIMARY KEY,
+  original_path TEXT NOT NULL,
+  trash_path TEXT NOT NULL,
+  file_name VARCHAR(255) NOT NULL,
+  file_size BIGINT,
+  mime_type VARCHAR(100),
+  item_type VARCHAR(10) NOT NULL CHECK (item_type IN ('file', 'folder')),
+  thumbnail_path TEXT,
+  deleted_by INTEGER REFERENCES users(id),
+  deleted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Add thumbnail_path to trash_items if missing (for databases migrated earlier)
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'trash_items' AND column_name = 'thumbnail_path'
+  ) THEN
+    ALTER TABLE trash_items ADD COLUMN thumbnail_path TEXT;
+  END IF;
+END $$;
+
 -- Audit logs table
 CREATE TABLE IF NOT EXISTS audit_logs (
   id SERIAL PRIMARY KEY,
@@ -72,6 +117,7 @@ CREATE INDEX IF NOT EXISTS idx_media_assets_mime_type ON media_assets(mime_type)
 CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs(user_id);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at);
 CREATE INDEX IF NOT EXISTS idx_media_asset_tags_tag ON media_asset_tags(tag_id);
+CREATE INDEX IF NOT EXISTS idx_media_assets_captured_at ON media_assets(captured_at DESC NULLS LAST);
 `;
 
 export async function migrate() {

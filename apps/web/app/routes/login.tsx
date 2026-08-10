@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "@remix-run/react";
+import { useNavigate } from "react-router";
 import { createGraphQLClient, setAuthToken } from "~/lib/api";
 
 const LOGIN_MUTATION = `
@@ -124,7 +124,7 @@ export default function Login() {
                 onChange={(e) => setUsername(e.target.value)}
                 required
                 placeholder="Username or email"
-                className="w-full px-4 py-3 rounded-xl bg-surface-low border border-outline-variant/20 text-on-surface placeholder:text-on-surface-variant/40 text-sm outline-none transition-all duration-200 focus:border-brand-primary/80 focus:ring-2 focus:ring-brand-primary/20"
+                className="w-full px-4 py-3 rounded-xl bg-surface-low border border-outline-variant/20 text-on-surface placeholder:text-on-surface-variant/40 text-sm outline-hidden transition-all duration-200 focus:border-brand-primary/80 focus:ring-2 focus:ring-brand-primary/20"
               />
             </div>
 
@@ -141,7 +141,7 @@ export default function Login() {
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 placeholder="••••••••"
-                className="w-full px-4 py-3 rounded-xl bg-surface-low border border-outline-variant/20 text-on-surface placeholder:text-on-surface-variant/40 text-sm outline-none transition-all duration-200 focus:border-brand-primary/80 focus:ring-2 focus:ring-brand-primary/20"
+                className="w-full px-4 py-3 rounded-xl bg-surface-low border border-outline-variant/20 text-on-surface placeholder:text-on-surface-variant/40 text-sm outline-hidden transition-all duration-200 focus:border-brand-primary/80 focus:ring-2 focus:ring-brand-primary/20"
               />
             </div>
 

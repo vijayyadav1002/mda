@@ -1,5 +1,5 @@
-import { redirect } from "@remix-run/node";
-import type { LoaderFunctionArgs } from "@remix-run/node";
+import { redirect } from "react-router";
+import type { LoaderFunctionArgs } from "react-router";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   // Check if user is authenticated (you'd implement this based on your auth)
