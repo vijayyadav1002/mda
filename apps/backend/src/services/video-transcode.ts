@@ -217,10 +217,10 @@ export async function deleteTranscodedVideo(videoPath: string, assetId: string):
       console.log(`✓ Deleted transcoded video: ${path.basename(transcodedPath)}`);
     } catch (accessError) {
       // File doesn't exist or was already deleted - this is expected if video was web-compatible
-      console.log(`[deleteTranscodedVideo] No transcoded video found for asset ${assetId} at ${transcodedPath}`, accessError instanceof Error ? accessError.message : '');
+      console.log('[deleteTranscodedVideo] No transcoded video found for asset', assetId, 'at', transcodedPath, accessError instanceof Error ? accessError.message : '');
     }
   } catch (error) {
-    console.error(`[deleteTranscodedVideo] Error for asset ${assetId}:`, error);
+    console.error('[deleteTranscodedVideo] Error for asset', assetId, ':', error);
   }
 }
 
