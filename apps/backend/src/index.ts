@@ -31,7 +31,8 @@ let workerHandles: ReturnType<typeof startWorkers> | null = null;
 let cacheMaintenanceTimer: ReturnType<typeof setInterval> | null = null;
 
 const fastify = Fastify({
-  logger: true
+  logger: true,
+  trustProxy: true
 });
 
 async function authenticateRequest(request: any) {
@@ -98,6 +99,12 @@ await fastify.register(cors, {
 await fastify.register(rateLimit, {
   max: 300,
   timeWindow: '1 minute',
+  allowList: (request) => {
+    return request.url.startsWith('/thumbnails/')
+      || request.url.startsWith('/compress-preview/')
+      || request.url.startsWith('/media/')
+      || request.url.startsWith('/hls/');
+  }
 });
 
 await fastify.register(jwt, {
@@ -606,6 +613,9 @@ fastify.get('/video/:id/progress', async (request, reply) => {
 // On-demand video transcoding endpoint
 fastify.get('/video/:id', async (request, reply) => {
   const { id } = request.params as { id: string };
+  if (!isValidAssetId(id)) {
+    return reply.code(400).send({ error: 'Invalid asset id' });
+  }
 
   try {
     // Get video info from database
@@ -709,6 +719,9 @@ fastify.get('/video/:id', async (request, reply) => {
 
 fastify.get('/video/:id/hls', async (request, reply) => {
   const { id } = request.params as { id: string };
+  if (!isValidAssetId(id)) {
+    return reply.code(400).send({ error: 'Invalid asset id' });
+  }
 
   // Get file path from DB
   const result = await db.query('SELECT file_path FROM media_assets WHERE id = $1', [id]);
@@ -731,6 +744,9 @@ fastify.get('/video/:id/hls', async (request, reply) => {
 // Delete transcoded video endpoint (called when video dialog closes)
 fastify.delete('/video/:id/cleanup', async (request, reply) => {
   const { id } = request.params as { id: string };
+  if (!isValidAssetId(id)) {
+    return reply.code(400).send({ error: 'Invalid asset id' });
+  }
 
   try {
     // Get video info from database
@@ -1120,7 +1136,7 @@ fastify.put('/api/queue-state', async (request, reply) => {
 });
 
 // Upload endpoint
-fastify.post('/api/upload', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (request, reply) => {
+fastify.post('/api/upload', { config: { rateLimit: { max: 100, timeWindow: '1 minute' } } }, async (request, reply) => {
   const authHeader = request.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {
     return reply.code(401).send({ error: 'Unauthorized' });
