@@ -162,7 +162,7 @@ export function useTagActions({ currentPath, rootPath, loadDirectoryIntoCache, o
     if (rootPath && rootPath !== currentPath) await loadDirectoryIntoCache(rootPath);
     if (activeTagFilter) await loadTagFilterAssets(activeTagFilter);
     return data.applyTagsToAssets as Array<{ id: string; tags: Array<{ id: string; name: string }> }>;
-  }, [activeTagFilter, currentPath, loadDirectoryIntoCache, loadTagFilterAssets, refreshTagSuggestions, rootPath]);
+  }, [activeTagFilter, currentPath, loadTagFilterAssets, refreshTagSuggestions, rootPath]);
 
   const removeTagsFromAssets = useCallback(async (assetIds: string[], tagNames: string[]) => {
     const token = getAuthToken();
@@ -173,7 +173,7 @@ export function useTagActions({ currentPath, rootPath, loadDirectoryIntoCache, o
     if (currentPath) await loadDirectoryIntoCache(currentPath);
     if (rootPath && rootPath !== currentPath) await loadDirectoryIntoCache(rootPath);
     if (activeTagFilter) await loadTagFilterAssets(activeTagFilter);
-  }, [activeTagFilter, currentPath, loadDirectoryIntoCache, loadTagFilterAssets, refreshTagSuggestions, rootPath]);
+  }, [activeTagFilter, currentPath, loadTagFilterAssets, refreshTagSuggestions, rootPath]);
 
   const removeTagFromAsset = useCallback(async (assetId: string, tagName: string) => {
     const token = getAuthToken();
@@ -188,7 +188,7 @@ export function useTagActions({ currentPath, rootPath, loadDirectoryIntoCache, o
       console.error("Failed to remove tag:", err);
       alert(`Failed to remove tag: ${err.message || "Unknown error"}`);
     }
-  }, [activeTagFilter, currentPath, loadDirectoryIntoCache, loadTagFilterAssets, refreshTagSuggestions]);
+  }, [activeTagFilter, currentPath, loadTagFilterAssets, refreshTagSuggestions]);
 
   const handleRenameTag = useCallback(async (oldName: string) => {
     const input = window.prompt(`Rename #${oldName} to:`, oldName);
@@ -212,7 +212,7 @@ export function useTagActions({ currentPath, rootPath, loadDirectoryIntoCache, o
       console.error("Failed to rename tag:", err);
       alert(`Failed to rename tag: ${err.message || "Unknown error"}`);
     }
-  }, [activeTagFilter, currentPath, loadDirectoryIntoCache, loadTagFilterAssets, refreshTagSuggestions]);
+  }, [activeTagFilter, currentPath, loadTagFilterAssets, refreshTagSuggestions]);
 
   const handleDeleteTag = useCallback((name: string) => {
     openConfirm({
@@ -237,7 +237,7 @@ export function useTagActions({ currentPath, rootPath, loadDirectoryIntoCache, o
         }
       },
     });
-  }, [openConfirm, activeTagFilter, currentPath, loadDirectoryIntoCache, refreshTagSuggestions]);
+  }, [openConfirm, activeTagFilter, currentPath, refreshTagSuggestions]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
