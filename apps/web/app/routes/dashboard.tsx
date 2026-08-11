@@ -28,8 +28,10 @@ import { useFileUpload } from "~/hooks/useFileUpload";
 import { useCacheSettings } from "~/hooks/useCacheSettings";
 import { usePasswordChange } from "~/hooks/usePasswordChange";
 import { CachePanelBody } from "~/components/CachePanelBody";
+import { SidebarNavItem } from "~/components/SidebarNavItem";
+import { FileTypeIcon } from "~/components/FileTypeIcon";
 import {
-  Folder, File, FileImage, FileText, Table2, ArrowLeft, ChevronDown, ChevronRight,
+  Folder, FileImage, FileText, ArrowLeft, ChevronDown, ChevronRight,
   Trash2, CheckSquare, Square, Users, Key, RotateCcw,
   Menu, X, ImagePlus, ArrowUpDown, Minimize2,
   Upload, LogOut, Download, FolderPlus, ListTodo,
@@ -190,50 +192,6 @@ function getFileCategoryLabel(asset: MediaAsset) {
     other: "File",
   };
   return labels[getFileCategory(asset)];
-}
-
-function FileTypeIcon({ asset, className }: { asset: MediaAsset; className: string }) {
-  const category = getFileCategory(asset);
-  if (category === "excel") return <Table2 className={className} />;
-  if (category === "word" || category === "text" || category === "markdown" || category === "pdf") {
-    return <FileText className={className} />;
-  }
-  if (category === "image" || category === "video") return <FileImage className={className} />;
-  return <File className={className} />;
-}
-
-function SidebarNavItem({
-  icon: Icon,
-  label,
-  active,
-  onClick,
-  badge,
-}: {
-  icon: React.ElementType;
-  label: string;
-  active?: boolean;
-  onClick?: () => void;
-  badge?: number;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 relative ${
-        active
-          ? "nav-active bg-accent text-foreground"
-          : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
-      }`}
-    >
-      <Icon className="w-4 h-4 shrink-0" />
-      {label}
-      {badge != null && badge > 0 && (
-        <span className="ml-auto w-5 h-5 gradient-brand rounded-full flex items-center justify-center text-[10px] font-bold text-[#060e20]">
-          {badge > 9 ? "9+" : badge}
-        </span>
-      )}
-    </button>
-  );
 }
 
 export default function Dashboard() {
