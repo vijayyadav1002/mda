@@ -1,6 +1,6 @@
 import { db } from '../../db/index.js';
 import { logAudit } from '../../services/audit.js';
-import { getCacheStats, clearCacheByType, runCacheMaintenanceOnce } from '../../services/cache-maintenance.js';
+import { getCacheStats, clearCacheByType, runCacheMaintenanceOnce } from '../../services/cache-maintenance/index.js';
 import { getCacheSettings, updateCacheSettings as updateCacheSettingsService } from '../../services/settings.js';
 import type { GraphQLContext } from '../context.js';
 
