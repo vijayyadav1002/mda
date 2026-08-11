@@ -9,6 +9,8 @@ import { CompressQueuePanel, type CompressJob } from "~/components/CompressQueue
 import { TagDialog } from "~/components/TagDialog";
 import { RemoveTagsDialog } from "~/components/RemoveTagsDialog";
 import { ConfirmDialog } from "~/components/ConfirmDialog";
+import { ChangePasswordDialog } from "~/components/ChangePasswordDialog";
+import { LogoutConfirmDialog } from "~/components/LogoutConfirmDialog";
 import { SearchBar } from "~/components/SearchBar";
 import { formatDate, formatBytes } from "~/lib/format";
 import { getFileCategory, canCompressAsset, type FileCategory } from "~/lib/file-type";
@@ -2907,53 +2909,19 @@ export default function Dashboard() {
       </Dialog>
 
       {/* Change Password */}
-      <Dialog open={showChangePasswordDialog} onOpenChange={setShowChangePasswordDialog}>
-        <DialogContent className="bg-card border-border/20 shadow-ambient rounded-2xl">
-          <DialogHeader>
-            <DialogTitle className="font-manrope text-foreground">Change Password</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleChangePassword} className="space-y-4 mt-2">
-            {(
-              [
-                { id: "cur-pwd", label: "Current Password", value: currentPassword, onChange: setCurrentPassword },
-                { id: "new-pwd", label: "New Password", value: newPassword, onChange: setNewPassword },
-                { id: "con-pwd", label: "Confirm New Password", value: confirmPassword, onChange: setConfirmPassword },
-              ] as const
-            ).map((field) => (
-              <div key={field.id} className="space-y-1.5">
-                <label htmlFor={field.id} className="label-meta">{field.label}</label>
-                <Input
-                  id={field.id}
-                  type="password"
-                  value={field.value}
-                  onChange={(e) => (field.onChange as any)(e.target.value)}
-                  required
-                  minLength={6}
-                  className="bg-muted border-border/20 text-foreground placeholder:text-muted-foreground"
-                />
-              </div>
-            ))}
-            {passwordError && (
-              <p className="text-sm text-destructive bg-destructive/10 rounded-xl px-3 py-2">{passwordError}</p>
-            )}
-            <div className="flex gap-2 justify-end pt-2">
-              <button
-                type="button"
-                onClick={() => { setShowChangePasswordDialog(false); setCurrentPassword(""); setNewPassword(""); setConfirmPassword(""); setPasswordError(""); }}
-                className="px-4 py-2 rounded-xl text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="px-4 py-2 rounded-xl gradient-brand text-[#060e20] font-manrope font-bold text-sm shadow-ambient hover:opacity-90 transition-opacity"
-              >
-                Update Password
-              </button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
+      <ChangePasswordDialog
+        isOpen={showChangePasswordDialog}
+        onOpenChange={setShowChangePasswordDialog}
+        currentPassword={currentPassword}
+        setCurrentPassword={setCurrentPassword}
+        newPassword={newPassword}
+        setNewPassword={setNewPassword}
+        confirmPassword={confirmPassword}
+        setConfirmPassword={setConfirmPassword}
+        passwordError={passwordError}
+        setPasswordError={setPasswordError}
+        onSubmit={handleChangePassword}
+      />
 
       {/* New File Dialog */}
       <Dialog open={showNewFileDialog} onOpenChange={(open) => { setShowNewFileDialog(open); if (!open) setNewFileName(''); }}>
@@ -3179,36 +3147,11 @@ export default function Dashboard() {
       />
 
       {/* Logout Confirmation */}
-      {showLogoutConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs">
-          <div className="bg-card rounded-2xl p-8 max-w-sm w-full mx-4 shadow-ambient border border-border/10 text-center">
-            <div className="w-12 h-12 rounded-2xl bg-muted flex items-center justify-center mx-auto mb-4">
-              <LogOut className="w-5 h-5 text-muted-foreground" />
-            </div>
-            <h2 className="font-manrope text-xl font-bold text-foreground mb-2">Securely signing out?</h2>
-            <p className="text-muted-foreground text-sm mb-6">
-              Before you leave, ensure all your gallery edits are saved. You will need to sign in again to access your media library.
-            </p>
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={() => setShowLogoutConfirm(false)}
-                className="flex-1 py-2.5 rounded-xl border border-border/30 text-sm text-foreground hover:bg-accent transition-all font-medium"
-              >
-                Return to Dashboard
-              </button>
-              <button
-                type="button"
-                onClick={handleLogout}
-                className="flex-1 py-2.5 rounded-xl gradient-brand text-[#060e20] text-sm font-manrope font-bold shadow-ambient hover:opacity-90 transition-opacity"
-              >
-                Confirm Logout
-              </button>
-            </div>
-            <p className="label-meta mt-4">The Curated Gallery · Session Security</p>
-          </div>
-        </div>
-      )}
+      <LogoutConfirmDialog
+        isOpen={showLogoutConfirm}
+        onCancel={() => setShowLogoutConfirm(false)}
+        onConfirm={handleLogout}
+      />
     </div>
   );
 }
