@@ -1,4 +1,3 @@
-import { db } from '../db/index.js';
 import { logAudit } from '../services/audit.js';
 import {
   listTrashItems,
