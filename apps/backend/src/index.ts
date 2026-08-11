@@ -6,7 +6,7 @@ import multipart from '@fastify/multipart';
 import fastifyStatic from '@fastify/static';
 import mercurius from 'mercurius';
 import { config } from './config.js';
-import { schema } from './graphql/schema.js';
+import { schema } from './graphql/schema/index.js';
 import { resolvers } from './graphql/resolvers/index.js';
 import { buildContext } from './graphql/context.js';
 import { db } from './db/index.js';

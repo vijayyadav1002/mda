@@ -1,86 +1,13 @@
-export const schema = `
-  type User {
-    id: ID!
-    username: String!
-    role: String!
-    createdAt: String!
-  }
+import { authSdl } from './auth.sdl.js';
+import { mediaSdl } from './media.sdl.js';
+import { directorySdl } from './directory.sdl.js';
+import { tagsSdl } from './tags.sdl.js';
+import { compressSdl } from './compress.sdl.js';
+import { cacheAuditSdl } from './cache-audit.sdl.js';
+import { timelineSdl } from './timeline.sdl.js';
+import { trashSdl } from './trash.sdl.js';
 
-  type MediaAsset {
-    id: ID!
-    filePath: String!
-    fileName: String!
-    fileSize: String!
-    mimeType: String!
-    width: Int
-    height: Int
-    duration: Float
-    thumbnailPath: String
-    thumbnailUrl: String
-    transcodedPath: String
-    transcodedUrl: String
-    indexedAt: String!
-    createdAt: String!
-    updatedAt: String!
-    capturedAt: String
-    capturedAtPrecision: String
-    tags: [Tag!]!
-  }
-
-  type TimelineBucket {
-    period: String!
-    count: Int!
-    coverAssets: [MediaAsset!]!
-  }
-
-  type TimelineAssetsResult {
-    assets: [MediaAsset!]!
-    totalCount: Int!
-  }
-
-  type Tag {
-    id: ID!
-    name: String!
-    createdAt: String!
-    assetCount: Int!
-  }
-
-  type AuditLog {
-    id: ID!
-    userId: ID!
-    user: User
-    action: String!
-    resourceType: String!
-    resourceId: ID
-    details: String
-    createdAt: String!
-  }
-
-  type AuthPayload {
-    token: String!
-    user: User!
-  }
-
-  type DirectoryNode {
-    name: String!
-    path: String!
-    type: String!
-    children: [DirectoryNode!]
-    mediaAsset: MediaAsset
-    size: Float
-  }
-
-  type SearchFolderResult {
-    name: String!
-    path: String!
-    parentPath: String
-  }
-
-  type SearchResults {
-    files: [MediaAsset!]!
-    folders: [SearchFolderResult!]!
-  }
-
+const rootSdl = `
   type Query {
     me: User
     users: [User!]!
@@ -102,22 +29,6 @@ export const schema = `
     trashItems: [TrashItem!]!
   }
 
-  type TrashItem {
-    id: ID!
-    fileName: String!
-    originalPath: String!
-    itemType: String!
-    fileSize: String
-    mimeType: String
-    thumbnailUrl: String
-    deletedAt: String!
-    expiresAt: String!
-  }
-
-  type TimelineSettings {
-    dateSource: String!
-  }
-
   type Mutation {
     login(username: String!, password: String!): AuthPayload!
     createFirstAdmin(username: String!, password: String!): AuthPayload!
@@ -126,7 +37,7 @@ export const schema = `
     deleteUser(id: ID!): Boolean!
     resetPassword(userId: ID!, newPassword: String!): Boolean!
     changeMyPassword(currentPassword: String!, newPassword: String!): Boolean!
-    
+
     moveMediaAsset(id: ID!, newPath: String!): MediaAsset!
     renameMediaAsset(id: ID!, newName: String!): MediaAsset!
     duplicateMediaAsset(id: ID!, destinationFolder: String): MediaAsset!
@@ -160,49 +71,16 @@ export const schema = `
     purgeTrashItem(id: ID!): Boolean!
     emptyTrash: Int!
   }
-
-  type CacheSettings {
-    thumbnailCacheMaxMb: Int!
-    previewCacheMaxMb: Int!
-    hlsCacheMaxMb: Int!
-    transcodedCacheMaxMb: Int!
-    previewCacheMaxAgeDays: Int!
-    hlsCacheMaxAgeHours: Int!
-  }
-
-  input CacheSettingsInput {
-    thumbnailCacheMaxMb: Int
-    previewCacheMaxMb: Int
-    hlsCacheMaxMb: Int
-    transcodedCacheMaxMb: Int
-    previewCacheMaxAgeDays: Int
-    hlsCacheMaxAgeHours: Int
-  }
-
-  input CompressOptionsInput {
-    resolution: String
-    quality: Int
-  }
-
-  type CompressPreviewResult {
-    assetId: ID!
-    originalSize: String!
-    compressedSize: String!
-    previewUrl: String!
-  }
-
-  type CacheTypeStats {
-    label: String!
-    bytes: Float!
-    fileCount: Int!
-    maxBytes: Float!
-  }
-
-  type CacheStats {
-    thumbnails: CacheTypeStats!
-    previews: CacheTypeStats!
-    hls: CacheTypeStats!
-    transcoded: CacheTypeStats!
-    totalBytes: Float!
-  }
 `;
+
+export const schema = [
+  authSdl,
+  mediaSdl,
+  directorySdl,
+  tagsSdl,
+  compressSdl,
+  cacheAuditSdl,
+  timelineSdl,
+  trashSdl,
+  rootSdl,
+].join('\n');
