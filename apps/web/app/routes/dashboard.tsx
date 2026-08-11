@@ -15,10 +15,12 @@ import { getFileCategory, canCompressAsset, type FileCategory } from "~/lib/file
 import type { MediaAsset, DirectoryNode } from "~/lib/types";
 import { useDirectoryTree } from "~/hooks/useDirectoryTree";
 import { useMediaSelection } from "~/hooks/useMediaSelection";
+import { useConfirmDialog } from "~/hooks/useConfirmDialog";
 import { useTagActions } from "~/hooks/useTagActions";
 import { useThumbnailObserver } from "~/hooks/useThumbnailObserver";
 import { useFileUpload } from "~/hooks/useFileUpload";
 import { useCacheSettings } from "~/hooks/useCacheSettings";
+import { usePasswordChange } from "~/hooks/usePasswordChange";
 import { CachePanelBody } from "~/components/CachePanelBody";
 import {
   Folder, File, FileImage, FileText, Table2, ArrowLeft, ChevronDown, ChevronRight,
@@ -34,12 +36,6 @@ const API_URL = getApiUrl();
 const DELETE_MEDIA_ASSET_MUTATION = `
   mutation DeleteMediaAsset($id: ID!) {
     deleteMediaAsset(id: $id)
-  }
-`;
-
-const CHANGE_MY_PASSWORD_MUTATION = `
-  mutation ChangeMyPassword($currentPassword: String!, $newPassword: String!) {
-    changeMyPassword(currentPassword: $currentPassword, newPassword: $newPassword)
   }
 `;
 
@@ -273,11 +269,19 @@ export default function Dashboard() {
   const [isViewerOpen, setIsViewerOpen] = useState(false);
   const [view, setView] = useState<"grid" | "tree">("grid");
   const [user, setUser] = useState<{ username: string; role: string } | null>(null);
-  const [showChangePasswordDialog, setShowChangePasswordDialog] = useState(false);
-  const [currentPassword, setCurrentPassword] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [passwordError, setPasswordError] = useState("");
+  const {
+    showChangePasswordDialog,
+    setShowChangePasswordDialog,
+    currentPassword,
+    setCurrentPassword,
+    newPassword,
+    setNewPassword,
+    confirmPassword,
+    setConfirmPassword,
+    passwordError,
+    setPasswordError,
+    handleChangePassword,
+  } = usePasswordChange();
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [darkMode, setDarkMode] = useState(() => {
     if (typeof window !== "undefined") {
@@ -317,23 +321,7 @@ export default function Dashboard() {
   const [renamingFolder, setRenamingFolder] = useState<{ path: string; name: string } | null>(null);
   const [renameFolderValue, setRenameFolderValue] = useState('');
   const [isRenamingFolder, setIsRenamingFolder] = useState(false);
-  const [confirmDialog, setConfirmDialog] = useState<{
-    open: boolean;
-    title: string;
-    description: string;
-    warning?: string;
-    confirmLabel?: string;
-    onConfirm: () => Promise<void>;
-  }>({ open: false, title: "", description: "", onConfirm: async () => {} });
-  const openConfirm = useCallback((opts: {
-    title: string;
-    description: string;
-    warning?: string;
-    confirmLabel?: string;
-    onConfirm: () => Promise<void>;
-  }) => {
-    setConfirmDialog({ ...opts, open: true });
-  }, []);
+  const { confirmDialog, setConfirmDialog, openConfirm } = useConfirmDialog();
   const {
     isTagDialogOpen,
     setIsTagDialogOpen,
@@ -452,33 +440,6 @@ export default function Dashboard() {
   const handleLogout = () => {
     clearAuthToken();
     navigate("/login");
-  };
-
-  const handleChangePassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setPasswordError("");
-    if (newPassword !== confirmPassword) {
-      setPasswordError("New passwords do not match");
-      return;
-    }
-    if (newPassword.length < 6) {
-      setPasswordError("Password must be at least 6 characters long");
-      return;
-    }
-    try {
-      const token = getAuthToken();
-      if (!token) return;
-      const client = createGraphQLClient(token);
-      await client.request(CHANGE_MY_PASSWORD_MUTATION, { currentPassword, newPassword });
-      setShowChangePasswordDialog(false);
-      setCurrentPassword("");
-      setNewPassword("");
-      setConfirmPassword("");
-      setPasswordError("");
-      alert("Password changed successfully");
-    } catch (err: any) {
-      setPasswordError(err.message || "Failed to change password");
-    }
   };
 
   const handleRefreshMediaLibrary = async () => {
