@@ -58,6 +58,7 @@ mda/
 
 ### Backend flow
 - Entry: `src/index.ts` (Fastify server, port 4000)
+- HTTP routes: `src/routes/*.routes.ts` (Fastify plugins registered in `index.ts`)
 - GraphQL: `src/graphql/schema/` + `src/graphql/resolvers/` via Mercurius (per-domain fragments merged by each directory's `index.ts`)
 - Services: `media-indexer`, `thumbnail` (sharp + libheif-js + FFmpeg), `video-transcode`, `queue` (BullMQ queues: thumbnail, compression, encoding/transcode, media-refresh), `auth` (bcrypt + JWT), `audit`, `media-watcher` (chokidar), `cache-maintenance`, `media-cleanup` (removes thumbnail/transcode derivatives on delete), `capture-date` (timeline dates from folder/filename/mtime by default; admin-selectable source: folder | exif | created | modified, recomputed library-wide via the media-refresh queue), `settings` (DB-backed cache + timeline settings), `trash` (soft-delete into hidden `.trash` dir, restore/purge, expiry via `TRASH_RETENTION_DAYS`), `tags`, `search-query` (in-field search DSL: `type:`/`tag:`/`ext:`/`size:`, wildcards, folder scoping), `file-types` (extension → category + preview/thumbnail/compress capability), `redis` (ioredis client backing BullMQ)
 - DB: raw `pg` client; migrations in `src/db/migrate.ts`
