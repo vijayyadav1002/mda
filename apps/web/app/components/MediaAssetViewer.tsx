@@ -4,6 +4,9 @@ import Hls from "hls.js";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { getAuthToken } from "~/lib/api";
+import { formatDate } from "~/lib/format";
+import { formatFileSize, getExtension, getFileCategory, type FileCategory } from "~/lib/file-type";
+import type { MediaAsset } from "~/lib/types";
 
 type VideoSource =
   | { kind: "mp4"; url: string }
@@ -13,25 +16,6 @@ interface TranscodeProgress {
   percent: number;
   status: string;
   playlistReady?: boolean;
-}
-
-interface AssetTag {
-  id: string;
-  name: string;
-}
-
-interface MediaAsset {
-  id: string;
-  fileName: string;
-  filePath: string;
-  mimeType: string;
-  fileSize: string;
-  thumbnailUrl: string | null;
-  transcodedUrl?: string;
-  createdAt: string;
-  updatedAt: string;
-  capturedAt?: string | null;
-  tags?: AssetTag[];
 }
 
 interface MediaAssetViewerProps {
@@ -54,43 +38,10 @@ interface MediaAssetViewerProps {
   readonly autoEdit?: boolean;
 }
 
-type FileCategory = "image" | "video" | "pdf" | "word" | "excel" | "text" | "markdown" | "other";
-
 type DocumentPreview =
   | { kind: "text" | "markdown"; text: string; truncated: boolean }
   | { kind: "word"; html: string; messages: string[] }
   | { kind: "excel"; sheets: { name: string; rows: string[][] }[]; maxRows: number; maxCols: number };
-
-function formatFileSize(bytes: string) {
-  const size = parseInt(bytes);
-  if (size < 1024) return `${size} B`;
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
-  return `${(size / 1024 / 1024).toFixed(2)} MB`;
-}
-
-function formatDate(dateString: string) {
-  return new Date(dateString).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
-function getExtension(fileName: string) {
-  return fileName.split(".").pop()?.toUpperCase() ?? "FILE";
-}
-
-function getFileCategory(asset: MediaAsset): FileCategory {
-  const ext = asset.fileName.split(".").pop()?.toLowerCase() ?? "";
-  if (asset.mimeType.startsWith("image/")) return "image";
-  if (asset.mimeType.startsWith("video/")) return "video";
-  if (asset.mimeType === "application/pdf" || ext === "pdf") return "pdf";
-  if (ext === "docx") return "word";
-  if (ext === "xlsx") return "excel";
-  if (ext === "md" || ext === "markdown") return "markdown";
-  if (asset.mimeType.startsWith("text/") || ext === "txt") return "text";
-  return "other";
-}
 
 function getFileCategoryLabel(category: FileCategory) {
   const labels: Record<FileCategory, string> = {

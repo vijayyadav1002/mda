@@ -10,6 +10,9 @@ import { TagDialog, type TagSuggestion } from "~/components/TagDialog";
 import { RemoveTagsDialog } from "~/components/RemoveTagsDialog";
 import { ConfirmDialog } from "~/components/ConfirmDialog";
 import { SearchBar } from "~/components/SearchBar";
+import { formatDate } from "~/lib/format";
+import { getFileCategory, canCompressAsset, type FileCategory } from "~/lib/file-type";
+import type { MediaAsset, DirectoryNode, CacheStats, CacheSettingsData } from "~/lib/types";
 import {
   Folder, File, FileImage, FileText, Table2, ArrowLeft, ChevronDown, ChevronRight,
   Trash2, CheckSquare, Square, Users, Key, RotateCcw,
@@ -321,80 +324,11 @@ const SEARCH_RESULTS_QUERY = `
   }
 `;
 
-interface TagSummary {
-  id: string;
-  name: string;
-}
-
-interface MediaAsset {
-  id: string;
-  fileName: string;
-  filePath: string;
-  mimeType: string;
-  fileSize: string;
-  thumbnailUrl: string | null;
-  transcodedUrl?: string | null;
-  createdAt: string;
-  capturedAt?: string | null;
-  tags?: TagSummary[];
-}
-
-interface DirectoryNode {
-  name: string;
-  path: string;
-  type: "file" | "directory";
-  children?: DirectoryNode[] | null;
-  mediaAsset?: MediaAsset;
-  size?: number | null;
-}
-
-interface CacheTypeStats {
-  label: string;
-  bytes: number;
-  fileCount: number;
-  maxBytes: number;
-}
-
-interface CacheStats {
-  thumbnails: CacheTypeStats;
-  previews: CacheTypeStats;
-  hls: CacheTypeStats;
-  transcoded: CacheTypeStats;
-  totalBytes: number;
-}
-
-interface CacheSettingsData {
-  thumbnailCacheMaxMb: number;
-  previewCacheMaxMb: number;
-  hlsCacheMaxMb: number;
-  transcodedCacheMaxMb: number;
-  previewCacheMaxAgeDays: number;
-  hlsCacheMaxAgeHours: number;
-}
-
 function formatBytes(bytes: string | number) {
   const n = typeof bytes === "string" ? parseInt(bytes) : bytes;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
   if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
   return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`;
-}
-
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-}
-
-type FileCategory = "image" | "video" | "pdf" | "word" | "excel" | "text" | "markdown" | "other";
-
-function getFileCategory(asset: MediaAsset): FileCategory {
-  const ext = asset.fileName.split(".").pop()?.toLowerCase() ?? "";
-  if (asset.mimeType.startsWith("image/")) return "image";
-  if (asset.mimeType.startsWith("video/")) return "video";
-  if (asset.mimeType === "application/pdf" || ext === "pdf") return "pdf";
-  if (ext === "docx") return "word";
-  if (ext === "xlsx") return "excel";
-  if (ext === "md" || ext === "markdown") return "markdown";
-  if (asset.mimeType.startsWith("text/") || ext === "txt") return "text";
-  return "other";
 }
 
 function getFileCategoryLabel(asset: MediaAsset) {
@@ -409,11 +343,6 @@ function getFileCategoryLabel(asset: MediaAsset) {
     other: "File",
   };
   return labels[getFileCategory(asset)];
-}
-
-function canCompressAsset(asset: MediaAsset) {
-  const category = getFileCategory(asset);
-  return category === "image" || category === "video" || category === "pdf";
 }
 
 function FileTypeIcon({ asset, className }: { asset: MediaAsset; className: string }) {
