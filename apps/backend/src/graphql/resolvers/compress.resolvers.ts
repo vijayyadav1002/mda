@@ -3,7 +3,7 @@ import path from 'path';
 import type { GraphQLContext } from '../context.js';
 import { config } from '../../config.js';
 import { db } from '../../db/index.js';
-import { compressImageAdvanced, compressVideoAdvanced, compressPdfAdvanced } from '../../services/thumbnail.js';
+import { compressImageAdvanced, compressVideoAdvanced, compressPdfAdvanced } from '../../services/thumbnail/index.js';
 import { canCompressFile } from '../../services/file-types.js';
 import { logAudit } from '../../services/audit.js';
 import { cleanupCompressPreviewFiles } from '../helpers/compress-cleanup.js';

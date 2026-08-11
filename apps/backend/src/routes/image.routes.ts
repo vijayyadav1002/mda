@@ -53,7 +53,7 @@ export default async function imageRoutes(fastify: FastifyInstance) {
       if (!cacheExists) {
         // Attempt 1: renderHeicToJpeg (libheif-js / heif-convert)
         try {
-          const { renderHeicToJpeg } = await import('../services/thumbnail.js');
+          const { renderHeicToJpeg } = await import('../services/thumbnail/index.js');
           await renderHeicToJpeg(absPath, cachedPath, {
             kind: 'inside',
             maxWidth: config.previewMaxDimension,

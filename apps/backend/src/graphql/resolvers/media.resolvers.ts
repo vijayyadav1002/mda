@@ -1,6 +1,6 @@
 import { db } from '../../db/index.js';
 import { logAudit } from '../../services/audit.js';
-import { compressImage, compressVideo, compressPdfAdvanced } from '../../services/thumbnail.js';
+import { compressImage, compressVideo, compressPdfAdvanced } from '../../services/thumbnail/index.js';
 import { enqueueMediaRefresh } from '../../services/queue.js';
 import { cleanupDeletedAssetCaches } from '../../services/media-cleanup.js';
 import { indexFile } from '../../services/media-indexer.js';

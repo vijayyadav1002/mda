@@ -82,14 +82,14 @@ export default async function compressRoutes(fastify: FastifyInstance) {
         });
 
         if (asset.mime_type.startsWith('image/')) {
-          const { compressImageAdvanced } = await import('../services/thumbnail.js');
+          const { compressImageAdvanced } = await import('../services/thumbnail/index.js');
           await compressImageAdvanced(asset.file_path, previewPath, {
             resolution: options.resolution,
             quality: options.quality
           });
           send({ type: 'file_progress', assetId: id, percent: 100 });
         } else if (asset.mime_type.startsWith('video/')) {
-          const { compressVideoAdvanced } = await import('../services/thumbnail.js');
+          const { compressVideoAdvanced } = await import('../services/thumbnail/index.js');
           let lastSent = 0;
           await compressVideoAdvanced(asset.file_path, previewPath, {
             resolution: options.resolution,

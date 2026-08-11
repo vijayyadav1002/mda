@@ -281,7 +281,7 @@ export function startWorkers() {
         if (job.id) activeThumbnailAborts.set(job.id, abortController);
 
         try {
-            const { generateAndSaveThumbnail, generateThumbnail } = await import('./thumbnail.js');
+            const { generateAndSaveThumbnail, generateThumbnail } = await import('./thumbnail/index.js');
             if (job.data.assetId) {
                 await generateAndSaveThumbnail(job.data.filePath, job.data.assetId, { signal: abortController.signal });
             } else {
@@ -348,7 +348,7 @@ export function startWorkers() {
         const pathMod = await import('node:path');
         const fsMod = await import('node:fs');
         const { config: cfg } = await import('../config.js');
-        const { compressImageAdvanced, compressVideoAdvanced, compressPdfAdvanced } = await import('./thumbnail.js');
+        const { compressImageAdvanced, compressVideoAdvanced, compressPdfAdvanced } = await import('./thumbnail/index.js');
         const { canCompressFile } = await import('./file-types.js');
 
         const previewDir = pathMod.default.resolve(pathMod.default.dirname(cfg.thumbnailCachePath), 'compress-preview');
