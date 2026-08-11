@@ -5,7 +5,7 @@ import crypto from 'node:crypto';
 import { config } from '../config.js';
 import { db } from '../db/index.js';
 import { canCompressFile } from '../services/file-types.js';
-import { addToCompressionQueue, compressionQueue, activeCompressionAborts } from '../services/queue.js';
+import { addToCompressionQueue, compressionQueue, activeCompressionAborts } from '../services/queue/index.js';
 import { redis } from '../services/redis.js';
 
 export default async function compressRoutes(fastify: FastifyInstance) {

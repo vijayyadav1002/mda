@@ -301,7 +301,7 @@ export async function ensureHLS(filePath: string, assetId: string): Promise<stri
   } catch {
     console.log(`HLS not found for ${assetId}, triggering generation`);
     // Dynamic import to avoid circular dependency if queue imports this
-    const { addToEncodingQueue } = await import('./queue.js');
+    const { addToEncodingQueue } = await import('./queue/index.js');
     await addToEncodingQueue({ filePath, assetId, type: 'hls' });
 
     // Poll for creation (max 10s)

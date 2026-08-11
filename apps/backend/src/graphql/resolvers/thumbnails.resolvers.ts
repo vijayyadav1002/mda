@@ -2,7 +2,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import type { GraphQLContext } from '../context.js';
 import { resolveLibraryPath, listMediaFilesInDirectory } from '../helpers/directory-tree.js';
-import { addToThumbnailQueue, cancelThumbnailSession } from '../../services/queue.js';
+import { addToThumbnailQueue, cancelThumbnailSession } from '../../services/queue/index.js';
 import { indexFile } from '../../services/media-indexer.js';
 import { canThumbnailFile } from '../../services/file-types.js';
 import { db } from '../../db/index.js';

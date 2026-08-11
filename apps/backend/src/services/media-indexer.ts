@@ -2,7 +2,7 @@ import fs from 'fs/promises';
 import path from 'node:path';
 import { db } from '../db/index.js';
 import { config } from '../config.js';
-import { addToThumbnailQueue } from './queue.js';
+import { addToThumbnailQueue } from './queue/index.js';
 import { cleanupDeletedAssetCaches } from './media-cleanup.js';
 import { classifyFile } from './file-types.js';
 import { resolveCaptureDateAuto, updateCaptureDateForAsset } from './capture-date.js';

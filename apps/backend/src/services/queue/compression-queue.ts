@@ -1,44 +1,6 @@
 import { Queue, Worker } from 'bullmq';
-import { config } from '../config.js';
-import { redis } from './redis.js';
-
-// Connection config
-const connection = {
-    host: config.redisHost,
-    port: config.redisPort
-};
-
-// Queues
-export const encodingQueue = new Queue('encoding', {
-    connection,
-    defaultJobOptions: {
-        attempts: 3,
-        backoff: {
-            type: 'exponential',
-            delay: 1000,
-        },
-        removeOnComplete: 100,
-        removeOnFail: 1000,
-    }
-});
-
-export const thumbnailQueue = new Queue('thumbnail', {
-    connection,
-    defaultJobOptions: {
-        attempts: 2,
-        removeOnComplete: true,
-        removeOnFail: 100,
-    }
-});
-
-export const mediaRefreshQueue = new Queue('media-refresh', {
-    connection,
-    defaultJobOptions: {
-        attempts: 1,
-        removeOnComplete: true,
-        removeOnFail: 100,
-    }
-});
+import { redis } from '../redis.js';
+import { connection } from './connection.js';
 
 export const compressionQueue = new Queue('compression', {
     connection,
@@ -48,47 +10,6 @@ export const compressionQueue = new Queue('compression', {
         removeOnFail: 100,
     }
 });
-
-export const addToCompressionQueue = (data: CompressJobData) =>
-    compressionQueue.add('compress', data);
-
-// Map of in-flight compression jobs → AbortController, keyed by CompressJobData.jobId.
-// Used by the cancel endpoint to stop ffmpeg mid-run and break the per-file loop.
-export const activeCompressionAborts = new Map<string, AbortController>();
-
-const MEDIA_REFRESH_COOLDOWN_MS = 30 * 1000;
-let lastMediaRefreshEnqueueAt = 0;
-
-export interface EncodingJobData {
-    filePath: string;
-    assetId: string;
-    type?: 'mp4' | 'hls';
-}
-
-export interface ThumbnailJobData {
-    filePath: string;
-    assetId?: string; // If present, update DB thumbnail_path
-    mediaType?: 'image' | 'video'; // For priority-based processing
-    sessionId?: string; // Folder-visit token; lets the client cancel jobs queued for an abandoned page
-}
-
-// In-flight thumbnail jobs → AbortController, keyed by BullMQ jobId.
-// Used by cancelThumbnailSession to kill ffmpeg mid-screenshot for active video thumbnails.
-export const activeThumbnailAborts = new Map<string, AbortController>();
-
-const THUMBNAIL_SESSION_TTL_SECONDS = 3600;
-const THUMBNAIL_SESSION_KEY = (sessionId: string) => `thumb_session:${sessionId}`;
-const THUMBNAIL_SESSION_CANCELLED_KEY = (sessionId: string) => `thumb_session_cancelled:${sessionId}`;
-
-// Priority levels for thumbnail queue (higher = processed first)
-const THUMBNAIL_PRIORITY = {
-    IMAGE: 10,    // High priority: fast to generate (~50ms)
-    VIDEO: 1      // Low priority: slow to generate (~5-30s, process in background)
-};
-
-export interface MediaRefreshJobData {
-    requestedByUserId: number;
-}
 
 export interface CompressAssetData {
     id: string;
@@ -111,10 +32,17 @@ export interface TranscodeJobData {
     assets: CompressAssetData[];
 }
 
+export const addToCompressionQueue = (data: CompressJobData) =>
+    compressionQueue.add('compress', data);
+
 // Runs on the compression queue (same worker, concurrency 1) so at most one
 // heavy ffmpeg pipeline runs at a time on constrained hardware.
 export const addToTranscodeQueue = (data: TranscodeJobData) =>
     compressionQueue.add('transcode', data);
+
+// Map of in-flight compression jobs → AbortController, keyed by CompressJobData.jobId.
+// Used by the cancel endpoint to stop ffmpeg mid-run and break the per-file loop.
+export const activeCompressionAborts = new Map<string, AbortController>();
 
 async function runTranscodeJob(data: TranscodeJobData): Promise<void> {
     const { userId, jobId, assets } = data;
@@ -145,8 +73,8 @@ async function runTranscodeJob(data: TranscodeJobData): Promise<void> {
 
         await updateJob(j => ({ ...j, status: 'transcoding', progress: {}, currentFileId: null }));
 
-        const { transcodeVideo, checkVideoCompatibility } = await import('./video-transcode.js');
-        const { db } = await import('../db/index.js');
+        const { transcodeVideo, checkVideoCompatibility } = await import('../video-transcode.js');
+        const { db } = await import('../../db/index.js');
 
         for (const asset of assets) {
             if (signal.aborted) break;
@@ -219,95 +147,7 @@ async function runTranscodeJob(data: TranscodeJobData): Promise<void> {
     }
 }
 
-export function startWorkers() {
-    const encodingWorker = new Worker<EncodingJobData>('encoding', async (job) => {
-        console.log(`[Worker] Sarting encoding job ${job.id} for ${job.data.filePath}`);
-        // Dynamic import to avoid circular dependencies
-        const { transcodeVideo, transcodeToHLS } = await import('./video-transcode.js');
-        const path = await import('node:path');
-        const { config } = await import('../config.js');
-
-        if (job.data.type === 'hls') {
-            const progressKey = `video_progress:${job.data.assetId}`;
-            await redis.set(progressKey, JSON.stringify({ percent: 0, status: 'transcoding' }), 'EX', 3600);
-
-            const hlsDir = path.default.join(path.default.dirname(config.thumbnailCachePath), 'hls', job.data.assetId);
-            try {
-                await transcodeToHLS(job.data.filePath, hlsDir, {
-                    onProgress: (percent: number) => {
-                        // fire-and-forget: ffmpeg progress callback is synchronous
-                        redis.set(
-                            progressKey,
-                            JSON.stringify({ percent, status: 'transcoding' }),
-                            'EX',
-                            3600,
-                        ).catch(() => {});
-                    },
-                });
-                await redis.set(progressKey, JSON.stringify({ percent: 100, status: 'ready' }), 'EX', 3600);
-            } catch (err: any) {
-                await redis.set(
-                    progressKey,
-                    JSON.stringify({ percent: 0, status: 'error', error: err?.message ?? 'Transcoding failed' }),
-                    'EX',
-                    3600,
-                ).catch(() => {});
-                throw err;
-            }
-        } else {
-            await transcodeVideo(job.data.filePath, job.data.assetId);
-        }
-        console.log(`[Worker] Finished encoding job ${job.id}`);
-    }, {
-        connection,
-        concurrency: 1 // Process max 1 video at a time (video transcoding is very CPU-intensive on 4-core RPi)
-    });
-
-    const thumbnailWorker = new Worker<ThumbnailJobData>('thumbnail', async (job) => {
-        const sessionId = job.data.sessionId;
-
-        // Skip jobs whose session was cancelled before this worker picked them up.
-        // remove() races against the worker pulling jobs into 'active' state, so this
-        // flag catches the small window where a job was already promoted past 'waiting'.
-        if (sessionId) {
-            const isCancelled = await redis.get(THUMBNAIL_SESSION_CANCELLED_KEY(sessionId));
-            if (isCancelled) {
-                console.log(`[Worker] Skipping cancelled thumbnail job ${job.id} (session ${sessionId})`);
-                return;
-            }
-        }
-
-        const abortController = new AbortController();
-        if (job.id) activeThumbnailAborts.set(job.id, abortController);
-
-        try {
-            const { generateAndSaveThumbnail, generateThumbnail } = await import('./thumbnail/index.js');
-            if (job.data.assetId) {
-                await generateAndSaveThumbnail(job.data.filePath, job.data.assetId, { signal: abortController.signal });
-            } else {
-                await generateThumbnail(job.data.filePath, { signal: abortController.signal });
-            }
-        } finally {
-            if (job.id) activeThumbnailAborts.delete(job.id);
-        }
-    }, {
-        connection,
-        concurrency: 2 // Process max 2 thumbnails at a time (optimized for 4-core Raspberry Pi)
-    });
-
-    const mediaRefreshWorker = new Worker<MediaRefreshJobData>('media-refresh', async (job) => {
-        console.log(`[Worker] Starting media refresh job ${job.id}`);
-        const { indexMediaLibrary } = await import('./media-indexer.js');
-        const { logAudit } = await import('./audit.js');
-
-        await indexMediaLibrary();
-        await logAudit(job.data.requestedByUserId, 'REFRESH_MEDIA_LIBRARY', 'media_library');
-        console.log(`[Worker] Finished media refresh job ${job.id}`);
-    }, {
-        connection,
-        concurrency: 1
-    });
-
+export function createCompressionWorker() {
     const compressionWorker = new Worker<CompressJobData | TranscodeJobData>('compression', async (job) => {
         if (job.name === 'transcode') {
             console.log(`[Worker] Starting transcode job ${job.id} (jobId=${job.data.jobId})`);
@@ -347,9 +187,9 @@ export function startWorkers() {
 
         const pathMod = await import('node:path');
         const fsMod = await import('node:fs');
-        const { config: cfg } = await import('../config.js');
-        const { compressImageAdvanced, compressVideoAdvanced, compressPdfAdvanced } = await import('./thumbnail/index.js');
-        const { canCompressFile } = await import('./file-types.js');
+        const { config: cfg } = await import('../../config.js');
+        const { compressImageAdvanced, compressVideoAdvanced, compressPdfAdvanced } = await import('../thumbnail/index.js');
+        const { canCompressFile } = await import('../file-types.js');
 
         const previewDir = pathMod.default.resolve(pathMod.default.dirname(cfg.thumbnailCachePath), 'compress-preview');
         await fsMod.promises.mkdir(previewDir, { recursive: true });
@@ -462,9 +302,6 @@ export function startWorkers() {
         concurrency: 1, // one compression at a time — CPU-intensive
     });
 
-    encodingWorker.on('error', (err) => console.error('[Worker] Encoding worker error:', err));
-    thumbnailWorker.on('error', (err) => console.error('[Worker] Thumbnail worker error:', err));
-    mediaRefreshWorker.on('error', (err) => console.error('[Worker] Media refresh worker error:', err));
     compressionWorker.on('error', (err) => console.error('[Worker] Compression worker error:', err));
     compressionWorker.on('failed', async (job, err) => {
         if (!job) return;
@@ -481,110 +318,5 @@ export function startWorkers() {
         }
     });
 
-    console.log('Background task workers started');
-
-    return { encodingWorker, thumbnailWorker, mediaRefreshWorker, compressionWorker };
-}
-
-export const addToEncodingQueue = (data: EncodingJobData) => encodingQueue.add('transcode', data);
-
-/**
- * Add thumbnail job with priority-based ordering (Bull priority queue)
- * Images: priority 10 (high) - processed first, fast (~50ms)
- * Videos: priority 1 (low) - processed in background, can take 5-30s
- *
- * If sessionId is provided, the job id is tracked in a Redis set so the client
- * can later cancel every job queued during that folder visit.
- */
-export const addToThumbnailQueue = async (data: ThumbnailJobData) => {
-    const priority = data.mediaType === 'video' ? THUMBNAIL_PRIORITY.VIDEO : THUMBNAIL_PRIORITY.IMAGE;
-    const job = await thumbnailQueue.add('generate', data, { priority });
-    if (data.sessionId && job.id) {
-        const key = THUMBNAIL_SESSION_KEY(data.sessionId);
-        try {
-            await redis.sadd(key, job.id);
-            await redis.expire(key, THUMBNAIL_SESSION_TTL_SECONDS);
-        } catch (err) {
-            console.warn('[Queue] Failed to track thumbnail session id:', err);
-        }
-    }
-    return job;
-};
-
-/**
- * Cancel every thumbnail job queued under this session id.
- * - Sets a Redis flag so workers skip jobs that race ahead of remove().
- * - Removes waiting/delayed jobs from BullMQ.
- * - Aborts any active job (kills ffmpeg for video thumbnails).
- *
- * Returns the count of jobs that were actually cancelled (waiting removals + active aborts).
- */
-export async function cancelThumbnailSession(sessionId: string): Promise<number> {
-    if (!sessionId) return 0;
-    const sessionKey = THUMBNAIL_SESSION_KEY(sessionId);
-    const cancelKey = THUMBNAIL_SESSION_CANCELLED_KEY(sessionId);
-
-    // Flag must land before remove() so any job that gets pulled into 'active'
-    // between now and remove() returning will short-circuit at the worker entry.
-    await redis.set(cancelKey, '1', 'EX', THUMBNAIL_SESSION_TTL_SECONDS);
-
-    const jobIds = await redis.smembers(sessionKey);
-    if (jobIds.length === 0) {
-        return 0;
-    }
-
-    let cancelledCount = 0;
-    await Promise.all(jobIds.map(async (jobId) => {
-        try {
-            const job = await thumbnailQueue.getJob(jobId);
-            if (!job) return;
-            const state = await job.getState();
-            if (state === 'waiting' || state === 'delayed' || state === 'prioritized' || state === 'waiting-children') {
-                await job.remove();
-                cancelledCount += 1;
-            } else if (state === 'active') {
-                const abort = activeThumbnailAborts.get(jobId);
-                if (abort) {
-                    abort.abort();
-                    cancelledCount += 1;
-                }
-            }
-        } catch (err) {
-            // Single-job failures are non-fatal; the session flag still protects the rest.
-        }
-    }));
-
-    await redis.del(sessionKey);
-    return cancelledCount;
-}
-
-export async function enqueueMediaRefresh(data: MediaRefreshJobData) {
-    const now = Date.now();
-
-    if (now - lastMediaRefreshEnqueueAt < MEDIA_REFRESH_COOLDOWN_MS) {
-        return {
-            queued: false,
-            message: 'Media library refresh was triggered recently. Please wait a few seconds.'
-        };
-    }
-
-    const jobId = 'media-library-refresh';
-    const existingJob = await mediaRefreshQueue.getJob(jobId);
-
-    if (existingJob) {
-        const state = await existingJob.getState();
-        if (state === 'waiting' || state === 'active' || state === 'delayed' || state === 'prioritized') {
-            return {
-                queued: false,
-                message: 'Media library refresh is already in progress'
-            };
-        }
-    }
-
-    await mediaRefreshQueue.add('refresh', data, { jobId });
-    lastMediaRefreshEnqueueAt = now;
-    return {
-        queued: true,
-        message: 'Media library refresh queued'
-    };
+    return compressionWorker;
 }

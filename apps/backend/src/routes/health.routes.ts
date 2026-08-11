@@ -8,7 +8,7 @@ export default async function healthRoutes(fastify: FastifyInstance) {
 
   fastify.get('/health/queues', async (_request, reply) => {
     try {
-      const { encodingQueue, thumbnailQueue, mediaRefreshQueue } = await import('../services/queue.js');
+      const { encodingQueue, thumbnailQueue, mediaRefreshQueue } = await import('../services/queue/index.js');
       const [encoding, thumbnail, mediaRefresh] = await Promise.all([
         encodingQueue.getJobCounts(),
         thumbnailQueue.getJobCounts(),

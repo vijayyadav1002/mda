@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import { config } from '../config.js';
 import { db } from '../db/index.js';
 import { isValidAssetId, resolveWithinRoot } from '../lib/media-path.js';
-import { encodingQueue } from '../services/queue.js';
+import { encodingQueue } from '../services/queue/index.js';
 import { redis } from '../services/redis.js';
 import { getWebCompatibleVideo, markTranscodeAccessed, deleteTranscodedVideo, ensureHLS, checkVideoCompatibility } from '../services/video-transcode.js';
 

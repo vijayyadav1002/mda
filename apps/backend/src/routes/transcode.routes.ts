@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import crypto from 'node:crypto';
 import { db } from '../db/index.js';
-import { addToTranscodeQueue } from '../services/queue.js';
+import { addToTranscodeQueue } from '../services/queue/index.js';
 import { redis } from '../services/redis.js';
 
 export default async function transcodeRoutes(fastify: FastifyInstance) {
