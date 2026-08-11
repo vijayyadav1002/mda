@@ -24,5 +24,8 @@ entities.json
 .claude/commands
 .prompts
 
+# Obsidian vault configuration
+.obsidian/
+
 # Superpowers subagent-driven-development workspace
 .superpowers/

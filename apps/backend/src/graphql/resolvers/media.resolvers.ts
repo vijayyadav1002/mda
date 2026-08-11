@@ -1,7 +1,7 @@
 import { db } from '../../db/index.js';
 import { logAudit } from '../../services/audit.js';
-import { compressImage, compressVideo, compressImageAdvanced, compressVideoAdvanced, compressPdfAdvanced } from '../../services/thumbnail.js';
-import { enqueueMediaRefresh, addToThumbnailQueue, cancelThumbnailSession } from '../../services/queue.js';
+import { compressImage, compressVideo, compressPdfAdvanced } from '../../services/thumbnail.js';
+import { enqueueMediaRefresh } from '../../services/queue.js';
 import { cleanupDeletedAssetCaches } from '../../services/media-cleanup.js';
 import { indexFile } from '../../services/media-indexer.js';
 import { updateCaptureDateForAsset } from '../../services/capture-date.js';
@@ -9,7 +9,7 @@ import { parseSearchTerm, toLikePattern, toDirLikePattern, buildNameMatcher } fr
 import {
   moveToTrash
 } from '../../services/trash.js';
-import { canCompressFile, canThumbnailFile } from '../../services/file-types.js';
+import { canCompressFile } from '../../services/file-types.js';
 import {
   getTagsForAssets
 } from '../../services/tags.js';
@@ -18,14 +18,10 @@ import fs from 'fs/promises';
 import path from 'path';
 import { config } from '../../config.js';
 import { buildThumbnailUrl, mapMediaAssetRow, mapTagRow } from '../helpers/media-mappers.js';
-import { cleanupCompressPreviewFiles } from '../helpers/compress-cleanup.js';
 import {
   resolveLibraryPath,
   buildDuplicatePath,
-  collectIndexableFiles,
-  listMediaFilesInDirectory,
   collectMatchingFolders,
-  buildDirectoryNode,
   SEARCH_HARD_CAP
 } from '../helpers/directory-tree.js';
 
