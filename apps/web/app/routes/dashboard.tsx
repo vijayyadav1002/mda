@@ -10,7 +10,7 @@ import { TagDialog, type TagSuggestion } from "~/components/TagDialog";
 import { RemoveTagsDialog } from "~/components/RemoveTagsDialog";
 import { ConfirmDialog } from "~/components/ConfirmDialog";
 import { SearchBar } from "~/components/SearchBar";
-import { formatDate } from "~/lib/format";
+import { formatDate, formatBytes } from "~/lib/format";
 import { getFileCategory, canCompressAsset, type FileCategory } from "~/lib/file-type";
 import type { MediaAsset, DirectoryNode, CacheStats, CacheSettingsData } from "~/lib/types";
 import {
@@ -323,13 +323,6 @@ const SEARCH_RESULTS_QUERY = `
     }
   }
 `;
-
-function formatBytes(bytes: string | number) {
-  const n = typeof bytes === "string" ? parseInt(bytes) : bytes;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
-  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
-  return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`;
-}
 
 function getFileCategoryLabel(asset: MediaAsset) {
   const labels: Record<FileCategory, string> = {

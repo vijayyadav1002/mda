@@ -8,6 +8,7 @@ import { CompressDialog } from "~/components/CompressDialog";
 import { TagDialog, type TagSuggestion } from "~/components/TagDialog";
 import { RemoveTagsDialog } from "~/components/RemoveTagsDialog";
 import { createGraphQLClient, getApiUrl, getAuthToken } from "~/lib/api";
+import { formatBytes } from "~/lib/format";
 import { useDragSelect } from "~/hooks/useDragSelect";
 
 export const meta: MetaFunction = () => [{ title: "Timeline — MDA" }];
@@ -151,15 +152,6 @@ const monthLabel = (key: string) => {
     year: "numeric",
     timeZone: "UTC",
   });
-};
-
-const formatBytes = (bytes: string | number) => {
-  const n = typeof bytes === "string" ? parseInt(bytes) : bytes;
-  if (!Number.isFinite(n)) return "";
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
-  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
-  return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`;
 };
 
 const formatDuration = (seconds: number) => {
