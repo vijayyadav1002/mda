@@ -14,6 +14,7 @@ import { formatDate, formatBytes } from "~/lib/format";
 import { getFileCategory, canCompressAsset, type FileCategory } from "~/lib/file-type";
 import type { MediaAsset, DirectoryNode, CacheStats, CacheSettingsData } from "~/lib/types";
 import { useDirectoryTree } from "~/hooks/useDirectoryTree";
+import { useMediaSelection } from "~/hooks/useMediaSelection";
 import {
   Folder, File, FileImage, FileText, Table2, ArrowLeft, ChevronDown, ChevronRight,
   Trash2, CheckSquare, Square, Users, Key, RotateCcw,
@@ -510,13 +511,21 @@ export default function Dashboard() {
     isAtRoot,
     rootSize,
   } = useDirectoryTree();
+  const {
+    selectionMode,
+    setSelectionMode,
+    selectedAssetIds,
+    setSelectedAssetIds,
+    selectedFolderPaths,
+    setSelectedFolderPaths,
+    toggleAssetSelection,
+    toggleFolderSelection,
+    toggleSelectionMode,
+  } = useMediaSelection();
   const [selectedAsset, setSelectedAsset] = useState<MediaAsset | null>(null);
   const [isViewerOpen, setIsViewerOpen] = useState(false);
   const [view, setView] = useState<"grid" | "tree">("grid");
   const [user, setUser] = useState<{ username: string; role: string } | null>(null);
-  const [selectionMode, setSelectionMode] = useState(false);
-  const [selectedAssetIds, setSelectedAssetIds] = useState<Set<string>>(new Set());
-  const [selectedFolderPaths, setSelectedFolderPaths] = useState<Set<string>>(new Set());
   const [showChangePasswordDialog, setShowChangePasswordDialog] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -1019,32 +1028,6 @@ export default function Dashboard() {
       setSelectedAsset(asset);
       setIsViewerOpen(true);
     }
-  };
-
-  const toggleAssetSelection = (assetId: string) => {
-    setSelectedAssetIds((prev) => {
-      const newSet = new Set(prev);
-      if (newSet.has(assetId)) {
-        newSet.delete(assetId);
-      } else {
-        newSet.add(assetId);
-      }
-      return newSet;
-    });
-  };
-
-  const toggleFolderSelection = (folderPath: string) => {
-    setSelectedFolderPaths((prev) => {
-      const next = new Set(prev);
-      if (next.has(folderPath)) next.delete(folderPath); else next.add(folderPath);
-      return next;
-    });
-  };
-
-  const toggleSelectionMode = () => {
-    setSelectionMode(!selectionMode);
-    setSelectedAssetIds(new Set());
-    setSelectedFolderPaths(new Set());
   };
 
   const handleDownloadSelected = () => {
