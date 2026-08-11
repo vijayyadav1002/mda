@@ -8,7 +8,7 @@ import { CompressDialog } from "~/components/CompressDialog";
 import { TagDialog, type TagSuggestion } from "~/components/TagDialog";
 import { RemoveTagsDialog } from "~/components/RemoveTagsDialog";
 import { createGraphQLClient, getApiUrl, getAuthToken } from "~/lib/api";
-import { useDragSelect } from "~/lib/useDragSelect";
+import { useDragSelect } from "~/hooks/useDragSelect";
 
 export const meta: MetaFunction = () => [{ title: "Timeline — MDA" }];
 
