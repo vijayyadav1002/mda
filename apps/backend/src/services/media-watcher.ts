@@ -1,7 +1,7 @@
 import chokidar from 'chokidar';
 import path from 'node:path';
 import { config } from '../config.js';
-import { indexFile, removeFile } from './media-indexer.js';
+import { indexFile, removeFile } from './media-indexer/index.js';
 
 const SUPPORTED_IMAGE_FORMATS = ['.jpg', '.jpeg', '.png', '.heic', '.gif', '.webp', '.bmp'];
 const SUPPORTED_VIDEO_FORMATS = ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.m4v'];

@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import { pipeline } from 'node:stream/promises';
 import { config } from '../config.js';
 import { db } from '../db/index.js';
-import { indexFile } from '../services/media-indexer.js';
+import { indexFile } from '../services/media-indexer/index.js';
 import { resolveWithinRoot } from '../lib/media-path.js';
 
 export default async function uploadRoutes(fastify: FastifyInstance) {

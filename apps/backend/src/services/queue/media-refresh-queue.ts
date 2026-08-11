@@ -51,7 +51,7 @@ export async function enqueueMediaRefresh(data: MediaRefreshJobData) {
 export function createMediaRefreshWorker() {
     const mediaRefreshWorker = new Worker<MediaRefreshJobData>('media-refresh', async (job) => {
         console.log(`[Worker] Starting media refresh job ${job.id}`);
-        const { indexMediaLibrary } = await import('../media-indexer.js');
+        const { indexMediaLibrary } = await import('../media-indexer/index.js');
         const { logAudit } = await import('../audit.js');
 
         await indexMediaLibrary();

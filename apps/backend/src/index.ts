@@ -11,7 +11,7 @@ import { resolvers } from './graphql/resolvers/index.js';
 import { buildContext } from './graphql/context.js';
 import { db } from './db/index.js';
 import { ensureAdminExists } from './services/auth.js';
-import { indexMediaLibrary } from './services/media-indexer.js';
+import { indexMediaLibrary } from './services/media-indexer/index.js';
 import { backfillCaptureDates } from './services/capture-date/index.js';
 import { startMediaWatcher } from './services/media-watcher.js';
 import { startWorkers } from './services/queue/index.js';

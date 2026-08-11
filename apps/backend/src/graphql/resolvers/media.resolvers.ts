@@ -3,7 +3,7 @@ import { logAudit } from '../../services/audit.js';
 import { compressImage, compressVideo, compressPdfAdvanced } from '../../services/thumbnail/index.js';
 import { enqueueMediaRefresh } from '../../services/queue/index.js';
 import { cleanupDeletedAssetCaches } from '../../services/media-cleanup.js';
-import { indexFile } from '../../services/media-indexer.js';
+import { indexFile } from '../../services/media-indexer/index.js';
 import { updateCaptureDateForAsset } from '../../services/capture-date/index.js';
 import { parseSearchTerm, toLikePattern, toDirLikePattern, buildNameMatcher } from '../../services/search-query.js';
 import {

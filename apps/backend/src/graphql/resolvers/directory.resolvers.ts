@@ -3,7 +3,7 @@ import { logAudit } from '../../services/audit.js';
 import { updateCaptureDateForAsset } from '../../services/capture-date/index.js';
 import { moveToTrash } from '../../services/trash.js';
 import { cleanupDeletedAssetCaches } from '../../services/media-cleanup.js';
-import { indexFile } from '../../services/media-indexer.js';
+import { indexFile } from '../../services/media-indexer/index.js';
 import type { GraphQLContext } from '../context.js';
 import {
   buildDuplicatePath,
