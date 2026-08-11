@@ -332,7 +332,6 @@ export default function Dashboard() {
     cacheStats,
     cacheSettings,
     showCachePanel,
-    fetchCacheStats,
     handleSaveCacheSettings,
     handleClearCache,
     toggleCachePanel,
