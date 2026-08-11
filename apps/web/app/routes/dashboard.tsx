@@ -11,6 +11,9 @@ import { RemoveTagsDialog } from "~/components/RemoveTagsDialog";
 import { ConfirmDialog } from "~/components/ConfirmDialog";
 import { ChangePasswordDialog } from "~/components/ChangePasswordDialog";
 import { LogoutConfirmDialog } from "~/components/LogoutConfirmDialog";
+import { NewFileDialog } from "~/components/NewFileDialog";
+import { NewFolderDialog } from "~/components/NewFolderDialog";
+import { UploadDialog } from "~/components/UploadDialog";
 import { SearchBar } from "~/components/SearchBar";
 import { formatDate, formatBytes } from "~/lib/format";
 import { getFileCategory, canCompressAsset, type FileCategory } from "~/lib/file-type";
@@ -2924,217 +2927,44 @@ export default function Dashboard() {
       />
 
       {/* New File Dialog */}
-      <Dialog open={showNewFileDialog} onOpenChange={(open) => { setShowNewFileDialog(open); if (!open) setNewFileName(''); }}>
-        <DialogContent className="bg-card border-border/20 shadow-ambient rounded-2xl">
-          <DialogHeader>
-            <DialogTitle className="font-manrope text-foreground">New File</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleCreateFile} className="space-y-4 mt-2">
-            <div className="space-y-1.5">
-              <label className="label-meta">File Name</label>
-              <div className="flex items-center gap-2">
-                <Input
-                  value={newFileName}
-                  onChange={(e) => setNewFileName(e.target.value)}
-                  placeholder="e.g. notes"
-                  required
-                  autoFocus
-                  className="bg-muted border-border/20 text-foreground placeholder:text-muted-foreground"
-                />
-                {!/\.(txt|md|markdown)$/i.test(newFileName.trim()) && (
-                  <div className="flex items-center gap-1 shrink-0">
-                    {(["md", "txt"] as const).map((type) => (
-                      <button
-                        key={type}
-                        type="button"
-                        onClick={() => setNewFileType(type)}
-                        className={`px-2.5 py-1.5 rounded-lg text-xs font-mono transition-colors ${
-                          newFileType === type
-                            ? "bg-brand-primary text-[#060e20] font-semibold"
-                            : "bg-muted text-muted-foreground hover:text-foreground"
-                        }`}
-                      >
-                        .{type}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-              {currentFolder && (
-                <p className="text-xs text-muted-foreground">
-                  Will be created inside: <span className="text-foreground font-medium">{currentFolder.name}</span>
-                </p>
-              )}
-              <p className="text-xs text-muted-foreground">
-                Opens in the editor right away. Markdown files render as a formatted preview after saving.
-              </p>
-            </div>
-            <div className="flex gap-2 justify-end pt-2">
-              <button
-                type="button"
-                onClick={() => { setShowNewFileDialog(false); setNewFileName(''); }}
-                className="px-4 py-2 rounded-xl text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={isCreatingFile || !newFileName.trim()}
-                className="px-4 py-2 rounded-xl gradient-brand text-[#060e20] font-manrope font-bold text-sm shadow-ambient hover:opacity-90 transition-opacity disabled:opacity-50"
-              >
-                {isCreatingFile ? 'Creating…' : 'Create File'}
-              </button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
+      <NewFileDialog
+        isOpen={showNewFileDialog}
+        setShowNewFileDialog={setShowNewFileDialog}
+        newFileName={newFileName}
+        setNewFileName={setNewFileName}
+        newFileType={newFileType}
+        setNewFileType={setNewFileType}
+        isCreatingFile={isCreatingFile}
+        currentFolder={currentFolder}
+        onSubmit={handleCreateFile}
+      />
 
       {/* New Folder Dialog */}
-      <Dialog open={showNewFolderDialog} onOpenChange={(open) => { setShowNewFolderDialog(open); if (!open) setNewFolderName(''); }}>
-        <DialogContent className="bg-card border-border/20 shadow-ambient rounded-2xl">
-          <DialogHeader>
-            <DialogTitle className="font-manrope text-foreground">New Folder</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleCreateFolder} className="space-y-4 mt-2">
-            <div className="space-y-1.5">
-              <label className="label-meta">Folder Name</label>
-              <Input
-                value={newFolderName}
-                onChange={(e) => setNewFolderName(e.target.value)}
-                placeholder="e.g. Vacation 2024"
-                required
-                autoFocus
-                className="bg-muted border-border/20 text-foreground placeholder:text-muted-foreground"
-              />
-              {currentFolder && (
-                <p className="text-xs text-muted-foreground">
-                  Will be created inside: <span className="text-foreground font-medium">{currentFolder.name}</span>
-                </p>
-              )}
-            </div>
-            <div className="flex gap-2 justify-end pt-2">
-              <button
-                type="button"
-                onClick={() => { setShowNewFolderDialog(false); setNewFolderName(''); }}
-                className="px-4 py-2 rounded-xl text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={isCreatingFolder || !newFolderName.trim()}
-                className="px-4 py-2 rounded-xl gradient-brand text-[#060e20] font-manrope font-bold text-sm shadow-ambient hover:opacity-90 transition-opacity disabled:opacity-50"
-              >
-                {isCreatingFolder ? 'Creating…' : 'Create Folder'}
-              </button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
+      <NewFolderDialog
+        isOpen={showNewFolderDialog}
+        setShowNewFolderDialog={setShowNewFolderDialog}
+        newFolderName={newFolderName}
+        setNewFolderName={setNewFolderName}
+        isCreatingFolder={isCreatingFolder}
+        currentFolder={currentFolder}
+        onSubmit={handleCreateFolder}
+      />
 
       {/* Upload Dialog */}
-      <Dialog open={showUploadDialog} onOpenChange={(open) => { if (!isUploading) { setShowUploadDialog(open); if (!open) { setUploadFiles([]); setUploadProgress({}); } } }}>
-        <DialogContent className="bg-card border-border/20 shadow-ambient rounded-2xl max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="font-manrope text-foreground">Upload Media</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 mt-2">
-            {/* Folder selector */}
-            <div className="space-y-1.5">
-              <label className="label-meta">Upload to Folder</label>
-              <select
-                value={uploadTargetPath}
-                onChange={(e) => setUploadTargetPath(e.target.value)}
-                className="w-full bg-muted border border-border/20 rounded-xl px-3 py-2 text-sm text-foreground focus:outline-hidden focus:ring-2 focus:ring-brand-primary/30"
-              >
-                {allDirectories.map((dir) => (
-                  <option key={dir.path} value={dir.path}>{dir.displayName}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Drop zone */}
-            <div>
-              <label className="label-meta mb-1.5 block">Files</label>
-              <div
-                role="button"
-                tabIndex={0}
-                className="border-2 border-dashed border-border/30 rounded-xl p-8 text-center cursor-pointer hover:border-brand-primary/50 transition-colors"
-                onClick={() => fileInputRef.current?.click()}
-                onKeyDown={(e) => e.key === 'Enter' && fileInputRef.current?.click()}
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={(e) => { e.preventDefault(); setUploadFiles(Array.from(e.dataTransfer.files)); }}
-              >
-                <Upload className="w-8 h-8 text-muted-foreground/40 mx-auto mb-3" />
-                <p className="text-sm text-muted-foreground">
-                  {uploadFiles.length > 0
-                    ? `${uploadFiles.length} file(s) selected`
-                    : 'Drag & drop or click to select files'}
-                </p>
-                <p className="text-xs text-muted-foreground/60 mt-1">Any file type · Max 1 GB per file</p>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  multiple
-                  className="hidden"
-                  onChange={(e) => setUploadFiles(Array.from(e.target.files || []))}
-                />
-              </div>
-            </div>
-
-            {/* File list with progress */}
-            {uploadFiles.length > 0 && (
-              <div className="space-y-2 max-h-44 overflow-y-auto pr-1">
-                {uploadFiles.map((file) => (
-                  <div key={file.name} className="flex items-center gap-3 bg-muted rounded-xl px-3 py-2">
-                    <FileImage className="w-4 h-4 text-muted-foreground shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs text-foreground truncate">{file.name}</p>
-                      {isUploading && (
-                        <div className="mt-1.5 h-1 bg-muted-foreground/20 rounded-full overflow-hidden">
-                          <div
-                            className="h-full gradient-brand rounded-full transition-all duration-300"
-                            style={{ width: `${uploadProgress[file.name] ?? 0}%` }}
-                          />
-                        </div>
-                      )}
-                    </div>
-                    <span className="text-xs text-muted-foreground shrink-0">{formatBytes(file.size)}</span>
-                    {!isUploading && (
-                      <button
-                        type="button"
-                        onClick={() => setUploadFiles((prev) => prev.filter((f) => f.name !== file.name))}
-                        className="p-1 rounded-lg hover:bg-accent text-muted-foreground hover:text-foreground transition-colors shrink-0"
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <div className="flex gap-2 justify-end pt-2">
-              <button
-                type="button"
-                onClick={() => { setShowUploadDialog(false); setUploadFiles([]); setUploadProgress({}); }}
-                disabled={isUploading}
-                className="px-4 py-2 rounded-xl text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-all disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleUpload}
-                disabled={uploadFiles.length === 0 || isUploading}
-                className="px-4 py-2 rounded-xl gradient-brand text-[#060e20] font-manrope font-bold text-sm shadow-ambient hover:opacity-90 transition-opacity disabled:opacity-50"
-              >
-                {isUploading ? 'Uploading…' : `Upload${uploadFiles.length > 0 ? ` (${uploadFiles.length})` : ''}`}
-              </button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <UploadDialog
+        isOpen={showUploadDialog}
+        setShowUploadDialog={setShowUploadDialog}
+        uploadFiles={uploadFiles}
+        setUploadFiles={setUploadFiles}
+        uploadTargetPath={uploadTargetPath}
+        setUploadTargetPath={setUploadTargetPath}
+        uploadProgress={uploadProgress}
+        setUploadProgress={setUploadProgress}
+        isUploading={isUploading}
+        fileInputRef={fileInputRef}
+        handleUpload={handleUpload}
+        allDirectories={allDirectories}
+      />
 
       <ConfirmDialog
         open={confirmDialog.open}
