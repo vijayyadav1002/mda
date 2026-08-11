@@ -6,7 +6,7 @@ import { db } from '../db/index.js';
 import { isValidAssetId, resolveWithinRoot } from '../lib/media-path.js';
 import { encodingQueue } from '../services/queue/index.js';
 import { redis } from '../services/redis.js';
-import { getWebCompatibleVideo, markTranscodeAccessed, deleteTranscodedVideo, ensureHLS, checkVideoCompatibility } from '../services/video-transcode.js';
+import { getWebCompatibleVideo, markTranscodeAccessed, deleteTranscodedVideo, ensureHLS, checkVideoCompatibility } from '../services/video-transcode/index.js';
 
 export default async function videoRoutes(fastify: FastifyInstance) {
   // Lightweight playback negotiation — does not block on transcoding

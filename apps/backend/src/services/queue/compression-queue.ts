@@ -73,7 +73,7 @@ async function runTranscodeJob(data: TranscodeJobData): Promise<void> {
 
         await updateJob(j => ({ ...j, status: 'transcoding', progress: {}, currentFileId: null }));
 
-        const { transcodeVideo, checkVideoCompatibility } = await import('../video-transcode.js');
+        const { transcodeVideo, checkVideoCompatibility } = await import('../video-transcode/index.js');
         const { db } = await import('../../db/index.js');
 
         for (const asset of assets) {

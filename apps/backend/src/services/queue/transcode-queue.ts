@@ -27,7 +27,7 @@ export function createEncodingWorker() {
     const encodingWorker = new Worker<EncodingJobData>('encoding', async (job) => {
         console.log(`[Worker] Sarting encoding job ${job.id} for ${job.data.filePath}`);
         // Dynamic import to avoid circular dependencies
-        const { transcodeVideo, transcodeToHLS } = await import('../video-transcode.js');
+        const { transcodeVideo, transcodeToHLS } = await import('../video-transcode/index.js');
         const path = await import('node:path');
         const { config } = await import('../../config.js');
 
