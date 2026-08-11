@@ -12,12 +12,14 @@ import { ConfirmDialog } from "~/components/ConfirmDialog";
 import { SearchBar } from "~/components/SearchBar";
 import { formatDate, formatBytes } from "~/lib/format";
 import { getFileCategory, canCompressAsset, type FileCategory } from "~/lib/file-type";
-import type { MediaAsset, DirectoryNode, CacheStats, CacheSettingsData } from "~/lib/types";
+import type { MediaAsset, DirectoryNode } from "~/lib/types";
 import { useDirectoryTree } from "~/hooks/useDirectoryTree";
 import { useMediaSelection } from "~/hooks/useMediaSelection";
 import { useTagActions } from "~/hooks/useTagActions";
 import { useThumbnailObserver } from "~/hooks/useThumbnailObserver";
 import { useFileUpload } from "~/hooks/useFileUpload";
+import { useCacheSettings } from "~/hooks/useCacheSettings";
+import { CachePanelBody } from "~/components/CachePanelBody";
 import {
   Folder, File, FileImage, FileText, Table2, ArrowLeft, ChevronDown, ChevronRight,
   Trash2, CheckSquare, Square, Users, Key, RotateCcw,
@@ -160,45 +162,6 @@ const MEDIA_ASSET_QUERY = `
   }
 `;
 
-const CACHE_STATS_QUERY = `
-  query CacheStats {
-    cacheStats {
-      totalBytes
-      thumbnails { label bytes fileCount maxBytes }
-      previews   { label bytes fileCount maxBytes }
-      hls        { label bytes fileCount maxBytes }
-      transcoded { label bytes fileCount maxBytes }
-    }
-  }
-`;
-
-const CLEAR_CACHE_MUTATION = `
-  mutation ClearCache($type: String!) {
-    clearCache(type: $type) {
-      totalBytes
-      thumbnails { label bytes fileCount maxBytes }
-      previews   { label bytes fileCount maxBytes }
-      hls        { label bytes fileCount maxBytes }
-      transcoded { label bytes fileCount maxBytes }
-    }
-  }
-`;
-
-const CACHE_SETTINGS_FIELDS = `
-  thumbnailCacheMaxMb previewCacheMaxMb hlsCacheMaxMb transcodedCacheMaxMb
-  previewCacheMaxAgeDays hlsCacheMaxAgeHours
-`;
-
-const CACHE_SETTINGS_QUERY = `
-  query CacheSettings { cacheSettings { ${CACHE_SETTINGS_FIELDS} } }
-`;
-
-const UPDATE_CACHE_SETTINGS_MUTATION = `
-  mutation UpdateCacheSettings($input: CacheSettingsInput!) {
-    updateCacheSettings(input: $input) { ${CACHE_SETTINGS_FIELDS} }
-  }
-`;
-
 const SEARCH_RESULTS_QUERY = `
   query SearchResults($term: String, $mediaType: String, $sortBy: String, $limit: Int, $minSize: Float, $maxSize: Float, $path: String) {
     search(term: $term, mediaType: $mediaType, sortBy: $sortBy, limit: $limit, minSize: $minSize, maxSize: $maxSize, path: $path) {
@@ -235,143 +198,6 @@ function FileTypeIcon({ asset, className }: { asset: MediaAsset; className: stri
   }
   if (category === "image" || category === "video") return <FileImage className={className} />;
   return <File className={className} />;
-}
-
-const CACHE_LIMIT_FIELDS: Array<{ key: keyof CacheSettingsData; label: string; unit: string }> = [
-  { key: "thumbnailCacheMaxMb", label: "Thumbnails", unit: "MB" },
-  { key: "previewCacheMaxMb", label: "Previews", unit: "MB" },
-  { key: "hlsCacheMaxMb", label: "HLS", unit: "MB" },
-  { key: "transcodedCacheMaxMb", label: "Transcoded", unit: "MB" },
-  { key: "previewCacheMaxAgeDays", label: "Preview age", unit: "days" },
-  { key: "hlsCacheMaxAgeHours", label: "HLS age", unit: "hrs" },
-];
-
-function CachePanelBody({
-  cacheStats,
-  cacheSettings,
-  onClear,
-  onSaveSettings,
-}: Readonly<{
-  cacheStats: CacheStats;
-  cacheSettings: CacheSettingsData | null;
-  onClear: (type: "thumbnails" | "previews" | "hls" | "transcoded" | "all") => void;
-  onSaveSettings: (input: Partial<CacheSettingsData>) => Promise<void>;
-}>) {
-  const [showLimits, setShowLimits] = useState(false);
-  const [draft, setDraft] = useState<Record<string, string>>({});
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-
-  const openEditor = () => {
-    if (!showLimits && cacheSettings) {
-      setDraft(Object.fromEntries(CACHE_LIMIT_FIELDS.map(({ key }) => [key, String(cacheSettings[key])])));
-      setSaveError(null);
-    }
-    setShowLimits((p) => !p);
-  };
-
-  const handleSave = async () => {
-    const input: Partial<CacheSettingsData> = {};
-    for (const { key } of CACHE_LIMIT_FIELDS) {
-      const value = Number.parseInt(draft[key] ?? "", 10);
-      if (!Number.isFinite(value) || value <= 0) {
-        setSaveError("All values must be positive numbers");
-        return;
-      }
-      input[key] = value;
-    }
-    setSaving(true);
-    setSaveError(null);
-    try {
-      await onSaveSettings(input);
-      setShowLimits(false);
-    } catch (err: any) {
-      setSaveError(err?.response?.errors?.[0]?.message ?? err?.message ?? "Failed to save");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="px-3 pb-3 pt-2 space-y-2 border-t border-border/20">
-      {(["thumbnails", "previews", "hls", "transcoded"] as const).map((key) => {
-        const s = cacheStats[key];
-        const usage = s.maxBytes > 0 ? Math.min(100, (s.bytes / s.maxBytes) * 100) : 0;
-        return (
-          <div key={key} className="space-y-1">
-            <div className="flex items-center justify-between gap-2 text-xs">
-              <span className="text-muted-foreground truncate">{s.label}</span>
-              <div className="flex items-center gap-2 shrink-0">
-                <span className="font-mono text-foreground">
-                  {formatBytes(s.bytes)}
-                  <span className="text-muted-foreground"> / {formatBytes(s.maxBytes)}</span>
-                </span>
-                <button
-                  type="button"
-                  onClick={() => onClear(key)}
-                  className="text-destructive hover:underline"
-                >
-                  Clear
-                </button>
-              </div>
-            </div>
-            <div className="h-1 rounded-full bg-muted/60 overflow-hidden">
-              <div
-                className={`h-full rounded-full transition-[width] duration-500 ${usage > 90 ? "bg-destructive" : "gradient-brand"}`}
-                style={{ width: `${Math.max(usage, 2)}%` }}
-              />
-            </div>
-          </div>
-        );
-      })}
-
-      {cacheSettings && (
-        <button
-          type="button"
-          onClick={openEditor}
-          className="w-full text-xs text-muted-foreground border border-border/40 rounded-lg py-1.5 hover:text-foreground hover:bg-accent transition-colors"
-        >
-          {showLimits ? "Hide limits" : "Configure limits"}
-        </button>
-      )}
-
-      {showLimits && cacheSettings && (
-        <div className="space-y-2 pt-1">
-          <div className="grid grid-cols-2 gap-2">
-            {CACHE_LIMIT_FIELDS.map(({ key, label, unit }) => (
-              <label key={key} className="text-[10px] text-muted-foreground space-y-0.5 block">
-                <span className="block truncate">{label} ({unit})</span>
-                <input
-                  type="number"
-                  min={1}
-                  value={draft[key] ?? ""}
-                  onChange={(e) => setDraft((prev) => ({ ...prev, [key]: e.target.value }))}
-                  className="w-full px-2 py-1 rounded-lg bg-background border border-border/40 text-xs font-mono text-foreground focus:outline-hidden focus:border-brand-primary"
-                />
-              </label>
-            ))}
-          </div>
-          {saveError && <p className="text-[10px] text-destructive">{saveError}</p>}
-          <button
-            type="button"
-            onClick={() => void handleSave()}
-            disabled={saving}
-            className="w-full text-xs font-semibold gradient-brand text-[#060e20] rounded-lg py-1.5 hover:opacity-90 transition-opacity disabled:opacity-50"
-          >
-            {saving ? "Saving…" : "Save Limits"}
-          </button>
-        </div>
-      )}
-
-      <button
-        type="button"
-        onClick={() => onClear("all")}
-        className="w-full text-xs text-destructive border border-destructive/40 rounded-lg py-1.5 hover:bg-destructive/10 transition-colors"
-      >
-        Clear All
-      </button>
-    </div>
-  );
 }
 
 function SidebarNavItem({
@@ -491,9 +317,6 @@ export default function Dashboard() {
   const [renamingFolder, setRenamingFolder] = useState<{ path: string; name: string } | null>(null);
   const [renameFolderValue, setRenameFolderValue] = useState('');
   const [isRenamingFolder, setIsRenamingFolder] = useState(false);
-  const [cacheStats, setCacheStats] = useState<CacheStats | null>(null);
-  const [cacheSettings, setCacheSettings] = useState<CacheSettingsData | null>(null);
-  const [showCachePanel, setShowCachePanel] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState<{
     open: boolean;
     title: string;
@@ -553,6 +376,22 @@ export default function Dashboard() {
     fileInputRef,
     handleUpload,
   } = useFileUpload({ currentPath, rootPath, loadDirectoryIntoCache });
+  const {
+    cacheStats,
+    cacheSettings,
+    showCachePanel,
+    fetchCacheStats,
+    handleSaveCacheSettings,
+    handleClearCache,
+    toggleCachePanel,
+  } = useCacheSettings({
+    userRole: user?.role,
+    rootPath,
+    currentPath,
+    loadDirectoryIntoCache,
+    setDirectoryCache,
+    openConfirm,
+  });
   const [searchQuery, setSearchQuery] = useState<{ term: string; mediaType: string } | null>(null);
   const [searchAssets, setSearchAssets] = useState<MediaAsset[]>([]);
   const [searchFolders, setSearchFolders] = useState<{ name: string; path: string; parentPath?: string | null }[]>([]);
@@ -717,31 +556,6 @@ export default function Dashboard() {
     const zipName = `${folderName || "media"}-${ids.length}-files.zip`;
     const url = `${API_URL}/download-zip?ids=${ids.join(",")}&name=${encodeURIComponent(zipName)}`;
     window.location.href = url;
-  };
-
-  const handleClearCache = (type: string) => {
-    openConfirm({
-      title: "Clear Cache",
-      description: `Clear ${type === "all" ? "all caches" : `${type} cache`}?`,
-      warning: "This cannot be undone.",
-      confirmLabel: "Clear",
-      onConfirm: async () => {
-        try {
-          const token = getAuthToken();
-          if (!token) return;
-          const client = createGraphQLClient(token);
-          const data = await client.request<{ clearCache: CacheStats }>(CLEAR_CACHE_MUTATION, { type });
-          setCacheStats(data.clearCache);
-          // Flush stale directory state so thumbnailUrl/transcodedUrl reflect the nulled DB rows
-          setDirectoryCache({});
-          if (rootPath) await loadDirectoryIntoCache(rootPath);
-          if (currentPath && currentPath !== rootPath) await loadDirectoryIntoCache(currentPath);
-        } catch (err) {
-          console.error("Failed to clear cache:", err);
-          alert("Failed to clear cache. Please try again.");
-        }
-      },
-    });
   };
 
   const handleDeleteSelected = () => {
@@ -1554,46 +1368,6 @@ export default function Dashboard() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sortOption, searchLimit, minSizeBytes, currentPath]);
 
-  const fetchCacheStats = useCallback(async () => {
-    const token = getAuthToken();
-    if (!token) return;
-    try {
-      const client = createGraphQLClient(token);
-      const data = await client.request<{ cacheStats: CacheStats }>(CACHE_STATS_QUERY);
-      setCacheStats(data.cacheStats);
-    } catch { /* non-critical */ }
-  }, []);
-
-  useEffect(() => {
-    if (user?.role !== "admin") return;
-    void fetchCacheStats();
-    const id = window.setInterval(fetchCacheStats, 10_000);
-    return () => window.clearInterval(id);
-  }, [user?.role, fetchCacheStats]);
-
-  useEffect(() => {
-    if (user?.role !== "admin") return;
-    const token = getAuthToken();
-    if (!token) return;
-    const client = createGraphQLClient(token);
-    client
-      .request<{ cacheSettings: CacheSettingsData }>(CACHE_SETTINGS_QUERY)
-      .then((data) => setCacheSettings(data.cacheSettings))
-      .catch(() => { /* non-critical */ });
-  }, [user?.role]);
-
-  const handleSaveCacheSettings = useCallback(async (input: Partial<CacheSettingsData>) => {
-    const token = getAuthToken();
-    if (!token) throw new Error("Not authenticated");
-    const client = createGraphQLClient(token);
-    const data = await client.request<{ updateCacheSettings: CacheSettingsData }>(
-      UPDATE_CACHE_SETTINGS_MUTATION,
-      { input }
-    );
-    setCacheSettings(data.updateCacheSettings);
-    void fetchCacheStats();
-  }, [fetchCacheStats]);
-
   useEffect(() => {
     if (!currentPath) return;
     const hasMissingThumbnails = currentFolderChildren.some(
@@ -1848,7 +1622,7 @@ export default function Dashboard() {
             <div className="rounded-xl border border-border/20 overflow-hidden">
               <button
                 type="button"
-                onClick={() => { setShowCachePanel((p) => { if (!p) void fetchCacheStats(); return !p; }); }}
+                onClick={toggleCachePanel}
                 className="w-full flex items-center justify-between px-3 py-2.5 text-sm text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-all"
               >
                 <span className="flex items-center gap-2">
@@ -2034,7 +1808,7 @@ export default function Dashboard() {
                   <div className="rounded-xl border border-border/20 overflow-hidden">
                     <button
                       type="button"
-                      onClick={() => { setShowCachePanel((p) => { if (!p) void fetchCacheStats(); return !p; }); }}
+                      onClick={toggleCachePanel}
                       className="w-full flex items-center justify-between px-3 py-2.5 text-sm text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-all"
                     >
                       <span className="flex items-center gap-2">
