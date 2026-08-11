@@ -1,6 +1,6 @@
 import { db } from '../../db/index.js';
 import { getTimelineSettings, updateTimelineSettings, type TimelineDateSource } from '../../services/settings.js';
-import { recomputeAllCaptureDates } from '../../services/capture-date.js';
+import { recomputeAllCaptureDates } from '../../services/capture-date/index.js';
 import { logAudit } from '../../services/audit.js';
 import type { GraphQLContext } from '../context.js';
 import { mapMediaAssetRow } from '../helpers/media-mappers.js';

@@ -4,7 +4,7 @@ import { compressImage, compressVideo, compressPdfAdvanced } from '../../service
 import { enqueueMediaRefresh } from '../../services/queue/index.js';
 import { cleanupDeletedAssetCaches } from '../../services/media-cleanup.js';
 import { indexFile } from '../../services/media-indexer.js';
-import { updateCaptureDateForAsset } from '../../services/capture-date.js';
+import { updateCaptureDateForAsset } from '../../services/capture-date/index.js';
 import { parseSearchTerm, toLikePattern, toDirLikePattern, buildNameMatcher } from '../../services/search-query.js';
 import {
   moveToTrash

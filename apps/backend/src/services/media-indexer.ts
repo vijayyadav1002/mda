@@ -5,7 +5,7 @@ import { config } from '../config.js';
 import { addToThumbnailQueue } from './queue/index.js';
 import { cleanupDeletedAssetCaches } from './media-cleanup.js';
 import { classifyFile } from './file-types.js';
-import { resolveCaptureDateAuto, updateCaptureDateForAsset } from './capture-date.js';
+import { resolveCaptureDateAuto, updateCaptureDateForAsset } from './capture-date/index.js';
 
 type IndexFileResult = 'indexed' | 'up_to_date' | 'thumbnail_requeued' | 'unsupported';
 type IndexOptions = {
