@@ -6,7 +6,7 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { config } from '../../config.js';
 import { classifyFile } from '../file-types.js';
-import type { ThumbnailGenerationOptions } from './index.js';
+import type { ThumbnailGenerationOptions } from './types.js';
 
 export const DOCUMENT_THUMBNAIL_FORMATS = ['.pdf', '.docx', '.txt', '.md', '.markdown', '.xlsx'];
 

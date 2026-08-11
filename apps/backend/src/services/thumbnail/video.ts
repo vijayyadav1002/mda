@@ -1,7 +1,7 @@
 import ffmpeg from 'fluent-ffmpeg';
 import path from 'path';
 import { config } from '../../config.js';
-import type { ThumbnailGenerationOptions } from './index.js';
+import type { ThumbnailGenerationOptions } from './types.js';
 
 export const SUPPORTED_VIDEO_FORMATS = ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.m4v'];
 
