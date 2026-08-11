@@ -1,8 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { createGraphQLClient, getApiUrl, getAuthToken, clearAuthToken } from "~/lib/api";
-import { Input } from "~/components/ui/input";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "~/components/ui/dialog";
 import { MediaAssetViewer } from "~/components/MediaAssetViewer";
 import { CompressDialog } from "~/components/CompressDialog";
 import { CompressQueuePanel, type CompressJob } from "~/components/CompressQueuePanel";
@@ -14,6 +12,9 @@ import { LogoutConfirmDialog } from "~/components/LogoutConfirmDialog";
 import { NewFileDialog } from "~/components/NewFileDialog";
 import { NewFolderDialog } from "~/components/NewFolderDialog";
 import { UploadDialog } from "~/components/UploadDialog";
+import { MoveDialog } from "~/components/MoveDialog";
+import { DuplicateDialog } from "~/components/DuplicateDialog";
+import { RenameFolderDialog } from "~/components/RenameFolderDialog";
 import { SearchBar } from "~/components/SearchBar";
 import { formatDate, formatBytes } from "~/lib/format";
 import { getFileCategory, canCompressAsset, type FileCategory } from "~/lib/file-type";
@@ -2728,188 +2729,46 @@ export default function Dashboard() {
       />
 
       {/* Duplicate Asset */}
-      <Dialog open={showDuplicateDialog} onOpenChange={(open) => { if (!open) { setShowDuplicateDialog(false); setDuplicateTargetFolderPath(''); setDuplicateSourceFolder(null); } }}>
-        <DialogContent className="bg-card border-border/20 shadow-ambient rounded-2xl">
-          <DialogHeader>
-            <DialogTitle className="font-manrope font-bold text-foreground">
-              {duplicateSourceFolder ? 'Duplicate Folder' : 'Duplicate File'}
-            </DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-muted-foreground -mt-1">
-            Choose where to place a copy of{' '}
-            <strong className="text-foreground font-medium">
-              {duplicateSourceFolder?.name ?? selectedAsset?.fileName}
-            </strong>
-          </p>
-          <div className="max-h-60 overflow-y-auto space-y-1 border border-border/20 rounded-xl p-2 mt-1">
-            {allAvailableFolders.map((folder) => {
-              const relPath = rootPath && folder.path !== rootPath
-                ? folder.path.replace(rootPath, '') || '/'
-                : '/';
-              const isPickerSelected = duplicateTargetFolderPath === folder.path;
-              const currentFolderPath = selectedAsset?.filePath.substring(0, selectedAsset.filePath.lastIndexOf('/'));
-              const sourceFolderPath = duplicateSourceFolder?.path;
-              const isCurrent = duplicateSourceFolder
-                ? sourceFolderPath?.substring(0, sourceFolderPath.lastIndexOf('/')) === folder.path
-                : currentFolderPath === folder.path;
-              const isInvalidDest = !!sourceFolderPath && (
-                folder.path === sourceFolderPath || folder.path.startsWith(`${sourceFolderPath}/`)
-              );
-              return (
-                <button
-                  key={folder.path}
-                  type="button"
-                  disabled={isInvalidDest}
-                  onClick={() => setDuplicateTargetFolderPath(folder.path)}
-                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all text-left ${
-                    isPickerSelected
-                      ? 'bg-brand-primary/20 text-brand-primary'
-                      : isInvalidDest
-                        ? 'opacity-40 cursor-not-allowed text-foreground'
-                        : 'hover:bg-accent text-foreground'
-                  }`}
-                >
-                  <Folder className="w-4 h-4 shrink-0" />
-                  <span className="font-mono text-xs truncate">{relPath}</span>
-                  {isCurrent && <span className="ml-auto text-xs text-muted-foreground">current</span>}
-                  {isInvalidDest && <span className="ml-auto text-xs text-muted-foreground">inside source</span>}
-                </button>
-              );
-            })}
-            {allAvailableFolders.length === 0 && (
-              <p className="text-xs text-muted-foreground text-center py-4">No folders available</p>
-            )}
-          </div>
-          <div className="flex gap-3 mt-2">
-            <button
-              type="button"
-              onClick={() => { setShowDuplicateDialog(false); setDuplicateTargetFolderPath(''); setDuplicateSourceFolder(null); }}
-              className="flex-1 py-2.5 rounded-xl border border-border/30 text-sm text-foreground hover:bg-accent transition-all"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              disabled={!duplicateTargetFolderPath || isDuplicating}
-              onClick={() => void handleDuplicateAsset()}
-              className="flex-1 inline-flex items-center justify-center gap-2 py-2.5 rounded-xl gradient-brand text-[#060e20] font-manrope font-bold text-sm disabled:opacity-50 transition-all"
-            >
-              <Copy className="w-4 h-4" />
-              {isDuplicating ? 'Duplicating…' : 'Duplicate Here'}
-            </button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <DuplicateDialog
+        isOpen={showDuplicateDialog}
+        setShowDuplicateDialog={setShowDuplicateDialog}
+        duplicateTargetFolderPath={duplicateTargetFolderPath}
+        setDuplicateTargetFolderPath={setDuplicateTargetFolderPath}
+        duplicateSourceFolder={duplicateSourceFolder}
+        setDuplicateSourceFolder={setDuplicateSourceFolder}
+        allAvailableFolders={allAvailableFolders}
+        rootPath={rootPath}
+        selectedAsset={selectedAsset}
+        isDuplicating={isDuplicating}
+        handleDuplicateAsset={handleDuplicateAsset}
+      />
 
       {/* Move Asset */}
-      <Dialog open={showMoveDialog} onOpenChange={(open) => { if (!open) { setShowMoveDialog(false); setMoveTargetFolderPath(''); } }}>
-        <DialogContent className="bg-card border-border/20 shadow-ambient rounded-2xl">
-          <DialogHeader>
-            <DialogTitle className="font-manrope font-bold text-foreground">
-              {selectionMode ? 'Move Items' : 'Move File'}
-            </DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-muted-foreground -mt-1">
-            {selectionMode
-              ? <>Move <strong className="text-foreground font-medium">{selectedAssetIds.size + selectedFolderPaths.size} selected items</strong> to a new location</>
-              : <>Select destination for <strong className="text-foreground font-medium">{selectedAsset?.fileName}</strong></>
-            }
-          </p>
-          <div className="max-h-60 overflow-y-auto space-y-1 border border-border/20 rounded-xl p-2 mt-1">
-            {allAvailableFolders.map((folder) => {
-              const relPath = rootPath && folder.path !== rootPath
-                ? folder.path.replace(rootPath, '') || '/'
-                : '/';
-              const isPickerSelected = moveTargetFolderPath === folder.path;
-              const isCurrent = !selectionMode && selectedAsset
-                ? selectedAsset.filePath.substring(0, selectedAsset.filePath.lastIndexOf('/')) === folder.path
-                : false;
-              const isInvalidDest = selectionMode && (
-                selectedFolderPaths.has(folder.path) ||
-                [...selectedFolderPaths].some(fp => folder.path.startsWith(fp + '/'))
-              );
-              const isDisabled = isCurrent || isInvalidDest;
-              return (
-                <button
-                  key={folder.path}
-                  type="button"
-                  disabled={isDisabled}
-                  onClick={() => setMoveTargetFolderPath(folder.path)}
-                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all text-left ${
-                    isPickerSelected
-                      ? 'bg-brand-primary/20 text-brand-primary'
-                      : isDisabled
-                        ? 'opacity-40 cursor-not-allowed text-foreground'
-                        : 'hover:bg-accent text-foreground'
-                  }`}
-                >
-                  <Folder className="w-4 h-4 shrink-0" />
-                  <span className="font-mono text-xs truncate">{relPath}</span>
-                  {isCurrent && <span className="ml-auto text-xs text-muted-foreground">current</span>}
-                  {isInvalidDest && <span className="ml-auto text-xs text-muted-foreground">selected</span>}
-                </button>
-              );
-            })}
-            {allAvailableFolders.length === 0 && (
-              <p className="text-xs text-muted-foreground text-center py-4">No folders available</p>
-            )}
-          </div>
-          <div className="flex gap-3 mt-2">
-            <button
-              type="button"
-              onClick={() => { setShowMoveDialog(false); setMoveTargetFolderPath(''); }}
-              className="flex-1 py-2.5 rounded-xl border border-border/30 text-sm text-foreground hover:bg-accent transition-all"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              disabled={!moveTargetFolderPath || isMoving}
-              onClick={() => void (selectionMode ? handleBulkMove() : handleMoveAsset())}
-              className="flex-1 py-2.5 rounded-xl gradient-brand text-[#060e20] font-manrope font-bold text-sm disabled:opacity-50 transition-all"
-            >
-              {isMoving ? 'Moving…' : 'Move Here'}
-            </button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <MoveDialog
+        isOpen={showMoveDialog}
+        setShowMoveDialog={setShowMoveDialog}
+        moveTargetFolderPath={moveTargetFolderPath}
+        setMoveTargetFolderPath={setMoveTargetFolderPath}
+        allAvailableFolders={allAvailableFolders}
+        rootPath={rootPath}
+        selectionMode={selectionMode}
+        selectedAsset={selectedAsset}
+        selectedAssetCount={selectedAssetIds.size}
+        selectedFolderPaths={selectedFolderPaths}
+        isMoving={isMoving}
+        handleMoveAsset={handleMoveAsset}
+        handleBulkMove={handleBulkMove}
+      />
 
       {/* Rename Folder */}
-      <Dialog open={!!renamingFolder} onOpenChange={(open) => { if (!open) { setRenamingFolder(null); setRenameFolderValue(''); } }}>
-        <DialogContent className="bg-card border-border/20 shadow-ambient rounded-2xl">
-          <DialogHeader>
-            <DialogTitle className="font-manrope font-bold text-foreground">Rename Folder</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={(e) => void handleRenameFolder(e)} className="space-y-4 mt-1">
-            <div className="space-y-1.5">
-              <label className="label-meta">New name</label>
-              <Input
-                autoFocus
-                value={renameFolderValue}
-                onChange={(e) => setRenameFolderValue(e.target.value)}
-                placeholder={renamingFolder?.name ?? ''}
-                className="bg-muted border-border/20 text-foreground"
-              />
-            </div>
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={() => { setRenamingFolder(null); setRenameFolderValue(''); }}
-                className="flex-1 py-2.5 rounded-xl border border-border/30 text-sm text-foreground hover:bg-accent transition-all"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={!renameFolderValue.trim() || isRenamingFolder}
-                className="flex-1 py-2.5 rounded-xl gradient-brand text-[#060e20] font-manrope font-bold text-sm disabled:opacity-50 transition-all"
-              >
-                {isRenamingFolder ? 'Renaming…' : 'Rename'}
-              </button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
+      <RenameFolderDialog
+        renamingFolder={renamingFolder}
+        setRenamingFolder={setRenamingFolder}
+        renameFolderValue={renameFolderValue}
+        setRenameFolderValue={setRenameFolderValue}
+        isRenamingFolder={isRenamingFolder}
+        onSubmit={(e) => void handleRenameFolder(e)}
+      />
 
       {/* Change Password */}
       <ChangePasswordDialog
