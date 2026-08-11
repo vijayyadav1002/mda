@@ -3,8 +3,6 @@ import { getTimelineSettings, updateTimelineSettings, type TimelineDateSource } 
 import { recomputeAllCaptureDates } from '../../services/capture-date.js';
 import { logAudit } from '../../services/audit.js';
 import type { GraphQLContext } from '../context.js';
-import path from 'path';
-import { config } from '../../config.js';
 import { mapMediaAssetRow } from '../helpers/media-mappers.js';
 
 export const timelineQueryResolvers = {

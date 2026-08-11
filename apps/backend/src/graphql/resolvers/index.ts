@@ -1,4 +1,3 @@
-import type { GraphQLContext } from '../context.js';
 import { authQueryResolvers, authMutationResolvers } from './auth.resolvers.js';
 import { mediaQueryResolvers, mediaMutationResolvers, mediaAssetTypeResolvers } from './media.resolvers.js';
 import { directoryQueryResolvers, directoryMutationResolvers } from './directory.resolvers.js';
