@@ -36,22 +36,6 @@ const fastify = Fastify({
   trustProxy: true
 });
 
-async function authenticateRequest(request: any) {
-  const authHeader = request.headers.authorization as string | undefined;
-  const queryToken = typeof request.query?.token === 'string' ? request.query.token : undefined;
-  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : queryToken;
-  if (!token) return null;
-
-  try {
-    const decoded = fastify.jwt.verify<any>(token);
-    const userResult = await db.query('SELECT id, role FROM users WHERE id = $1', [decoded.id]);
-    if (userResult.rows.length === 0) return null;
-    return { id: String(userResult.rows[0].id), role: userResult.rows[0].role as string };
-  } catch {
-    return null;
-  }
-}
-
 // Register plugins
 await fastify.register(cors, {
   origin: true,
