@@ -6,7 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "~/components/u
 import { MediaAssetViewer } from "~/components/MediaAssetViewer";
 import { CompressDialog } from "~/components/CompressDialog";
 import { CompressQueuePanel, type CompressJob } from "~/components/CompressQueuePanel";
-import { TagDialog, type TagSuggestion } from "~/components/TagDialog";
+import { TagDialog } from "~/components/TagDialog";
 import { RemoveTagsDialog } from "~/components/RemoveTagsDialog";
 import { ConfirmDialog } from "~/components/ConfirmDialog";
 import { SearchBar } from "~/components/SearchBar";
@@ -15,6 +15,7 @@ import { getFileCategory, canCompressAsset, type FileCategory } from "~/lib/file
 import type { MediaAsset, DirectoryNode, CacheStats, CacheSettingsData } from "~/lib/types";
 import { useDirectoryTree } from "~/hooks/useDirectoryTree";
 import { useMediaSelection } from "~/hooks/useMediaSelection";
+import { useTagActions } from "~/hooks/useTagActions";
 import {
   Folder, File, FileImage, FileText, Table2, ArrowLeft, ChevronDown, ChevronRight,
   Trash2, CheckSquare, Square, Users, Key, RotateCcw,
@@ -160,65 +161,6 @@ const MOVE_FOLDER_MUTATION = `
     moveFolder(path: $path, destinationFolder: $destinationFolder) {
       name path type
     }
-  }
-`;
-
-const LIST_TAGS_QUERY = `
-  query ListTags {
-    tags { id name assetCount }
-  }
-`;
-
-const MEDIA_ASSETS_BY_TAG_QUERY = `
-  query MediaAssetsByTag($tagName: String!, $limit: Int, $offset: Int) {
-    mediaAssetsByTag(tagName: $tagName, limit: $limit, offset: $offset) {
-      id
-      fileName
-      filePath
-      mimeType
-      fileSize
-      thumbnailUrl
-      transcodedUrl
-      createdAt
-      capturedAt
-      tags { id name }
-    }
-  }
-`;
-
-const APPLY_TAGS_MUTATION = `
-  mutation ApplyTagsToAssets($assetIds: [ID!]!, $tagNames: [String!]!) {
-    applyTagsToAssets(assetIds: $assetIds, tagNames: $tagNames) {
-      id
-      tags { id name }
-    }
-  }
-`;
-
-const REMOVE_TAGS_FROM_ASSETS_MUTATION = `
-  mutation RemoveTagsFromAssets($assetIds: [ID!]!, $tagNames: [String!]!) {
-    removeTagsFromAssets(assetIds: $assetIds, tagNames: $tagNames)
-  }
-`;
-
-const REMOVE_TAG_MUTATION = `
-  mutation RemoveTagFromAsset($assetId: ID!, $tagName: String!) {
-    removeTagFromAsset(assetId: $assetId, tagName: $tagName) {
-      id
-      tags { id name }
-    }
-  }
-`;
-
-const RENAME_TAG_MUTATION = `
-  mutation RenameTag($oldName: String!, $newName: String!) {
-    renameTag(oldName: $oldName, newName: $newName) { id name }
-  }
-`;
-
-const DELETE_TAG_MUTATION = `
-  mutation DeleteTag($name: String!) {
-    deleteTag(name: $name)
   }
 `;
 
@@ -549,18 +491,6 @@ export default function Dashboard() {
   const selectionActionsMenuRef = useRef<HTMLDivElement>(null);
   const [isCompressDialogOpen, setIsCompressDialogOpen] = useState(false);
   const [compressDialogAssets, setCompressDialogAssets] = useState<MediaAsset[]>([]);
-  const [isTagDialogOpen, setIsTagDialogOpen] = useState(false);
-  const [tagDialogAssets, setTagDialogAssets] = useState<MediaAsset[]>([]);
-  const [isRemoveTagsDialogOpen, setIsRemoveTagsDialogOpen] = useState(false);
-  const [removeTagsAssets, setRemoveTagsAssets] = useState<MediaAsset[]>([]);
-  const [tagSuggestions, setTagSuggestions] = useState<TagSuggestion[]>([]);
-  const [showTagFilterMenu, setShowTagFilterMenu] = useState(false);
-  const [activeTagFilter, setActiveTagFilter] = useState<string | null>(null);
-  const [tagFilterAssets, setTagFilterAssets] = useState<MediaAsset[]>([]);
-  const [tagFilterLoading, setTagFilterLoading] = useState(false);
-  const tagFilterMenuRef = useRef<HTMLDivElement>(null);
-  const tagFilterTriggerRef = useRef<HTMLButtonElement>(null);
-  const [tagFilterMenuRight, setTagFilterMenuRight] = useState<number>(0);
   const [compressQueue, setCompressQueue] = useState<CompressJob[]>([]);
   const [showQueuePanel, setShowQueuePanel] = useState(false);
   const compressQueueRef = useRef<CompressJob[]>([]);
@@ -598,6 +528,44 @@ export default function Dashboard() {
     confirmLabel?: string;
     onConfirm: () => Promise<void>;
   }>({ open: false, title: "", description: "", onConfirm: async () => {} });
+  const openConfirm = useCallback((opts: {
+    title: string;
+    description: string;
+    warning?: string;
+    confirmLabel?: string;
+    onConfirm: () => Promise<void>;
+  }) => {
+    setConfirmDialog({ ...opts, open: true });
+  }, []);
+  const {
+    isTagDialogOpen,
+    setIsTagDialogOpen,
+    tagDialogAssets,
+    setTagDialogAssets,
+    isRemoveTagsDialogOpen,
+    setIsRemoveTagsDialogOpen,
+    removeTagsAssets,
+    setRemoveTagsAssets,
+    tagSuggestions,
+    showTagFilterMenu,
+    setShowTagFilterMenu,
+    activeTagFilter,
+    tagFilterAssets,
+    tagFilterLoading,
+    tagFilterMenuRef,
+    tagFilterTriggerRef,
+    tagFilterMenuRight,
+    setTagFilterMenuRight,
+    tagFilterNodes,
+    refreshTagSuggestions,
+    applyTagFilter,
+    clearTagFilter,
+    applyTagsToAssets,
+    removeTagsFromAssets,
+    removeTagFromAsset,
+    handleRenameTag,
+    handleDeleteTag,
+  } = useTagActions({ currentPath, rootPath, loadDirectoryIntoCache, openConfirm });
   const [searchQuery, setSearchQuery] = useState<{ term: string; mediaType: string } | null>(null);
   const [searchAssets, setSearchAssets] = useState<MediaAsset[]>([]);
   const [searchFolders, setSearchFolders] = useState<{ name: string; path: string; parentPath?: string | null }[]>([]);
@@ -664,151 +632,6 @@ export default function Dashboard() {
       console.error("Failed to load user:", err);
     }
   };
-
-  const refreshTagSuggestions = useCallback(async () => {
-    const token = getAuthToken();
-    if (!token) return;
-    try {
-      const client = createGraphQLClient(token);
-      const data: any = await client.request(LIST_TAGS_QUERY);
-      const tags: TagSuggestion[] = (data?.tags ?? []).map((t: any) => ({
-        id: String(t.id),
-        name: t.name,
-        assetCount: t.assetCount ?? 0,
-      }));
-      setTagSuggestions(tags);
-    } catch (err) {
-      console.error("Failed to load tags:", err);
-    }
-  }, []);
-
-  const loadTagFilterAssets = useCallback(async (tagName: string) => {
-    const token = getAuthToken();
-    if (!token) return;
-    setTagFilterLoading(true);
-    try {
-      const client = createGraphQLClient(token);
-      const data: any = await client.request(MEDIA_ASSETS_BY_TAG_QUERY, {
-        tagName,
-        limit: 500,
-        offset: 0,
-      });
-      setTagFilterAssets((data?.mediaAssetsByTag ?? []) as MediaAsset[]);
-    } catch (err: any) {
-      console.error("Failed to load tag filter:", err);
-      setTagFilterAssets([]);
-    } finally {
-      setTagFilterLoading(false);
-    }
-  }, []);
-
-  const applyTagFilter = useCallback(async (tagName: string) => {
-    setActiveTagFilter(tagName);
-    setShowTagFilterMenu(false);
-    await loadTagFilterAssets(tagName);
-  }, [loadTagFilterAssets]);
-
-  const clearTagFilter = useCallback(() => {
-    setActiveTagFilter(null);
-    setTagFilterAssets([]);
-  }, []);
-
-  const applyTagsToAssets = useCallback(async (assetIds: string[], tagNames: string[]) => {
-    const token = getAuthToken();
-    if (!token) throw new Error("Not authenticated");
-    const client = createGraphQLClient(token);
-    const data: any = await client.request(APPLY_TAGS_MUTATION, { assetIds, tagNames });
-    await refreshTagSuggestions();
-    if (currentPath) await loadDirectoryIntoCache(currentPath);
-    if (rootPath && rootPath !== currentPath) await loadDirectoryIntoCache(rootPath);
-    if (activeTagFilter) await loadTagFilterAssets(activeTagFilter);
-    return data.applyTagsToAssets as Array<{ id: string; tags: Array<{ id: string; name: string }> }>;
-  }, [activeTagFilter, currentPath, loadTagFilterAssets, refreshTagSuggestions, rootPath]);
-
-  const removeTagsFromAssets = useCallback(async (assetIds: string[], tagNames: string[]) => {
-    const token = getAuthToken();
-    if (!token) throw new Error("Not authenticated");
-    const client = createGraphQLClient(token);
-    await client.request(REMOVE_TAGS_FROM_ASSETS_MUTATION, { assetIds, tagNames });
-    await refreshTagSuggestions();
-    if (currentPath) await loadDirectoryIntoCache(currentPath);
-    if (rootPath && rootPath !== currentPath) await loadDirectoryIntoCache(rootPath);
-    if (activeTagFilter) await loadTagFilterAssets(activeTagFilter);
-  }, [activeTagFilter, currentPath, loadTagFilterAssets, refreshTagSuggestions, rootPath]);
-
-  const removeTagFromAsset = useCallback(async (assetId: string, tagName: string) => {
-    const token = getAuthToken();
-    if (!token) return;
-    try {
-      const client = createGraphQLClient(token);
-      await client.request(REMOVE_TAG_MUTATION, { assetId, tagName });
-      await refreshTagSuggestions();
-      if (currentPath) await loadDirectoryIntoCache(currentPath);
-      if (activeTagFilter) await loadTagFilterAssets(activeTagFilter);
-    } catch (err: any) {
-      console.error("Failed to remove tag:", err);
-      alert(`Failed to remove tag: ${err.message || "Unknown error"}`);
-    }
-  }, [activeTagFilter, currentPath, loadTagFilterAssets, refreshTagSuggestions]);
-
-  const openConfirm = useCallback((opts: {
-    title: string;
-    description: string;
-    warning?: string;
-    confirmLabel?: string;
-    onConfirm: () => Promise<void>;
-  }) => {
-    setConfirmDialog({ ...opts, open: true });
-  }, []);
-
-  const handleRenameTag = useCallback(async (oldName: string) => {
-    const input = window.prompt(`Rename #${oldName} to:`, oldName);
-    if (input == null) return;
-    const newName = input.trim().replace(/^#/, "").toLowerCase();
-    if (!newName || newName === oldName) return;
-    const token = getAuthToken();
-    if (!token) return;
-    try {
-      const client = createGraphQLClient(token);
-      await client.request(RENAME_TAG_MUTATION, { oldName, newName });
-      await refreshTagSuggestions();
-      if (currentPath) await loadDirectoryIntoCache(currentPath);
-      if (activeTagFilter === oldName) {
-        setActiveTagFilter(newName);
-        await loadTagFilterAssets(newName);
-      } else if (activeTagFilter) {
-        await loadTagFilterAssets(activeTagFilter);
-      }
-    } catch (err: any) {
-      console.error("Failed to rename tag:", err);
-      alert(`Failed to rename tag: ${err.message || "Unknown error"}`);
-    }
-  }, [activeTagFilter, currentPath, loadTagFilterAssets, refreshTagSuggestions]);
-
-  const handleDeleteTag = useCallback((name: string) => {
-    openConfirm({
-      title: "Delete Tag",
-      description: `Delete #${name} from every file in the library?`,
-      warning: "This cannot be undone.",
-      onConfirm: async () => {
-        const token = getAuthToken();
-        if (!token) return;
-        try {
-          const client = createGraphQLClient(token);
-          await client.request(DELETE_TAG_MUTATION, { name });
-          await refreshTagSuggestions();
-          if (currentPath) await loadDirectoryIntoCache(currentPath);
-          if (activeTagFilter === name) {
-            setActiveTagFilter(null);
-            setTagFilterAssets([]);
-          }
-        } catch (err: any) {
-          console.error("Failed to delete tag:", err);
-          alert(`Failed to delete tag: ${err.message || "Unknown error"}`);
-        }
-      },
-    });
-  }, [openConfirm, activeTagFilter, currentPath, refreshTagSuggestions]);
 
   const handleLogout = () => {
     clearAuthToken();
@@ -1668,8 +1491,7 @@ export default function Dashboard() {
     if (currentPath && currentPath !== targetPath) {
       setFolderHistory((prev) => [...prev, currentPath]);
     }
-    setActiveTagFilter(null);
-    setTagFilterAssets([]);
+    clearTagFilter();
     setSearchQuery(null);
     setSearchAssets([]);
     setCurrentPath(targetPath);
@@ -1682,7 +1504,7 @@ export default function Dashboard() {
         alert(`Failed to open folder: ${err?.message || "Unknown error"}`);
       }
     }
-  }, [currentPath, directoryCache]);
+  }, [clearTagFilter, currentPath, directoryCache]);
 
   const openAssetById = useCallback(async (assetId: string) => {
     const token = getAuthToken();
@@ -1761,16 +1583,6 @@ export default function Dashboard() {
     setSelectedAsset(null);
     setAutoEditAssetId(null);
   };
-
-  const tagFilterNodes = useMemo<DirectoryNode[]>(() => {
-    return tagFilterAssets.map((asset) => ({
-      name: asset.fileName,
-      path: asset.filePath,
-      type: "file",
-      children: null,
-      mediaAsset: asset,
-    }));
-  }, [tagFilterAssets]);
 
   const searchResultNodes = useMemo<DirectoryNode[]>(() => {
     const folderNodes: DirectoryNode[] = searchFolders.map((folder) => ({
@@ -1942,16 +1754,6 @@ export default function Dashboard() {
     void handleSearch(searchQuery.term, searchQuery.mediaType);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sortOption, searchLimit, minSizeBytes, currentPath]);
-
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (tagFilterMenuRef.current && !tagFilterMenuRef.current.contains(e.target as Node)) {
-        setShowTagFilterMenu(false);
-      }
-    };
-    if (showTagFilterMenu) document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [showTagFilterMenu]);
 
   const fetchCacheStats = useCallback(async () => {
     const token = getAuthToken();
