@@ -7,16 +7,12 @@ import { getAuthToken } from "~/lib/api";
 import { formatDate } from "~/lib/format";
 import { formatFileSize, getExtension, getFileCategory, type FileCategory } from "~/lib/file-type";
 import type { MediaAsset } from "~/lib/types";
+import { ImagePreview } from "~/components/viewer/ImagePreview";
+import { VideoPreview, type TranscodeProgress } from "~/components/viewer/VideoPreview";
 
 type VideoSource =
   | { kind: "mp4"; url: string }
   | { kind: "hls"; playlistUrl: string; progressUrl: string; ready: boolean };
-
-interface TranscodeProgress {
-  percent: number;
-  status: string;
-  playlistReady?: boolean;
-}
 
 interface MediaAssetViewerProps {
   readonly asset: MediaAsset | null;
@@ -458,42 +454,17 @@ export function MediaAssetViewer({
         </div>
 
         {isImage && (
-          <button type="button" onClick={() => setIsFullscreen(false)} className="focus:outline-hidden">
-            <img
-              src={originalImageUrl}
-              alt={asset.fileName}
-              className="max-w-full max-h-[calc(100vh-120px)] object-contain"
-            />
-          </button>
+          <ImagePreview
+            asset={asset}
+            imageUrl={originalImageUrl}
+            apiUrl={apiUrl}
+            isFullscreen={true}
+            onToggleFullscreen={() => setIsFullscreen(false)}
+            onImageLoad={handleImageLoad}
+          />
         )}
         {isVideo && (
-          <div className="relative flex items-center justify-center">
-            <video
-              ref={fullscreenVideoRef}
-              controls
-              autoPlay
-              className="max-w-full max-h-[calc(100vh-120px)] object-contain"
-              preload="metadata"
-            >
-              <track kind="captions" />
-            </video>
-            {transcodeProgress && transcodeProgress.status !== "ready" && transcodeProgress.status !== "unknown" && (
-              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center bg-black/50 backdrop-blur-xs text-white">
-                <p className="font-manrope font-semibold mb-3">
-                  {transcodeProgress.status === "queued" ? "Preparing video…" : "Transcoding for playback"}
-                </p>
-                <div className="w-64 h-2 bg-white/20 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-emerald-400 transition-[width] duration-500"
-                    style={{ width: `${Math.max(2, Math.round(transcodeProgress.percent))}%` }}
-                  />
-                </div>
-                <p className="text-xs text-white/70 mt-2">
-                  {Math.round(transcodeProgress.percent)}% — playback will start automatically when ready
-                </p>
-              </div>
-            )}
-          </div>
+          <VideoPreview videoRef={fullscreenVideoRef} transcodeProgress={transcodeProgress} isFullscreen={true} />
         )}
         {isPdf && (
           <iframe
@@ -535,50 +506,17 @@ export function MediaAssetViewer({
         >
           {navigationOverlay}
           {isImage && (
-            <button
-              type="button"
-              onClick={() => setIsFullscreen(true)}
-              className="w-full h-full focus:outline-hidden cursor-zoom-in"
-              title="View fullscreen"
-            >
-              <img
-                src={originalImageUrl}
-                alt={asset.fileName}
-                className="w-full h-full object-contain max-h-[40vh] md:max-h-[90vh]"
-                onLoad={handleImageLoad}
-                onError={(e) => {
-                  if (asset.thumbnailUrl) e.currentTarget.src = `${apiUrl}${asset.thumbnailUrl}`;
-                }}
-              />
-            </button>
+            <ImagePreview
+              asset={asset}
+              imageUrl={originalImageUrl}
+              apiUrl={apiUrl}
+              isFullscreen={false}
+              onToggleFullscreen={() => setIsFullscreen(true)}
+              onImageLoad={handleImageLoad}
+            />
           )}
           {isVideo && (
-            <div className="relative w-full h-full flex items-center justify-center">
-              <video
-                ref={splitVideoRef}
-                controls
-                className="w-full h-full object-contain max-h-[40vh] md:max-h-[90vh]"
-                preload="metadata"
-              >
-                <track kind="captions" />
-              </video>
-              {transcodeProgress && transcodeProgress.status !== "ready" && transcodeProgress.status !== "unknown" && (
-                <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center bg-black/50 backdrop-blur-xs text-white">
-                  <p className="font-manrope font-semibold mb-3">
-                    {transcodeProgress.status === "queued" ? "Preparing video…" : "Transcoding for playback"}
-                  </p>
-                  <div className="w-64 h-2 bg-white/20 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-emerald-400 transition-[width] duration-500"
-                      style={{ width: `${Math.max(2, Math.round(transcodeProgress.percent))}%` }}
-                    />
-                  </div>
-                  <p className="text-xs text-white/70 mt-2">
-                    {Math.round(transcodeProgress.percent)}% — playback will start automatically when ready
-                  </p>
-                </div>
-              )}
-            </div>
+            <VideoPreview videoRef={splitVideoRef} transcodeProgress={transcodeProgress} isFullscreen={false} />
           )}
           {isPdf && (
             <iframe
