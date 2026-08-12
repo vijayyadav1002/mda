@@ -8,7 +8,8 @@ import { CompressDialog } from "~/components/CompressDialog";
 import { TagDialog, type TagSuggestion } from "~/components/TagDialog";
 import { RemoveTagsDialog } from "~/components/RemoveTagsDialog";
 import { createGraphQLClient, getApiUrl, getAuthToken } from "~/lib/api";
-import { formatBytes } from "~/lib/format";
+import { formatBytes, formatDuration } from "~/lib/format";
+import { monthKeyOf, monthKeyToRange, monthShortLabel, monthLabel } from "~/lib/date";
 import { useDragSelect } from "~/hooks/useDragSelect";
 
 export const meta: MetaFunction = () => [{ title: "Timeline — MDA" }];
@@ -130,37 +131,6 @@ const TILE_GAP: Record<number, number> = { 2: 8, 3: 4 };
 const SECTION_HEADER_H = 52;
 
 /* ── Helpers ────────────────────────────────────────────────────── */
-
-const monthKeyOf = (iso: string) => iso.slice(0, 7); // "2022-02"
-
-const monthKeyToRange = (key: string): { from: string; to: string } => {
-  const [y, m] = key.split("-").map(Number);
-  const from = new Date(Date.UTC(y, m - 1, 1));
-  const to = new Date(Date.UTC(y, m, 1));
-  return { from: from.toISOString(), to: to.toISOString() };
-};
-
-const monthShortLabel = (key: string) => {
-  const [y, m] = key.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString("en-US", { month: "short", timeZone: "UTC" });
-};
-
-const monthLabel = (key: string) => {
-  const [y, m] = key.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString("en-US", {
-    month: "long",
-    year: "numeric",
-    timeZone: "UTC",
-  });
-};
-
-const formatDuration = (seconds: number) => {
-  const s = Math.round(seconds);
-  const m = Math.floor(s / 60);
-  const rest = s % 60;
-  if (m >= 60) return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}:${String(rest).padStart(2, "0")}`;
-  return `${m}:${String(rest).padStart(2, "0")}`;
-};
 
 const sessionId = () => {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
