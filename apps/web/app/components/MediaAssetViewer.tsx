@@ -1,14 +1,14 @@
-import { ChevronLeft, ChevronRight, Download, File, Maximize2, Minimize2, X, ListTodo, Tag as TagIcon, Plus, Pencil, FolderOpen, Save, Copy } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, File, Maximize2, Minimize2, X, ListTodo, Tag as TagIcon, Plus, Pencil, FolderOpen, Copy } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import Hls from "hls.js";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { getAuthToken } from "~/lib/api";
 import { formatDate } from "~/lib/format";
 import { formatFileSize, getExtension, getFileCategory, type FileCategory } from "~/lib/file-type";
 import type { MediaAsset } from "~/lib/types";
 import { ImagePreview } from "~/components/viewer/ImagePreview";
 import { VideoPreview, type TranscodeProgress } from "~/components/viewer/VideoPreview";
+import { PdfPreview } from "~/components/viewer/PdfPreview";
+import { DocumentPreview, type DocumentPreviewData } from "~/components/viewer/DocumentPreview";
 
 type VideoSource =
   | { kind: "mp4"; url: string }
@@ -33,11 +33,6 @@ interface MediaAssetViewerProps {
   /** Open text/markdown documents directly in edit mode (used for newly created files). */
   readonly autoEdit?: boolean;
 }
-
-type DocumentPreview =
-  | { kind: "text" | "markdown"; text: string; truncated: boolean }
-  | { kind: "word"; html: string; messages: string[] }
-  | { kind: "excel"; sheets: { name: string; rows: string[][] }[]; maxRows: number; maxCols: number };
 
 function getFileCategoryLabel(category: FileCategory) {
   const labels: Record<FileCategory, string> = {
@@ -83,7 +78,7 @@ export function MediaAssetViewer({
   const [videoSource, setVideoSource] = useState<VideoSource | null>(null);
   const [transcodeProgress, setTranscodeProgress] = useState<TranscodeProgress | null>(null);
   const [hlsReloadKey, setHlsReloadKey] = useState(0);
-  const [documentPreview, setDocumentPreview] = useState<DocumentPreview | null>(null);
+  const [documentPreview, setDocumentPreview] = useState<DocumentPreviewData | null>(null);
   const [documentPreviewStatus, setDocumentPreviewStatus] = useState<"idle" | "loading" | "error">("idle");
   const [activeSheetIndex, setActiveSheetIndex] = useState(0);
   const [isEditingDocument, setIsEditingDocument] = useState(false);
@@ -162,7 +157,7 @@ export function MediaAssetViewer({
         if (!response.ok) throw new Error(`Preview failed (${response.status})`);
         return response.json();
       })
-      .then((preview: DocumentPreview) => {
+      .then((preview: DocumentPreviewData) => {
         setDocumentPreview(preview);
         if (preview.kind === "text" || preview.kind === "markdown") {
           setEditorText(preview.text);
@@ -365,7 +360,7 @@ export function MediaAssetViewer({
         kind: fileCategory,
         text: updated.text,
         truncated: false,
-      } as DocumentPreview);
+      } as DocumentPreviewData);
       setEditorText(updated.text);
       setIsEditingDocument(false);
       setSaveStatus("idle");
@@ -378,6 +373,11 @@ export function MediaAssetViewer({
   const handleImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
     const img = e.currentTarget;
     setImageDimensions({ width: img.naturalWidth, height: img.naturalHeight });
+  };
+
+  const handleEditorTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setEditorText(e.target.value);
+    if (saveStatus === "error") setSaveStatus("idle");
   };
 
   // Prev/next chevrons + mobile tap zones, overlaid on the media area
@@ -467,11 +467,7 @@ export function MediaAssetViewer({
           <VideoPreview videoRef={fullscreenVideoRef} transcodeProgress={transcodeProgress} isFullscreen={true} />
         )}
         {isPdf && (
-          <iframe
-            src={pdfPreviewUrl}
-            title={asset.fileName}
-            className="w-screen h-screen border-0 bg-white"
-          />
+          <PdfPreview pdfPreviewUrl={pdfPreviewUrl} fileName={asset.fileName} isFullscreen={true} />
         )}
 
         <div className="absolute bottom-4 left-4 right-4 max-w-3xl mx-auto bg-black/50 backdrop-blur-md text-white p-4 rounded-2xl">
@@ -519,174 +515,38 @@ export function MediaAssetViewer({
             <VideoPreview videoRef={splitVideoRef} transcodeProgress={transcodeProgress} isFullscreen={false} />
           )}
           {isPdf && (
-            <iframe
-              src={pdfPreviewUrl}
-              title={asset.fileName}
-              className="w-full h-full min-h-[400px] max-h-[40vh] md:max-h-[90vh] border-0 bg-white"
-            />
+            <PdfPreview pdfPreviewUrl={pdfPreviewUrl} fileName={asset.fileName} isFullscreen={false} />
           )}
           {isDocument && (
-            <div
-              ref={documentScrollRef}
-              className={`w-full h-full overflow-auto bg-background text-foreground ${
-                isFullscreen ? "" : "max-h-[40vh] md:max-h-[90vh]"
-              }`}
-            >
-              {documentPreviewStatus === "loading" && (
-                <div className="h-full min-h-[260px] flex items-center justify-center text-sm text-muted-foreground">
-                  Loading preview…
-                </div>
-              )}
-              {documentPreviewStatus === "error" && (
-                <div className="h-full min-h-[260px] flex items-center justify-center text-sm text-muted-foreground">
-                  Preview could not be loaded
-                </div>
-              )}
-              {documentPreview && (
-                <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-border/20 bg-background/95 px-5 py-3 backdrop-blur">
-                  <div className="min-w-0">
-                    <p className="text-xs font-medium text-muted-foreground">
-                      {isEditingDocument ? "Editing" : "Previewing"} {getFileCategoryLabel(fileCategory).toLowerCase()}
-                      {isFullscreen ? " — fullscreen" : ""}
-                    </p>
-                    {saveStatus === "error" && <p className="text-xs text-red-400 mt-0.5">Could not save changes</p>}
-                  </div>
-                  <div className="flex flex-wrap items-center justify-end gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setIsFullscreen(!isFullscreen)}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border/30 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
-                    title={isFullscreen ? "Exit fullscreen" : "View fullscreen"}
-                  >
-                    {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
-                    <span className="hidden sm:inline">{isFullscreen ? "Exit" : "Fullscreen"}</span>
-                  </button>
-                  {isFullscreen && (
-                    <button
-                      type="button"
-                      onClick={() => { setIsFullscreen(false); onClose(); }}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border/30 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
-                      title="Close"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                  {canEdit && isEditableDocument && (
-                    <div className="flex flex-wrap justify-end gap-2">
-                      {isEditingDocument ? (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditorText(originalDocumentText);
-                              setIsEditingDocument(false);
-                              setSaveStatus("idle");
-                            }}
-                            className="px-3 py-1.5 rounded-lg border border-border/30 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
-                          >
-                            Cancel
-                          </button>
-                          <button
-                            type="button"
-                            onClick={saveDocumentContent}
-                            disabled={!hasDocumentEdits || saveStatus === "saving"}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-primary text-[#060e20] text-xs font-semibold disabled:opacity-50 transition-opacity"
-                          >
-                            <Save className="w-3.5 h-3.5" />
-                            {saveStatus === "saving" ? "Saving…" : "Save"}
-                          </button>
-                        </>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditorText(originalDocumentText);
-                            setIsEditingDocument(true);
-                            setSaveStatus("idle");
-                          }}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border/30 text-xs text-foreground hover:bg-accent transition-all"
-                        >
-                          <Pencil className="w-3.5 h-3.5" />
-                          Edit
-                        </button>
-                      )}
-                    </div>
-                  )}
-                  </div>
-                </div>
-              )}
-              <div className="p-5">
-              {documentPreview?.kind === "text" && isEditingDocument && (
-                <textarea
-                  value={editorText}
-                  onChange={(e) => {
-                    setEditorText(e.target.value);
-                    if (saveStatus === "error") setSaveStatus("idle");
-                  }}
-                  className="min-h-[360px] w-full resize-y rounded-xl border border-border/30 bg-muted/20 p-4 font-mono text-sm leading-6 text-foreground outline-hidden focus:border-brand-primary/70 focus:ring-2 focus:ring-brand-primary/20"
-                  spellCheck={false}
-                />
-              )}
-              {documentPreview?.kind === "text" && !isEditingDocument && (
-                <pre className="whitespace-pre-wrap break-words text-sm leading-6 font-mono">{documentPreview.text}</pre>
-              )}
-              {documentPreview?.kind === "markdown" && isEditingDocument && (
-                <textarea
-                  value={editorText}
-                  onChange={(e) => {
-                    setEditorText(e.target.value);
-                    if (saveStatus === "error") setSaveStatus("idle");
-                  }}
-                  className="min-h-[360px] w-full resize-y rounded-xl border border-border/30 bg-muted/20 p-4 font-mono text-sm leading-6 text-foreground outline-hidden focus:border-brand-primary/70 focus:ring-2 focus:ring-brand-primary/20"
-                  spellCheck={false}
-                />
-              )}
-              {documentPreview?.kind === "markdown" && !isEditingDocument && (
-                <div className="text-sm leading-6 [&_h1]:text-2xl [&_h1]:font-bold [&_h2]:text-xl [&_h2]:font-bold [&_h3]:font-semibold [&_p]:mb-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_pre]:overflow-auto [&_pre]:rounded-xl [&_pre]:bg-muted [&_pre]:p-3">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{documentPreview.text}</ReactMarkdown>
-                </div>
-              )}
-              {documentPreview?.kind === "word" && (
-                <div
-                  className="text-sm leading-6 [&_h1]:text-2xl [&_h1]:font-bold [&_h2]:text-xl [&_h2]:font-bold [&_p]:mb-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5"
-                  dangerouslySetInnerHTML={{ __html: documentPreview.html }}
-                />
-              )}
-              {documentPreview?.kind === "excel" && (
-                <div className="space-y-3">
-                  <div className="flex gap-2 overflow-x-auto pb-1">
-                    {documentPreview.sheets.map((sheet, index) => (
-                      <button
-                        key={sheet.name}
-                        type="button"
-                        onClick={() => setActiveSheetIndex(index)}
-                        className={`px-3 py-1.5 rounded-lg text-xs shrink-0 ${
-                          activeSheetIndex === index ? "bg-brand-primary text-[#060e20]" : "bg-muted text-muted-foreground"
-                        }`}
-                      >
-                        {sheet.name}
-                      </button>
-                    ))}
-                  </div>
-                  <div className="overflow-auto rounded-xl border border-border/20">
-                    <table className="min-w-full border-collapse text-xs">
-                      <tbody>
-                        {(documentPreview.sheets[activeSheetIndex]?.rows ?? []).map((row, rowIndex) => (
-                          <tr key={rowIndex} className={rowIndex === 0 ? "bg-muted/70" : "odd:bg-muted/20"}>
-                            {row.map((cell, cellIndex) => (
-                              <td key={cellIndex} className="border border-border/10 px-2 py-1.5 max-w-[220px] truncate">
-                                {cell}
-                              </td>
-                            ))}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-              </div>
-            </div>
+            <DocumentPreview
+              scrollRef={documentScrollRef}
+              isFullscreen={isFullscreen}
+              documentPreviewStatus={documentPreviewStatus}
+              documentPreview={documentPreview}
+              documentTypeLabel={getFileCategoryLabel(fileCategory).toLowerCase()}
+              isEditingDocument={isEditingDocument}
+              saveStatus={saveStatus}
+              canEdit={canEdit}
+              isEditableDocument={isEditableDocument}
+              hasDocumentEdits={hasDocumentEdits}
+              editorText={editorText}
+              onEditorTextChange={handleEditorTextChange}
+              activeSheetIndex={activeSheetIndex}
+              onActiveSheetIndexChange={setActiveSheetIndex}
+              onToggleFullscreen={() => setIsFullscreen(!isFullscreen)}
+              onCloseFullscreen={() => { setIsFullscreen(false); onClose(); }}
+              onStartEditing={() => {
+                setEditorText(originalDocumentText);
+                setIsEditingDocument(true);
+                setSaveStatus("idle");
+              }}
+              onCancelEditing={() => {
+                setEditorText(originalDocumentText);
+                setIsEditingDocument(false);
+                setSaveStatus("idle");
+              }}
+              onSave={saveDocumentContent}
+            />
           )}
           {!isImage && !isVideo && !isPdf && !["word", "excel", "text", "markdown"].includes(fileCategory) && (
             <div className="flex flex-col items-center justify-center gap-4 text-muted-foreground">
