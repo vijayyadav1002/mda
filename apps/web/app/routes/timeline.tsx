@@ -14,16 +14,12 @@ import { useDragSelect } from "~/hooks/useDragSelect";
 import { useTimelineSections, type AssetTag, type Bucket, type TimelineAsset } from "~/hooks/useTimelineSections";
 import { useZoomAnchor } from "~/hooks/useZoomAnchor";
 import { useToast } from "~/hooks/useToast";
+import { useTimelineSelection } from "~/hooks/useTimelineSelection";
+import { useThumbnailRefresh } from "~/hooks/useThumbnailRefresh";
 
 export const meta: MetaFunction = () => [{ title: "Timeline — MDA" }];
 
 /* ── GraphQL ────────────────────────────────────────────────────── */
-
-const GENERATE_THUMBNAILS_MUTATION = `
-  mutation GenerateThumbnailsForAssets($ids: [ID!]!, $sessionId: String, $force: Boolean) {
-    generateThumbnailsForAssets(ids: $ids, sessionId: $sessionId, force: $force)
-  }
-`;
 
 const TAGS_QUERY = `
   query Tags { tags { id name assetCount } }
@@ -78,18 +74,6 @@ const ZOOM_LABELS = ["Years", "Months", "Grid", "Dense"] as const;
 const TILE_SIZE: Record<number, number> = { 2: 168, 3: 96 };
 const TILE_GAP: Record<number, number> = { 2: 8, 3: 4 };
 const SECTION_HEADER_H = 52;
-
-/* ── Helpers ────────────────────────────────────────────────────── */
-
-const sessionId = () => {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    return crypto.randomUUID();
-  }
-  const bytes = new Uint8Array(16);
-  crypto.getRandomValues(bytes);
-  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
-  return `tl-${Date.now()}-${hex}`;
-};
 
 /* ── Tile ───────────────────────────────────────────────────────── */
 
@@ -188,8 +172,15 @@ export default function Timeline() {
   const [currentPeriod, setCurrentPeriod] = useState<string | null>(null);
   const [selectedAsset, setSelectedAsset] = useState<TimelineAsset | null>(null);
   const [isViewerOpen, setIsViewerOpen] = useState(false);
-  const [selectionMode, setSelectionMode] = useState(false);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const {
+    selectionMode,
+    setSelectionMode,
+    selectedIds,
+    setSelectedIds,
+    toggleAssetSelection,
+    toggleSectionSelection,
+    exitSelection,
+  } = useTimelineSelection();
   const [isTagDialogOpen, setIsTagDialogOpen] = useState(false);
   const [isRemoveTagsDialogOpen, setIsRemoveTagsDialogOpen] = useState(false);
   const [tagTargets, setTagTargets] = useState<TimelineAsset[]>([]);
@@ -207,8 +198,6 @@ export default function Timeline() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const gridRef = useRef<HTMLDivElement>(null);
-  const requestedThumbIdsRef = useRef<Set<string>>(new Set());
-  const thumbnailSessionIdRef = useRef<string>(sessionId());
   const wheelAccumRef = useRef(0);
   const pinchDistanceRef = useRef<number | null>(null);
   const { anchorAndSetZoom, zoomAnchorRef } = useZoomAnchor({
@@ -289,38 +278,6 @@ export default function Timeline() {
     selectedIds,
     setSelectedIds,
   });
-
-  // Queue on-demand thumbnail generation for loaded, visible sections
-  useEffect(() => {
-    if (!isGridLevel) return;
-    const missing: string[] = [];
-    const monthsWithMissing: string[] = [];
-    for (const key of visibleMonths) {
-      const section = sections[key];
-      if (!section?.assets) continue;
-      const ids = section.assets
-        .filter((a) => !a.thumbnailUrl && !requestedThumbIdsRef.current.has(a.id))
-        .map((a) => a.id);
-      if (ids.length > 0) {
-        missing.push(...ids);
-        if (section.thumbRetries < 4) monthsWithMissing.push(key);
-      }
-    }
-    if (missing.length === 0) return;
-    for (const id of missing) requestedThumbIdsRef.current.add(id);
-
-    const token = getAuthToken();
-    if (!token) return;
-    const client = createGraphQLClient(token);
-    void client
-      .request(GENERATE_THUMBNAILS_MUTATION, { ids: missing.slice(0, 300), sessionId: thumbnailSessionIdRef.current })
-      .catch((err) => console.error("Failed to queue thumbnails:", err));
-
-    const timer = window.setTimeout(() => {
-      for (const key of monthsWithMissing) void refreshSectionThumbnails(key);
-    }, 6000);
-    return () => window.clearTimeout(timer);
-  }, [visibleMonths, sections, isGridLevel, refreshSectionThumbnails]);
 
   /* ── Scroll position → floating period pill ── */
 
@@ -434,12 +391,7 @@ export default function Timeline() {
       // don't let it toggle that tile back off.
       if (consumeDragClick()) return;
       if (selectionMode) {
-        setSelectedIds((prev) => {
-          const next = new Set(prev);
-          if (next.has(asset.id)) next.delete(asset.id);
-          else next.add(asset.id);
-          return next;
-        });
+        toggleAssetSelection(asset.id);
         return;
       }
       setSelectedAsset(asset);
@@ -459,24 +411,6 @@ export default function Timeline() {
     () => selectedAssets.filter((a) => a.mimeType.startsWith("video/")),
     [selectedAssets]
   );
-
-  const exitSelection = () => {
-    setSelectionMode(false);
-    setSelectedIds(new Set());
-  };
-
-  // Toggle selection of every (loaded) asset in a month section
-  const toggleSectionSelection = useCallback((assets: TimelineAsset[]) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      const allSelected = assets.every((a) => next.has(a.id));
-      for (const asset of assets) {
-        if (allSelected) next.delete(asset.id);
-        else next.add(asset.id);
-      }
-      return next;
-    });
-  }, []);
 
   // Load tag suggestions once selection mode or the tag dialog is first used
   useEffect(() => {
@@ -712,70 +646,17 @@ export default function Timeline() {
     }
   };
 
-  const handleRegenerateThumbnails = async () => {
-    const token = getAuthToken();
-    if (!token || selectedAssets.length === 0) return;
-    const ids = selectedAssets.map((a) => a.id);
-    try {
-      await createGraphQLClient(token).request(GENERATE_THUMBNAILS_MUTATION, {
-        ids,
-        sessionId: thumbnailSessionIdRef.current,
-        force: true,
-      });
-      // Prevent the on-demand effect from double-queueing while we wait
-      for (const id of ids) requestedThumbIdsRef.current.add(id);
-      // Show placeholders right away; the refetch below picks up fresh thumbs
-      const affectedMonths = new Set<string>();
-      setSections((prev) => {
-        const next: typeof prev = {};
-        for (const [key, section] of Object.entries(prev)) {
-          if (section.assets?.some((a) => selectedIds.has(a.id))) {
-            affectedMonths.add(key);
-            next[key] = {
-              ...section,
-              assets: section.assets.map((a) =>
-                selectedIds.has(a.id) ? { ...a, thumbnailUrl: null } : a
-              ),
-            };
-          } else {
-            next[key] = section;
-          }
-        }
-        return next;
-      });
-      window.setTimeout(() => {
-        for (const key of affectedMonths) void refreshSectionThumbnails(key);
-      }, 6000);
-      showToast(`Regenerating ${ids.length} thumbnail${ids.length !== 1 ? "s" : ""}`);
-      exitSelection();
-    } catch (err: any) {
-      showToast(`Failed to queue thumbnails: ${err.message}`);
-    }
-  };
-
-  // A tile's thumbnail URL can go stale if cache eviction removed the file
-  // after the section was fetched. Clear it locally so the on-demand
-  // generation effect re-queues it and the section refetch picks up the
-  // fresh thumbnail — the tile shows a placeholder in the meantime.
-  const handleThumbError = useCallback((assetId: string) => {
-    requestedThumbIdsRef.current.delete(assetId);
-    setSections((prev) => {
-      let changed = false;
-      const next: typeof prev = {};
-      for (const [key, section] of Object.entries(prev)) {
-        if (section.assets?.some((a) => a.id === assetId && a.thumbnailUrl)) {
-          changed = true;
-          next[key] = {
-            ...section,
-            assets: section.assets.map((a) => (a.id === assetId ? { ...a, thumbnailUrl: null } : a)),
-          };
-        } else {
-          next[key] = section;
-        }
-      }
-      return changed ? next : prev;
-    });
-  }, []);
+  const { handleThumbError, handleRegenerateThumbnails } = useThumbnailRefresh({
+    sections,
+    setSections,
+    visibleMonths,
+    isGridLevel,
+    refreshSectionThumbnails,
+    selectedAssets,
+    selectedIds,
+    showToast,
+    exitSelection,
+  });
 
   /* ── Summary card cover mosaic ── */
 
