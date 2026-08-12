@@ -3,6 +3,7 @@ import { useNavigate } from "react-router";
 import { createGraphQLClient, getAuthToken, clearAuthToken } from "~/lib/api";
 import { useActiveQueueCount } from "~/lib/useActiveQueueCount";
 import { useAuditLogs } from "~/hooks/useAuditLogs";
+import { SidebarNavItem } from "~/components/SidebarNavItem";
 import { AuditFilterBar } from "~/components/AuditFilterBar";
 import { AuditLogTable } from "~/components/AuditLogTable";
 import { AuditPagination } from "~/components/AuditPagination";
@@ -30,40 +31,6 @@ interface UserOption {
   id: string;
   username: string;
   role: string;
-}
-
-function SidebarNavItem({
-  icon: Icon,
-  label,
-  active,
-  onClick,
-  badge,
-}: {
-  icon: React.ElementType;
-  label: string;
-  active?: boolean;
-  onClick?: () => void;
-  badge?: number;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 relative ${
-        active
-          ? "nav-active bg-accent text-foreground"
-          : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
-      }`}
-    >
-      <Icon className="w-4 h-4 shrink-0" />
-      {label}
-      {badge != null && badge > 0 && (
-        <span className="ml-auto w-5 h-5 gradient-brand rounded-full flex items-center justify-center text-[10px] font-bold text-[#060e20]">
-          {badge > 9 ? "9+" : badge}
-        </span>
-      )}
-    </button>
-  );
 }
 
 export default function AuditPage() {
