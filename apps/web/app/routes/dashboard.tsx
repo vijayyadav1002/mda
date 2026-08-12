@@ -17,7 +17,7 @@ import { DuplicateDialog } from "~/components/DuplicateDialog";
 import { RenameFolderDialog } from "~/components/RenameFolderDialog";
 import { SearchBar } from "~/components/SearchBar";
 import { formatDate, formatBytes } from "~/lib/format";
-import { getFileCategory, canCompressAsset, type FileCategory } from "~/lib/file-type";
+import { getFileCategory, getFileCategoryLabel, canCompressAsset } from "~/lib/file-type";
 import type { MediaAsset, DirectoryNode } from "~/lib/types";
 import { useDirectoryTree } from "~/hooks/useDirectoryTree";
 import { useMediaSelection } from "~/hooks/useMediaSelection";
@@ -179,20 +179,6 @@ const SEARCH_RESULTS_QUERY = `
     }
   }
 `;
-
-function getFileCategoryLabel(asset: MediaAsset) {
-  const labels: Record<FileCategory, string> = {
-    image: "Image",
-    video: "Video",
-    pdf: "PDF",
-    word: "Word",
-    excel: "Excel",
-    text: "Text",
-    markdown: "MD",
-    other: "File",
-  };
-  return labels[getFileCategory(asset)];
-}
 
 export default function Dashboard() {
   const {
@@ -2439,7 +2425,7 @@ export default function Dashboard() {
                         {/* Type badge */}
                         <div className="absolute top-3 left-3 z-10 flex items-center gap-1">
                           <div className="bg-background/70 backdrop-blur-xs px-2 py-0.5 rounded-lg">
-                            <span className="label-meta">{getFileCategoryLabel(asset)}</span>
+                            <span className="label-meta">{getFileCategoryLabel(getFileCategory(asset))}</span>
                           </div>
                           {asset.mimeType.startsWith("video/") && asset.transcodedUrl && (
                             <div

@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import Hls from "hls.js";
 import { getAuthToken } from "~/lib/api";
 import { formatDate } from "~/lib/format";
-import { formatFileSize, getExtension, getFileCategory, type FileCategory } from "~/lib/file-type";
+import { formatFileSize, getExtension, getFileCategory, getFileCategoryLabel } from "~/lib/file-type";
 import type { MediaAsset } from "~/lib/types";
 import { ImagePreview } from "~/components/viewer/ImagePreview";
 import { VideoPreview, type TranscodeProgress } from "~/components/viewer/VideoPreview";
@@ -32,20 +32,6 @@ interface MediaAssetViewerProps {
   readonly hasNext?: boolean;
   /** Open text/markdown documents directly in edit mode (used for newly created files). */
   readonly autoEdit?: boolean;
-}
-
-function getFileCategoryLabel(category: FileCategory) {
-  const labels: Record<FileCategory, string> = {
-    image: "Image",
-    video: "Video",
-    pdf: "PDF",
-    word: "Word",
-    excel: "Excel",
-    text: "Text",
-    markdown: "Markdown",
-    other: "File",
-  };
-  return labels[category];
 }
 
 export function MediaAssetViewer({

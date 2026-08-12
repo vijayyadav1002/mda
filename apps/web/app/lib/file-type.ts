@@ -14,6 +14,20 @@ export function getFileCategory(asset: MediaAsset): FileCategory {
   return "other";
 }
 
+export function getFileCategoryLabel(category: FileCategory) {
+  const labels: Record<FileCategory, string> = {
+    image: "Image",
+    video: "Video",
+    pdf: "PDF",
+    word: "Word",
+    excel: "Excel",
+    text: "Text",
+    markdown: "Markdown",
+    other: "File",
+  };
+  return labels[category];
+}
+
 export function canCompressAsset(asset: MediaAsset) {
   const category = getFileCategory(asset);
   return category === "image" || category === "video" || category === "pdf";
