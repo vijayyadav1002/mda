@@ -12,6 +12,7 @@ import { formatBytes, formatDuration } from "~/lib/format";
 import { monthKeyOf, monthShortLabel, monthLabel } from "~/lib/date";
 import { useDragSelect } from "~/hooks/useDragSelect";
 import { useTimelineSections, type AssetTag, type Bucket, type TimelineAsset } from "~/hooks/useTimelineSections";
+import { useZoomAnchor } from "~/hooks/useZoomAnchor";
 import { useToast } from "~/hooks/useToast";
 
 export const meta: MetaFunction = () => [{ title: "Timeline — MDA" }];
@@ -210,7 +211,13 @@ export default function Timeline() {
   const thumbnailSessionIdRef = useRef<string>(sessionId());
   const wheelAccumRef = useRef(0);
   const pinchDistanceRef = useRef<number | null>(null);
-  const zoomAnchorRef = useRef<string | null>(null);
+  const { anchorAndSetZoom, zoomAnchorRef } = useZoomAnchor({
+    zoom,
+    setZoom,
+    observedSectionsRef,
+    minZoom: MIN_ZOOM,
+    maxZoom: MAX_ZOOM,
+  });
 
   /* ── Bootstrapping ── */
 
@@ -336,35 +343,6 @@ export default function Timeline() {
   }, [isGridLevel, zoom]);
 
   /* ── Zoom interactions ── */
-
-  const anchorAndSetZoom = useCallback((next: number) => {
-    setZoom((prev) => {
-      const clamped = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, next));
-      if (clamped === prev) return prev;
-      zoomAnchorRef.current = currentPeriodRefValue();
-      return clamped;
-    });
-
-    function currentPeriodRefValue() {
-      for (const [element, key] of observedSectionsRef.current) {
-        const rect = (element as HTMLElement).getBoundingClientRect();
-        if (rect.bottom > 140) return key;
-      }
-      return null;
-    }
-  }, []);
-
-  // Restore scroll position to the anchored month after a zoom-level change
-  useEffect(() => {
-    const anchor = zoomAnchorRef.current;
-    zoomAnchorRef.current = null;
-    if (!anchor) return;
-    requestAnimationFrame(() => {
-      const target = document.getElementById(`tl-${zoom >= 2 ? "sec" : zoom === 1 ? "month" : "year"}-${zoom === 0 ? anchor.slice(0, 4) : anchor}`);
-      target?.scrollIntoView({ block: "start" });
-      window.scrollBy(0, -80);
-    });
-  }, [zoom]);
 
   // Ctrl+wheel / trackpad pinch
   useEffect(() => {
