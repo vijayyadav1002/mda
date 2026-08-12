@@ -39,7 +39,8 @@ const fastify = Fastify({
 // Register plugins
 await fastify.register(cors, {
   origin: true,
-  credentials: true
+  credentials: true,
+  methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE']
 });
 
 await fastify.register(rateLimit, {
