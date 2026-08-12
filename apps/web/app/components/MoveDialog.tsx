@@ -13,7 +13,7 @@ interface MoveAsset {
 
 interface MoveDialogProps {
   readonly isOpen: boolean;
-  readonly setShowMoveDialog: (open: boolean) => void;
+  readonly onOpenChange: (open: boolean) => void;
   readonly moveTargetFolderPath: string;
   readonly setMoveTargetFolderPath: (value: string) => void;
   readonly allAvailableFolders: AvailableFolder[];
@@ -29,7 +29,7 @@ interface MoveDialogProps {
 
 export function MoveDialog({
   isOpen,
-  setShowMoveDialog,
+  onOpenChange,
   moveTargetFolderPath,
   setMoveTargetFolderPath,
   allAvailableFolders,
@@ -43,7 +43,7 @@ export function MoveDialog({
   handleBulkMove,
 }: MoveDialogProps) {
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) { setShowMoveDialog(false); setMoveTargetFolderPath(''); } }}>
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) { onOpenChange(false); setMoveTargetFolderPath(''); } }}>
       <DialogContent className="bg-card border-border/20 shadow-ambient rounded-2xl">
         <DialogHeader>
           <DialogTitle className="font-manrope font-bold text-foreground">
@@ -98,7 +98,7 @@ export function MoveDialog({
         <div className="flex gap-3 mt-2">
           <button
             type="button"
-            onClick={() => { setShowMoveDialog(false); setMoveTargetFolderPath(''); }}
+            onClick={() => { onOpenChange(false); setMoveTargetFolderPath(''); }}
             className="flex-1 py-2.5 rounded-xl border border-border/30 text-sm text-foreground hover:bg-accent transition-all"
           >
             Cancel

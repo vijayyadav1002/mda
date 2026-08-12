@@ -7,7 +7,7 @@ interface CurrentFolder {
 
 interface NewFileDialogProps {
   readonly isOpen: boolean;
-  readonly setShowNewFileDialog: (open: boolean) => void;
+  readonly onOpenChange: (open: boolean) => void;
   readonly newFileName: string;
   readonly setNewFileName: (value: string) => void;
   readonly newFileType: "md" | "txt";
@@ -19,7 +19,7 @@ interface NewFileDialogProps {
 
 export function NewFileDialog({
   isOpen,
-  setShowNewFileDialog,
+  onOpenChange,
   newFileName,
   setNewFileName,
   newFileType,
@@ -29,7 +29,7 @@ export function NewFileDialog({
   onSubmit,
 }: NewFileDialogProps) {
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => { setShowNewFileDialog(open); if (!open) setNewFileName(''); }}>
+    <Dialog open={isOpen} onOpenChange={(open) => { onOpenChange(open); if (!open) setNewFileName(''); }}>
       <DialogContent className="bg-card border-border/20 shadow-ambient rounded-2xl">
         <DialogHeader>
           <DialogTitle className="font-manrope text-foreground">New File</DialogTitle>
@@ -77,7 +77,7 @@ export function NewFileDialog({
           <div className="flex gap-2 justify-end pt-2">
             <button
               type="button"
-              onClick={() => { setShowNewFileDialog(false); setNewFileName(''); }}
+              onClick={() => { onOpenChange(false); setNewFileName(''); }}
               className="px-4 py-2 rounded-xl text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
             >
               Cancel

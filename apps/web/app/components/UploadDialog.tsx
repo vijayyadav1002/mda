@@ -9,7 +9,7 @@ interface DirectoryOption {
 
 interface UploadDialogProps {
   readonly isOpen: boolean;
-  readonly setShowUploadDialog: (open: boolean) => void;
+  readonly onOpenChange: (open: boolean) => void;
   readonly uploadFiles: File[];
   readonly setUploadFiles: React.Dispatch<React.SetStateAction<File[]>>;
   readonly uploadTargetPath: string;
@@ -24,7 +24,7 @@ interface UploadDialogProps {
 
 export function UploadDialog({
   isOpen,
-  setShowUploadDialog,
+  onOpenChange,
   uploadFiles,
   setUploadFiles,
   uploadTargetPath,
@@ -37,7 +37,7 @@ export function UploadDialog({
   allDirectories,
 }: UploadDialogProps) {
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => { if (!isUploading) { setShowUploadDialog(open); if (!open) { setUploadFiles([]); setUploadProgress({}); } } }}>
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!isUploading) { onOpenChange(open); if (!open) { setUploadFiles([]); setUploadProgress({}); } } }}>
       <DialogContent className="bg-card border-border/20 shadow-ambient rounded-2xl max-w-lg">
         <DialogHeader>
           <DialogTitle className="font-manrope text-foreground">Upload Media</DialogTitle>
@@ -121,7 +121,7 @@ export function UploadDialog({
           <div className="flex gap-2 justify-end pt-2">
             <button
               type="button"
-              onClick={() => { setShowUploadDialog(false); setUploadFiles([]); setUploadProgress({}); }}
+              onClick={() => { onOpenChange(false); setUploadFiles([]); setUploadProgress({}); }}
               disabled={isUploading}
               className="px-4 py-2 rounded-xl text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-all disabled:opacity-50"
             >

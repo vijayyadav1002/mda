@@ -8,7 +8,7 @@ interface RenamingFolder {
 
 interface RenameFolderDialogProps {
   readonly renamingFolder: RenamingFolder | null;
-  readonly setRenamingFolder: (folder: RenamingFolder | null) => void;
+  readonly onClose: () => void;
   readonly renameFolderValue: string;
   readonly setRenameFolderValue: (value: string) => void;
   readonly isRenamingFolder: boolean;
@@ -17,14 +17,14 @@ interface RenameFolderDialogProps {
 
 export function RenameFolderDialog({
   renamingFolder,
-  setRenamingFolder,
+  onClose,
   renameFolderValue,
   setRenameFolderValue,
   isRenamingFolder,
   onSubmit,
 }: RenameFolderDialogProps) {
   return (
-    <Dialog open={!!renamingFolder} onOpenChange={(open) => { if (!open) { setRenamingFolder(null); setRenameFolderValue(''); } }}>
+    <Dialog open={!!renamingFolder} onOpenChange={(open) => { if (!open) { onClose(); setRenameFolderValue(''); } }}>
       <DialogContent className="bg-card border-border/20 shadow-ambient rounded-2xl">
         <DialogHeader>
           <DialogTitle className="font-manrope font-bold text-foreground">Rename Folder</DialogTitle>
@@ -43,7 +43,7 @@ export function RenameFolderDialog({
           <div className="flex gap-3">
             <button
               type="button"
-              onClick={() => { setRenamingFolder(null); setRenameFolderValue(''); }}
+              onClick={() => { onClose(); setRenameFolderValue(''); }}
               className="flex-1 py-2.5 rounded-xl border border-border/30 text-sm text-foreground hover:bg-accent transition-all"
             >
               Cancel

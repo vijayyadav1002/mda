@@ -18,7 +18,7 @@ interface DuplicateSourceFolder {
 
 interface DuplicateDialogProps {
   readonly isOpen: boolean;
-  readonly setShowDuplicateDialog: (open: boolean) => void;
+  readonly onOpenChange: (open: boolean) => void;
   readonly duplicateTargetFolderPath: string;
   readonly setDuplicateTargetFolderPath: (value: string) => void;
   readonly duplicateSourceFolder: DuplicateSourceFolder | null;
@@ -32,7 +32,7 @@ interface DuplicateDialogProps {
 
 export function DuplicateDialog({
   isOpen,
-  setShowDuplicateDialog,
+  onOpenChange,
   duplicateTargetFolderPath,
   setDuplicateTargetFolderPath,
   duplicateSourceFolder,
@@ -44,7 +44,7 @@ export function DuplicateDialog({
   handleDuplicateAsset,
 }: DuplicateDialogProps) {
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) { setShowDuplicateDialog(false); setDuplicateTargetFolderPath(''); setDuplicateSourceFolder(null); } }}>
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) { onOpenChange(false); setDuplicateTargetFolderPath(''); setDuplicateSourceFolder(null); } }}>
       <DialogContent className="bg-card border-border/20 shadow-ambient rounded-2xl">
         <DialogHeader>
           <DialogTitle className="font-manrope font-bold text-foreground">
@@ -99,7 +99,7 @@ export function DuplicateDialog({
         <div className="flex gap-3 mt-2">
           <button
             type="button"
-            onClick={() => { setShowDuplicateDialog(false); setDuplicateTargetFolderPath(''); setDuplicateSourceFolder(null); }}
+            onClick={() => { onOpenChange(false); setDuplicateTargetFolderPath(''); setDuplicateSourceFolder(null); }}
             className="flex-1 py-2.5 rounded-xl border border-border/30 text-sm text-foreground hover:bg-accent transition-all"
           >
             Cancel

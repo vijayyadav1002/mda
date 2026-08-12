@@ -2688,7 +2688,7 @@ export default function Dashboard() {
       {/* Duplicate Asset */}
       <DuplicateDialog
         isOpen={showDuplicateDialog}
-        setShowDuplicateDialog={setShowDuplicateDialog}
+        onOpenChange={setShowDuplicateDialog}
         duplicateTargetFolderPath={duplicateTargetFolderPath}
         setDuplicateTargetFolderPath={setDuplicateTargetFolderPath}
         duplicateSourceFolder={duplicateSourceFolder}
@@ -2703,7 +2703,7 @@ export default function Dashboard() {
       {/* Move Asset */}
       <MoveDialog
         isOpen={showMoveDialog}
-        setShowMoveDialog={setShowMoveDialog}
+        onOpenChange={setShowMoveDialog}
         moveTargetFolderPath={moveTargetFolderPath}
         setMoveTargetFolderPath={setMoveTargetFolderPath}
         allAvailableFolders={allAvailableFolders}
@@ -2720,7 +2720,7 @@ export default function Dashboard() {
       {/* Rename Folder */}
       <RenameFolderDialog
         renamingFolder={renamingFolder}
-        setRenamingFolder={setRenamingFolder}
+        onClose={() => setRenamingFolder(null)}
         renameFolderValue={renameFolderValue}
         setRenameFolderValue={setRenameFolderValue}
         isRenamingFolder={isRenamingFolder}
@@ -2745,7 +2745,7 @@ export default function Dashboard() {
       {/* New File Dialog */}
       <NewFileDialog
         isOpen={showNewFileDialog}
-        setShowNewFileDialog={setShowNewFileDialog}
+        onOpenChange={setShowNewFileDialog}
         newFileName={newFileName}
         setNewFileName={setNewFileName}
         newFileType={newFileType}
@@ -2758,7 +2758,7 @@ export default function Dashboard() {
       {/* New Folder Dialog */}
       <NewFolderDialog
         isOpen={showNewFolderDialog}
-        setShowNewFolderDialog={setShowNewFolderDialog}
+        onOpenChange={setShowNewFolderDialog}
         newFolderName={newFolderName}
         setNewFolderName={setNewFolderName}
         isCreatingFolder={isCreatingFolder}
@@ -2769,7 +2769,7 @@ export default function Dashboard() {
       {/* Upload Dialog */}
       <UploadDialog
         isOpen={showUploadDialog}
-        setShowUploadDialog={setShowUploadDialog}
+        onOpenChange={setShowUploadDialog}
         uploadFiles={uploadFiles}
         setUploadFiles={setUploadFiles}
         uploadTargetPath={uploadTargetPath}

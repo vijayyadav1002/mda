@@ -7,7 +7,7 @@ interface CurrentFolder {
 
 interface NewFolderDialogProps {
   readonly isOpen: boolean;
-  readonly setShowNewFolderDialog: (open: boolean) => void;
+  readonly onOpenChange: (open: boolean) => void;
   readonly newFolderName: string;
   readonly setNewFolderName: (value: string) => void;
   readonly isCreatingFolder: boolean;
@@ -17,7 +17,7 @@ interface NewFolderDialogProps {
 
 export function NewFolderDialog({
   isOpen,
-  setShowNewFolderDialog,
+  onOpenChange,
   newFolderName,
   setNewFolderName,
   isCreatingFolder,
@@ -25,7 +25,7 @@ export function NewFolderDialog({
   onSubmit,
 }: NewFolderDialogProps) {
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => { setShowNewFolderDialog(open); if (!open) setNewFolderName(''); }}>
+    <Dialog open={isOpen} onOpenChange={(open) => { onOpenChange(open); if (!open) setNewFolderName(''); }}>
       <DialogContent className="bg-card border-border/20 shadow-ambient rounded-2xl">
         <DialogHeader>
           <DialogTitle className="font-manrope text-foreground">New Folder</DialogTitle>
@@ -50,7 +50,7 @@ export function NewFolderDialog({
           <div className="flex gap-2 justify-end pt-2">
             <button
               type="button"
-              onClick={() => { setShowNewFolderDialog(false); setNewFolderName(''); }}
+              onClick={() => { onOpenChange(false); setNewFolderName(''); }}
               className="px-4 py-2 rounded-xl text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
             >
               Cancel
