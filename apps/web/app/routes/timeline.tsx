@@ -70,7 +70,6 @@ const DATE_SOURCE_OPTIONS: Array<{ value: string; label: string; description: st
 const MIN_ZOOM = 0;
 const MAX_ZOOM = 3;
 const ZOOM_LEVEL_LABELS = ["Years", "Months", "Grid", "Dense"] as const;
-const ZOOM_LABELS = ["Years", "Months", "Grid", "Dense"] as const;
 const TILE_SIZE: Record<number, number> = { 2: 168, 3: 96 };
 const TILE_GAP: Record<number, number> = { 2: 8, 3: 4 };
 const SECTION_HEADER_H = 52;
