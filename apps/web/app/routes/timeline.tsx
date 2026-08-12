@@ -12,6 +12,7 @@ import { formatBytes, formatDuration } from "~/lib/format";
 import { monthKeyOf, monthShortLabel, monthLabel } from "~/lib/date";
 import { useDragSelect } from "~/hooks/useDragSelect";
 import { useTimelineSections, type AssetTag, type Bucket, type TimelineAsset } from "~/hooks/useTimelineSections";
+import { useToast } from "~/hooks/useToast";
 
 export const meta: MetaFunction = () => [{ title: "Timeline — MDA" }];
 
@@ -193,7 +194,7 @@ export default function Timeline() {
   const [tagTargets, setTagTargets] = useState<TimelineAsset[]>([]);
   const [tagSuggestions, setTagSuggestions] = useState<TagSuggestion[]>([]);
   const [isCompressDialogOpen, setIsCompressDialogOpen] = useState(false);
-  const [toast, setToast] = useState<{ message: string; queueLink?: boolean } | null>(null);
+  const { toast, setToast, showToast } = useToast();
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
   const [dateSource, setDateSource] = useState<string>("folder");
   const [dateSourceSaving, setDateSourceSaving] = useState(false);
@@ -498,16 +499,6 @@ export default function Timeline() {
       return next;
     });
   }, []);
-
-  const showToast = useCallback((message: string, queueLink = false) => {
-    setToast({ message, queueLink });
-  }, []);
-
-  useEffect(() => {
-    if (!toast) return;
-    const timer = window.setTimeout(() => setToast(null), 6000);
-    return () => window.clearTimeout(timer);
-  }, [toast]);
 
   // Load tag suggestions once selection mode or the tag dialog is first used
   useEffect(() => {
