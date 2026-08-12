@@ -2,39 +2,16 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router";
 import { createGraphQLClient, getAuthToken, clearAuthToken } from "~/lib/api";
 import { useActiveQueueCount } from "~/lib/useActiveQueueCount";
+import { useAuditLogs } from "~/hooks/useAuditLogs";
+import { AuditFilterBar } from "~/components/AuditFilterBar";
+import { AuditLogTable } from "~/components/AuditLogTable";
+import { AuditPagination } from "~/components/AuditPagination";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "~/components/ui/dialog";
 import {
   ScrollText, Folder, ListTodo, Users,
-  LogOut, User, Moon, Sun, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Trash2,
+  LogOut, User, Moon, Sun, Trash2,
   ArrowLeft, CalendarDays,
 } from "lucide-react";
-
-const PAGE_SIZE = 50;
-
-const AUDIT_LOGS_QUERY = `
-  query AuditLogs($limit: Int, $offset: Int, $userId: ID, $action: String, $resourceType: String, $startDate: String, $endDate: String) {
-    auditLogs(limit: $limit, offset: $offset, userId: $userId, action: $action, resourceType: $resourceType, startDate: $startDate, endDate: $endDate) {
-      id
-      userId
-      user {
-        id
-        username
-        role
-      }
-      action
-      resourceType
-      resourceId
-      details
-      createdAt
-    }
-  }
-`;
-
-const AUDIT_LOGS_COUNT_QUERY = `
-  query AuditLogsCount($userId: ID, $action: String, $resourceType: String, $startDate: String, $endDate: String) {
-    auditLogsCount(userId: $userId, action: $action, resourceType: $resourceType, startDate: $startDate, endDate: $endDate)
-  }
-`;
 
 const CLEAR_AUDIT_LOGS_MUTATION = `
   mutation ClearAuditLogs($startDate: String!, $endDate: String!) {
@@ -49,49 +26,10 @@ const ME_AND_USERS_QUERY = `
   }
 `;
 
-interface AuditLog {
-  id: string;
-  userId: string;
-  user: { id: string; username: string; role: string } | null;
-  action: string;
-  resourceType: string;
-  resourceId: string | null;
-  details: string | null;
-  createdAt: string;
-}
-
 interface UserOption {
   id: string;
   username: string;
   role: string;
-}
-
-const ALL_ACTIONS = [
-  "LOGIN", "CREATE_FIRST_ADMIN", "CREATE_USER", "UPDATE_USER_ROLE",
-  "RESET_PASSWORD", "CHANGE_PASSWORD", "DELETE_USER",
-  "MOVE_ASSET", "RENAME_ASSET", "DUPLICATE_ASSET", "DELETE_ASSET",
-  "COMPRESS_ASSET", "PREVIEW_COMPRESS_ASSETS", "CONFIRM_COMPRESS_REPLACE",
-  "CREATE_FOLDER", "DELETE_FOLDER", "RENAME_FOLDER", "MOVE_FOLDER", "DUPLICATE_FOLDER",
-  "APPLY_TAGS", "REMOVE_TAG", "DELETE_TAG", "RENAME_TAG",
-  "REFRESH_MEDIA_LIBRARY",
-];
-
-const ALL_RESOURCE_TYPES = ["user", "media_asset", "directory", "tag", "media_library"];
-
-function actionBadgeClass(action: string): string {
-  if (["LOGIN","CREATE_FIRST_ADMIN","CREATE_USER","UPDATE_USER_ROLE","RESET_PASSWORD","CHANGE_PASSWORD","DELETE_USER"].includes(action)) {
-    return "bg-blue-500/15 text-blue-400";
-  }
-  if (["MOVE_ASSET","RENAME_ASSET","DUPLICATE_ASSET","DELETE_ASSET","COMPRESS_ASSET","PREVIEW_COMPRESS_ASSETS","CONFIRM_COMPRESS_REPLACE"].includes(action)) {
-    return "bg-emerald-500/15 text-emerald-400";
-  }
-  if (["CREATE_FOLDER","DELETE_FOLDER","RENAME_FOLDER","MOVE_FOLDER","DUPLICATE_FOLDER"].includes(action)) {
-    return "bg-amber-500/15 text-amber-400";
-  }
-  if (["APPLY_TAGS","REMOVE_TAG","DELETE_TAG","RENAME_TAG"].includes(action)) {
-    return "bg-purple-500/15 text-purple-400";
-  }
-  return "bg-muted text-muted-foreground";
 }
 
 function SidebarNavItem({
@@ -129,24 +67,15 @@ function SidebarNavItem({
 }
 
 export default function AuditPage() {
-  const [logs, setLogs] = useState<AuditLog[]>([]);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(0);
-  const [loading, setLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState<UserOption | null>(null);
   const [userOptions, setUserOptions] = useState<UserOption[]>([]);
   const [expandedDetails, setExpandedDetails] = useState<Set<string>>(new Set());
   const [error, setError] = useState("");
 
-  const [filterAction, setFilterAction] = useState("");
-  const [filterResourceType, setFilterResourceType] = useState("");
-  const [filterUserId, setFilterUserId] = useState("");
-  const [filterStartDate, setFilterStartDate] = useState("");
-  const [filterEndDate, setFilterEndDate] = useState("");
-
-  const [appliedFilters, setAppliedFilters] = useState<{
-    action: string; resourceType: string; userId: string; startDate: string; endDate: string;
-  }>({ action: "", resourceType: "", userId: "", startDate: "", endDate: "" });
+  const auditLogs = useAuditLogs({
+    setError,
+    onFiltersApplied: () => setExpandedDetails(new Set()),
+  });
 
   const [clearStartDate, setClearStartDate] = useState("");
   const [clearEndDate, setClearEndDate] = useState("");
@@ -179,10 +108,6 @@ export default function AuditPage() {
     initPage();
   }, []);
 
-  useEffect(() => {
-    fetchLogs();
-  }, [page, appliedFilters]);
-
   const initPage = async () => {
     try {
       const token = getAuthToken();
@@ -195,66 +120,6 @@ export default function AuditPage() {
     } catch {
       setError("Failed to initialize page");
     }
-  };
-
-  const buildVars = (p: number) => ({
-    limit: PAGE_SIZE,
-    offset: p * PAGE_SIZE,
-    userId: appliedFilters.userId || undefined,
-    action: appliedFilters.action || undefined,
-    resourceType: appliedFilters.resourceType || undefined,
-    startDate: appliedFilters.startDate || undefined,
-    endDate: appliedFilters.endDate || undefined,
-  });
-
-  const fetchLogs = async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const token = getAuthToken();
-      if (!token) return;
-      const client = createGraphQLClient(token);
-      const filterVars = {
-        userId: appliedFilters.userId || undefined,
-        action: appliedFilters.action || undefined,
-        resourceType: appliedFilters.resourceType || undefined,
-        startDate: appliedFilters.startDate || undefined,
-        endDate: appliedFilters.endDate || undefined,
-      };
-      const [logsData, countData]: [any, any] = await Promise.all([
-        client.request(AUDIT_LOGS_QUERY, buildVars(page)),
-        client.request(AUDIT_LOGS_COUNT_QUERY, filterVars),
-      ]);
-      setLogs(logsData.auditLogs);
-      setTotal(countData.auditLogsCount);
-    } catch {
-      setError("Failed to load audit logs");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const applyFilters = () => {
-    setPage(0);
-    setExpandedDetails(new Set());
-    setAppliedFilters({
-      action: filterAction,
-      resourceType: filterResourceType,
-      userId: filterUserId,
-      startDate: filterStartDate,
-      endDate: filterEndDate,
-    });
-  };
-
-  const resetFilters = () => {
-    setFilterAction("");
-    setFilterResourceType("");
-    setFilterUserId("");
-    setFilterStartDate("");
-    setFilterEndDate("");
-    setPage(0);
-    setExpandedDetails(new Set());
-    setAppliedFilters({ action: "", resourceType: "", userId: "", startDate: "", endDate: "" });
   };
 
   const toggleDetails = (id: string) => {
@@ -285,27 +150,14 @@ export default function AuditPage() {
       const count: number = data.clearAuditLogs;
       setClearResult(`Deleted ${count} log ${count === 1 ? "entry" : "entries"}.`);
       setShowClearDialog(false);
-      setPage(0);
+      auditLogs.setPage(0);
       setExpandedDetails(new Set());
-      fetchLogs();
+      auditLogs.fetchLogs();
     } catch (err: any) {
       setClearResult(err.message || "Failed to clear logs");
     } finally {
       setClearing(false);
     }
-  };
-
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-
-  const formatDate = (iso: string) =>
-    new Date(iso).toLocaleString("en-US", {
-      month: "short", day: "numeric", year: "numeric",
-      hour: "numeric", minute: "2-digit",
-    });
-
-  const formatDetails = (raw: string) => {
-    try { return JSON.stringify(JSON.parse(raw), null, 2); }
-    catch { return raw; }
   };
 
   return (
@@ -401,89 +253,21 @@ export default function AuditPage() {
 
         {/* Filter bar */}
         <div className="px-6 md:px-10 pb-6">
-          <div className="bg-card rounded-2xl p-5 space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {/* Action filter */}
-              <div className="space-y-1">
-                <label className="label-meta">Action</label>
-                <select
-                  value={filterAction}
-                  onChange={e => setFilterAction(e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-xl bg-muted border border-border/20 text-foreground text-sm outline-hidden focus:border-brand-primary/80"
-                >
-                  <option value="">All actions</option>
-                  {ALL_ACTIONS.map(a => <option key={a} value={a}>{a}</option>)}
-                </select>
-              </div>
-
-              {/* Resource type filter */}
-              <div className="space-y-1">
-                <label className="label-meta">Resource Type</label>
-                <select
-                  value={filterResourceType}
-                  onChange={e => setFilterResourceType(e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-xl bg-muted border border-border/20 text-foreground text-sm outline-hidden focus:border-brand-primary/80"
-                >
-                  <option value="">All types</option>
-                  {ALL_RESOURCE_TYPES.map(r => <option key={r} value={r}>{r}</option>)}
-                </select>
-              </div>
-
-              {/* User filter */}
-              <div className="space-y-1">
-                <label className="label-meta">User</label>
-                <select
-                  value={filterUserId}
-                  onChange={e => setFilterUserId(e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-xl bg-muted border border-border/20 text-foreground text-sm outline-hidden focus:border-brand-primary/80"
-                >
-                  <option value="">All users</option>
-                  {userOptions.map(u => (
-                    <option key={u.id} value={u.id}>{u.username} ({u.role})</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Date from */}
-              <div className="space-y-1">
-                <label className="label-meta">From</label>
-                <input
-                  type="date"
-                  value={filterStartDate}
-                  onChange={e => setFilterStartDate(e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-xl bg-muted border border-border/20 text-foreground text-sm outline-hidden focus:border-brand-primary/80"
-                />
-              </div>
-
-              {/* Date to */}
-              <div className="space-y-1">
-                <label className="label-meta">To</label>
-                <input
-                  type="date"
-                  value={filterEndDate}
-                  onChange={e => setFilterEndDate(e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-xl bg-muted border border-border/20 text-foreground text-sm outline-hidden focus:border-brand-primary/80"
-                />
-              </div>
-            </div>
-
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={applyFilters}
-                className="px-5 py-2 rounded-xl gradient-brand text-[#060e20] font-manrope font-bold text-sm shadow-ambient hover:opacity-90 transition-opacity"
-              >
-                Apply Filters
-              </button>
-              <button
-                type="button"
-                onClick={resetFilters}
-                className="px-5 py-2 rounded-xl text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
-              >
-                Reset
-              </button>
-            </div>
-          </div>
+          <AuditFilterBar
+            filterAction={auditLogs.filterAction}
+            setFilterAction={auditLogs.setFilterAction}
+            filterResourceType={auditLogs.filterResourceType}
+            setFilterResourceType={auditLogs.setFilterResourceType}
+            filterUserId={auditLogs.filterUserId}
+            setFilterUserId={auditLogs.setFilterUserId}
+            filterStartDate={auditLogs.filterStartDate}
+            setFilterStartDate={auditLogs.setFilterStartDate}
+            filterEndDate={auditLogs.filterEndDate}
+            setFilterEndDate={auditLogs.setFilterEndDate}
+            userOptions={userOptions}
+            onApply={auditLogs.applyFilters}
+            onReset={auditLogs.resetFilters}
+          />
         </div>
 
         {/* Clear Logs panel */}
@@ -532,116 +316,20 @@ export default function AuditPage() {
             </div>
           )}
 
-          <div className="bg-card rounded-2xl overflow-hidden">
-            {/* Header */}
-            <div className="hidden lg:grid lg:grid-cols-[180px_140px_180px_120px_80px_1fr] px-6 py-3 border-b border-border/10">
-              {["Timestamp", "User", "Action", "Resource Type", "Res. ID", "Details"].map(h => (
-                <p key={h} className="label-meta">{h}</p>
-              ))}
-            </div>
+          <AuditLogTable
+            logs={auditLogs.logs}
+            loading={auditLogs.loading}
+            expandedDetails={expandedDetails}
+            onToggleDetails={toggleDetails}
+          />
 
-            {loading ? (
-              <div className="flex items-center justify-center py-20 text-muted-foreground text-sm">
-                Loading…
-              </div>
-            ) : logs.length === 0 ? (
-              <div className="flex items-center justify-center py-20 text-muted-foreground text-sm">
-                No audit logs found.
-              </div>
-            ) : (
-              <div className="divide-y divide-border/10">
-                {logs.map(log => (
-                  <div key={log.id} className="flex flex-col lg:grid lg:grid-cols-[180px_140px_180px_120px_80px_1fr] px-4 lg:px-6 py-4 gap-2 lg:gap-0 lg:items-start hover:bg-accent/20 transition-colors">
-                    {/* Timestamp */}
-                    <p className="text-xs text-muted-foreground lg:pt-0.5 shrink-0">
-                      {formatDate(log.createdAt)}
-                    </p>
-
-                    {/* User */}
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <div className="w-5 h-5 rounded-full bg-muted flex items-center justify-center shrink-0">
-                        <User className="w-3 h-3 text-muted-foreground" />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-sm text-foreground truncate">
-                          {log.user?.username ?? <span className="text-muted-foreground italic">deleted</span>}
-                        </p>
-                        {log.user && (
-                          <p className="text-[10px] text-muted-foreground capitalize">{log.user.role}</p>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Action badge */}
-                    <div>
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold font-mono ${actionBadgeClass(log.action)}`}>
-                        {log.action}
-                      </span>
-                    </div>
-
-                    {/* Resource type */}
-                    <p className="text-xs text-muted-foreground lg:pt-0.5">{log.resourceType}</p>
-
-                    {/* Resource ID */}
-                    <p className="text-xs text-muted-foreground lg:pt-0.5">{log.resourceId ?? "—"}</p>
-
-                    {/* Details */}
-                    <div>
-                      {log.details ? (
-                        <div>
-                          <button
-                            type="button"
-                            onClick={() => toggleDetails(log.id)}
-                            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                          >
-                            {expandedDetails.has(log.id) ? (
-                              <><ChevronUp className="w-3 h-3" /> Hide</>
-                            ) : (
-                              <><ChevronDown className="w-3 h-3" /> Show</>
-                            )}
-                          </button>
-                          {expandedDetails.has(log.id) && (
-                            <pre className="mt-2 text-[11px] text-foreground bg-muted rounded-xl px-3 py-2 overflow-x-auto whitespace-pre-wrap break-all">
-                              {formatDetails(log.details)}
-                            </pre>
-                          )}
-                        </div>
-                      ) : (
-                        <p className="text-xs text-muted-foreground">—</p>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Pagination */}
-          {!loading && total > 0 && (
-            <div className="flex items-center justify-between mt-4 px-1">
-              <p className="text-sm text-muted-foreground">
-                Page {page + 1} of {totalPages} <span className="text-muted-foreground/60">({total} total)</span>
-              </p>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setPage(p => Math.max(0, p - 1))}
-                  disabled={page === 0}
-                  className="flex items-center gap-1 px-3 py-2 rounded-xl text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-all disabled:opacity-30 disabled:cursor-not-allowed"
-                >
-                  <ChevronLeft className="w-4 h-4" /> Previous
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
-                  disabled={page >= totalPages - 1}
-                  className="flex items-center gap-1 px-3 py-2 rounded-xl text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-all disabled:opacity-30 disabled:cursor-not-allowed"
-                >
-                  Next <ChevronRight className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          )}
+          <AuditPagination
+            page={auditLogs.page}
+            totalPages={auditLogs.totalPages}
+            total={auditLogs.total}
+            loading={auditLogs.loading}
+            setPage={auditLogs.setPage}
+          />
         </div>
       </div>
 
