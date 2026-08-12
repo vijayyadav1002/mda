@@ -73,7 +73,6 @@ export function MediaAssetViewer({
   const [renameValue, setRenameValue] = useState("");
   const [renameLoading, setRenameLoading] = useState(false);
   const [imageDimensions, setImageDimensions] = useState({ width: 0, height: 0 });
-  const [currentVideoId, setCurrentVideoId] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [videoSource, setVideoSource] = useState<VideoSource | null>(null);
   const [transcodeProgress, setTranscodeProgress] = useState<TranscodeProgress | null>(null);
@@ -86,7 +85,6 @@ export function MediaAssetViewer({
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "error">("idle");
   const autoEditConsumedRef = useRef<string | null>(null);
   const documentScrollRef = useRef<HTMLDivElement | null>(null);
-  const videoSourceKindRef = useRef<VideoSource["kind"] | null>(null);
   const splitVideoRef = useRef<HTMLVideoElement | null>(null);
   const fullscreenVideoRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
@@ -105,12 +103,6 @@ export function MediaAssetViewer({
       setSaveStatus("idle");
     }
   }, [isOpen, asset?.id]);
-
-  useEffect(() => {
-    if (isOpen && asset?.mimeType.startsWith("video/")) {
-      setCurrentVideoId(asset.id);
-    }
-  }, [isOpen, asset]);
 
   // Start at the top when switching between edit and preview so the editor's
   // top edge (and the beginning of the document) is never hidden under the
@@ -212,8 +204,6 @@ export function MediaAssetViewer({
     const video = isFullscreen ? fullscreenVideoRef.current : splitVideoRef.current;
     if (!video || !videoSource) return;
 
-    videoSourceKindRef.current = videoSource.kind;
-
     if (videoSource.kind === "mp4") {
       video.src = videoSource.url;
       return;
@@ -288,15 +278,6 @@ export function MediaAssetViewer({
       hlsRef.current = null;
     }
   }, [isOpen]);
-
-  useEffect(() => {
-    if (!isOpen && currentVideoId) {
-      // Transcoded MP4s are kept on disk (evicted only by the size-based
-      // cache limit), so closing the viewer no longer deletes them.
-      videoSourceKindRef.current = null;
-      setCurrentVideoId(null);
-    }
-  }, [isOpen, currentVideoId, apiUrl]);
 
   // Close on Escape; navigate with arrow keys
   useEffect(() => {
