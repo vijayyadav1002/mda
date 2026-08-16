@@ -83,6 +83,7 @@ export function MobileNav({
   onSaveCacheSettings,
   onLogout,
 }: MobileNavProps) {
+  // runs fn, then closes the drawer — callers should pass bare actions, not ones that already close the menu
   const act = (fn: () => void) => () => {
     fn();
     onClose();
