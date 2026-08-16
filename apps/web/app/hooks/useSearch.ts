@@ -78,6 +78,13 @@ export function useSearch({ currentPath, rootPath, sortOption }: UseSearchParams
     setMinSizeBytes(0);
   }, []);
 
+  /** Resets query/results without touching `minSizeBytes`, unlike `handleClearSearch`. */
+  const clearSearchState = useCallback(() => {
+    setSearchQuery(null);
+    setSearchAssets([]);
+    setSearchFolders([]);
+  }, []);
+
   const searchResultNodes = useMemo<DirectoryNode[]>(() => {
     const folderNodes: DirectoryNode[] = searchFolders.map((folder) => ({
       name: folder.name,
@@ -106,6 +113,7 @@ export function useSearch({ currentPath, rootPath, sortOption }: UseSearchParams
     setMinSizeBytes,
     handleSearch,
     handleClearSearch,
+    clearSearchState,
     searchResultNodes,
   };
 }

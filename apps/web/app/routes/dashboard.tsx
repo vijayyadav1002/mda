@@ -27,6 +27,7 @@ import { useThumbnailObserver } from "~/hooks/useThumbnailObserver";
 import { useFileUpload } from "~/hooks/useFileUpload";
 import { useCacheSettings } from "~/hooks/useCacheSettings";
 import { usePasswordChange } from "~/hooks/usePasswordChange";
+import { useSearch } from "~/hooks/useSearch";
 import { CachePanelBody } from "~/components/CachePanelBody";
 import { SidebarNavItem } from "~/components/SidebarNavItem";
 import { FileTypeIcon } from "~/components/FileTypeIcon";
@@ -162,20 +163,6 @@ const MEDIA_ASSET_QUERY = `
       createdAt
       capturedAt
       tags { id name }
-    }
-  }
-`;
-
-const SEARCH_RESULTS_QUERY = `
-  query SearchResults($term: String, $mediaType: String, $sortBy: String, $limit: Int, $minSize: Float, $maxSize: Float, $path: String) {
-    search(term: $term, mediaType: $mediaType, sortBy: $sortBy, limit: $limit, minSize: $minSize, maxSize: $maxSize, path: $path) {
-      files {
-        id fileName filePath fileSize mimeType
-        thumbnailUrl transcodedUrl
-        indexedAt createdAt updatedAt capturedAt
-        tags { id name }
-      }
-      folders { name path parentPath }
     }
   }
 `;
@@ -329,12 +316,7 @@ export default function Dashboard() {
     setDirectoryCache,
     openConfirm,
   });
-  const [searchQuery, setSearchQuery] = useState<{ term: string; mediaType: string } | null>(null);
-  const [searchAssets, setSearchAssets] = useState<MediaAsset[]>([]);
-  const [searchFolders, setSearchFolders] = useState<{ name: string; path: string; parentPath?: string | null }[]>([]);
-  const [searchLoading, setSearchLoading] = useState(false);
-  const [searchLimit, setSearchLimit] = useState<25 | 50 | 100 | 250 | 0>(25);
-  const [minSizeBytes, setMinSizeBytes] = useState<number>(0); // 0 = no filter
+  const search = useSearch({ currentPath, rootPath, sortOption });
   const refreshInFlightRef = useRef(false);
   const thumbnailPollTimerRef = useRef<number | null>(null);
   const thumbnailPollAttemptsRef = useRef(0);
@@ -995,10 +977,8 @@ export default function Dashboard() {
       return;
     }
     // Opening a folder from search results exits search and navigates into it
-    if (searchQuery) {
-      setSearchQuery(null);
-      setSearchAssets([]);
-      setSearchFolders([]);
+    if (search.searchQuery) {
+      search.clearSearchState();
     }
     if (currentPath) setFolderHistory((prev) => [...prev, currentPath]);
     setCurrentPath(folder.path);
@@ -1015,8 +995,7 @@ export default function Dashboard() {
       setFolderHistory((prev) => [...prev, currentPath]);
     }
     clearTagFilter();
-    setSearchQuery(null);
-    setSearchAssets([]);
+    search.clearSearchState();
     setCurrentPath(targetPath);
     const cachedNode = directoryCache[targetPath];
     if (!cachedNode || cachedNode.children === null || cachedNode.children === undefined) {
@@ -1027,7 +1006,7 @@ export default function Dashboard() {
         alert(`Failed to open folder: ${err?.message || "Unknown error"}`);
       }
     }
-  }, [clearTagFilter, currentPath, directoryCache]);
+  }, [clearTagFilter, currentPath, directoryCache, search.clearSearchState]);
 
   const openAssetById = useCallback(async (assetId: string) => {
     const token = getAuthToken();
@@ -1042,45 +1021,6 @@ export default function Dashboard() {
     } catch (err) {
       console.error("Failed to load media asset:", err);
     }
-  }, []);
-
-  const handleSearch = useCallback(async (term: string, mediaType: string) => {
-    const trimmed = term.trim();
-    if (!trimmed && mediaType === "all") {
-      setSearchQuery(null);
-      setSearchAssets([]);
-      setSearchFolders([]);
-      return;
-    }
-    setSearchQuery({ term: trimmed, mediaType });
-    setSearchLoading(true);
-    const token = getAuthToken();
-    if (!token) { setSearchLoading(false); return; }
-    try {
-      const client = createGraphQLClient(token);
-      const vars: Record<string, unknown> = { limit: searchLimit };
-      if (trimmed) vars.term = trimmed;
-      if (mediaType !== "all") vars.mediaType = mediaType;
-      if (sortOption !== "default") vars.sortBy = sortOption;
-      if (minSizeBytes > 0) vars.minSize = minSizeBytes;
-      if (currentPath && currentPath !== rootPath) vars.path = currentPath;
-      const data: any = await client.request(SEARCH_RESULTS_QUERY, vars);
-      setSearchAssets((data?.search?.files ?? []) as MediaAsset[]);
-      setSearchFolders(data?.search?.folders ?? []);
-    } catch (err) {
-      console.error("Search failed:", err);
-      setSearchAssets([]);
-      setSearchFolders([]);
-    } finally {
-      setSearchLoading(false);
-    }
-  }, [searchLimit, sortOption, minSizeBytes, currentPath, rootPath]);
-
-  const handleClearSearch = useCallback(() => {
-    setSearchQuery(null);
-    setSearchAssets([]);
-    setSearchFolders([]);
-    setMinSizeBytes(0);
   }, []);
 
   useEffect(() => {
@@ -1107,28 +1047,11 @@ export default function Dashboard() {
     setAutoEditAssetId(null);
   };
 
-  const searchResultNodes = useMemo<DirectoryNode[]>(() => {
-    const folderNodes: DirectoryNode[] = searchFolders.map((folder) => ({
-      name: folder.name,
-      path: folder.path,
-      type: "directory",
-      children: null,
-    }));
-    const fileNodes: DirectoryNode[] = searchAssets.map((asset) => ({
-      name: asset.fileName,
-      path: asset.filePath,
-      type: "file",
-      children: null,
-      mediaAsset: asset,
-    }));
-    return [...folderNodes, ...fileNodes];
-  }, [searchAssets, searchFolders]);
-
   const sortedFolderChildren = useMemo(() => {
-    const baseChildren = searchQuery
-      ? searchResultNodes
+    const baseChildren = search.searchQuery
+      ? search.searchResultNodes
       : activeTagFilter ? tagFilterNodes : currentFolderChildren;
-    if (sortOption === "default" || searchQuery) return baseChildren;
+    if (sortOption === "default" || search.searchQuery) return baseChildren;
     const folders = baseChildren.filter((n) => n.type === "directory");
     const files = baseChildren.filter((n) => n.type !== "directory");
     const sorted = [...files].sort((a, b) => {
@@ -1142,7 +1065,7 @@ export default function Dashboard() {
       return sortOption === "date-asc" ? dateA - dateB : dateB - dateA;
     });
     return [...folders, ...sorted];
-  }, [activeTagFilter, currentFolderChildren, searchQuery, searchResultNodes, sortOption, tagFilterNodes]);
+  }, [activeTagFilter, currentFolderChildren, search.searchQuery, search.searchResultNodes, sortOption, tagFilterNodes]);
 
   const selectedAssets = useMemo(() => {
     return sortedFolderChildren
@@ -1184,8 +1107,8 @@ export default function Dashboard() {
       setSelectedAssetIds(new Set());
       // Pick up the fresh thumbnails once the queue has had a moment to work
       window.setTimeout(() => {
-        if (searchQuery) {
-          void handleSearch(searchQuery.term, searchQuery.mediaType);
+        if (search.searchQuery) {
+          void search.handleSearch(search.searchQuery.term, search.searchQuery.mediaType);
         } else if (currentPath) {
           void loadDirectoryIntoCache(currentPath);
         }
@@ -1194,7 +1117,7 @@ export default function Dashboard() {
       console.error("Failed to queue thumbnail regeneration:", err.message);
       alert(`Failed to queue thumbnails: ${err.message}`);
     }
-  }, [selectedAssets, searchQuery, currentPath, handleSearch]);
+  }, [selectedAssets, search.searchQuery, currentPath, search.handleSearch]);
 
   const handleTranscodeSelected = useCallback(async () => {
     if (selectedVideoAssets.length === 0) return;
@@ -1273,10 +1196,10 @@ export default function Dashboard() {
   }, [showSelectionActionsMenu]);
 
   useEffect(() => {
-    if (!searchQuery) return;
-    void handleSearch(searchQuery.term, searchQuery.mediaType);
+    if (!search.searchQuery) return;
+    void search.handleSearch(search.searchQuery.term, search.searchQuery.mediaType);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sortOption, searchLimit, minSizeBytes, currentPath]);
+  }, [sortOption, search.searchLimit, search.minSizeBytes, currentPath]);
 
   useEffect(() => {
     if (!currentPath) return;
@@ -1436,21 +1359,21 @@ export default function Dashboard() {
     );
   };
 
-  const heroTitle = searchQuery
-    ? searchQuery.term
-      ? `"${searchQuery.term}"`
-      : searchQuery.mediaType === "image" ? "All Images" : "All Videos"
+  const heroTitle = search.searchQuery
+    ? search.searchQuery.term
+      ? `"${search.searchQuery.term}"`
+      : search.searchQuery.mediaType === "image" ? "All Images" : "All Videos"
     : activeTagFilter
       ? `#${activeTagFilter}`
       : !isAtRoot && currentFolder
         ? currentFolder.name
         : "Your Collection";
-  const heroSubtitle = searchQuery
-    ? searchLoading
+  const heroSubtitle = search.searchQuery
+    ? search.searchLoading
       ? "Searching…"
-      : searchLimit > 0 && searchAssets.length >= searchLimit
-        ? `Showing top ${searchAssets.length} results — try a narrower search or increase the limit`
-        : `${searchAssets.length} result${searchAssets.length === 1 ? "" : "s"} found${currentPath && currentPath !== rootPath ? ` in /${currentPath.split("/").filter(Boolean).pop()}` : ""}`
+      : search.searchLimit > 0 && search.searchAssets.length >= search.searchLimit
+        ? `Showing top ${search.searchAssets.length} results — try a narrower search or increase the limit`
+        : `${search.searchAssets.length} result${search.searchAssets.length === 1 ? "" : "s"} found${currentPath && currentPath !== rootPath ? ` in /${currentPath.split("/").filter(Boolean).pop()}` : ""}`
     : activeTagFilter
       ? `${tagFilterAssets.length} tagged file${tagFilterAssets.length === 1 ? "" : "s"} across your library`
       : !isAtRoot
@@ -1755,8 +1678,8 @@ export default function Dashboard() {
         {/* Search bar */}
         <div className="md:sticky md:top-0 z-20 bg-background/80 backdrop-blur-xs px-4 md:px-10 pt-3 pb-1.5">
           <SearchBar
-            onSearch={handleSearch}
-            onClear={handleClearSearch}
+            onSearch={search.handleSearch}
+            onClear={search.handleClearSearch}
             className="w-full md:max-w-xl"
           />
         </div>
@@ -1764,16 +1687,16 @@ export default function Dashboard() {
         {/* Toolbar */}
         <div className="relative z-30 bg-background/80 backdrop-blur-xs px-4 md:px-10 pb-3 pt-1 flex items-center justify-between gap-2 md:gap-4">
           <div className="flex items-center gap-3 min-w-0">
-            {searchQuery && (
+            {search.searchQuery && (
               <button
                 type="button"
-                onClick={handleClearSearch}
+                onClick={search.handleClearSearch}
                 className="flex items-center gap-1.5 text-sm text-brand-primary hover:opacity-80 transition-opacity"
               >
                 <ArrowLeft className="w-4 h-4" /> Exit search
               </button>
             )}
-            {activeTagFilter && !searchQuery && (
+            {activeTagFilter && !search.searchQuery && (
               <button
                 type="button"
                 onClick={clearTagFilter}
@@ -1782,7 +1705,7 @@ export default function Dashboard() {
                 <ArrowLeft className="w-4 h-4" /> Exit tag filter
               </button>
             )}
-            {!activeTagFilter && !searchQuery && folderHistory.length > 0 && (
+            {!activeTagFilter && !search.searchQuery && folderHistory.length > 0 && (
               <button
                 type="button"
                 onClick={() => void handleBackClick()}
@@ -2222,10 +2145,10 @@ export default function Dashboard() {
             </div>
 
             {/* Search result limit — only visible during active search */}
-            {searchQuery && (
+            {search.searchQuery && (
               <select
-                value={searchLimit}
-                onChange={(e) => setSearchLimit(Number(e.target.value) as typeof searchLimit)}
+                value={search.searchLimit}
+                onChange={(e) => search.setSearchLimit(Number(e.target.value) as typeof search.searchLimit)}
                 className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm bg-muted text-muted-foreground focus:outline-hidden focus:ring-2 focus:ring-brand-primary/30 cursor-pointer"
                 aria-label="Max search results"
               >
@@ -2238,12 +2161,12 @@ export default function Dashboard() {
             )}
 
             {/* File size filter — only visible during active search */}
-            {searchQuery && (
+            {search.searchQuery && (
               <select
-                value={minSizeBytes}
-                onChange={(e) => setMinSizeBytes(Number(e.target.value))}
+                value={search.minSizeBytes}
+                onChange={(e) => search.setMinSizeBytes(Number(e.target.value))}
                 className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm focus:outline-hidden focus:ring-2 focus:ring-brand-primary/30 cursor-pointer ${
-                  minSizeBytes > 0
+                  search.minSizeBytes > 0
                     ? "text-brand-primary bg-brand-primary/10"
                     : "bg-muted text-muted-foreground"
                 }`}
@@ -2457,7 +2380,7 @@ export default function Dashboard() {
                         <p className="label-meta mt-1">
                           {formatBytes(asset.fileSize)} · {formatDate(asset.capturedAt ?? asset.createdAt)}
                         </p>
-                        {searchQuery && rootPath && (
+                        {search.searchQuery && rootPath && (
                           <p className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground/70">
                             {(asset.filePath.substring(0, asset.filePath.lastIndexOf('/')).replace(rootPath, '') || '/').replace(/^\//, '') || '/'}
                           </p>
@@ -2647,7 +2570,7 @@ export default function Dashboard() {
         selectedAssets={removeTagsAssets}
         onRemove={async (tagNames) => {
           await removeTagsFromAssets(removeTagsAssets.map((a) => a.id), tagNames);
-          if (searchQuery) await handleSearch(searchQuery.term, searchQuery.mediaType);
+          if (search.searchQuery) await search.handleSearch(search.searchQuery.term, search.searchQuery.mediaType);
           if (isViewerOpen && selectedAsset && removeTagsAssets.some((a) => a.id === selectedAsset.id)) {
             setSelectedAsset((prev) =>
               prev ? { ...prev, tags: (prev.tags ?? []).filter((t) => !tagNames.includes(t.name)) } : prev
