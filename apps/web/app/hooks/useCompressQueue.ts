@@ -315,6 +315,7 @@ export function useCompressQueue({ user, currentPath, rootPath, loadDirectoryInt
     compressDialogAssets,
     setCompressDialogAssets,
     compressQueue,
+    setCompressQueue,
     compressQueueRef,
     showQueuePanel,
     setShowQueuePanel,

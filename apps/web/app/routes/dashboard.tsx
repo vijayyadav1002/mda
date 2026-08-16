@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from "react-router";
 import { createGraphQLClient, getApiUrl, getAuthToken, clearAuthToken } from "~/lib/api";
 import { MediaAssetViewer } from "~/components/MediaAssetViewer";
 import { CompressDialog } from "~/components/CompressDialog";
-import { CompressQueuePanel, type CompressJob } from "~/components/CompressQueuePanel";
+import { CompressQueuePanel } from "~/components/CompressQueuePanel";
 import { TagDialog } from "~/components/TagDialog";
 import { RemoveTagsDialog } from "~/components/RemoveTagsDialog";
 import { ConfirmDialog } from "~/components/ConfirmDialog";
@@ -28,6 +28,7 @@ import { useFileUpload } from "~/hooks/useFileUpload";
 import { useCacheSettings } from "~/hooks/useCacheSettings";
 import { usePasswordChange } from "~/hooks/usePasswordChange";
 import { useSearch } from "~/hooks/useSearch";
+import { useCompressQueue } from "~/hooks/useCompressQueue";
 import { CachePanelBody } from "~/components/CachePanelBody";
 import { SidebarNavItem } from "~/components/SidebarNavItem";
 import { FileTypeIcon } from "~/components/FileTypeIcon";
@@ -63,18 +64,6 @@ const GENERATE_THUMBNAILS_FOR_PATH_MUTATION = `
 const GENERATE_THUMBNAILS_FOR_ASSETS_MUTATION = `
   mutation GenerateThumbnailsForAssets($ids: [ID!]!, $sessionId: String, $force: Boolean) {
     generateThumbnailsForAssets(ids: $ids, sessionId: $sessionId, force: $force)
-  }
-`;
-
-const CONFIRM_COMPRESS_MUTATION = `
-  mutation ConfirmCompressReplace($ids: [ID!]!) {
-    confirmCompressReplace(ids: $ids) { id fileName fileSize }
-  }
-`;
-
-const CANCEL_COMPRESS_MUTATION = `
-  mutation CancelCompressPreview($ids: [ID!]!) {
-    cancelCompressPreview(ids: $ids)
   }
 `;
 
@@ -235,11 +224,6 @@ export default function Dashboard() {
   const sortMenuRef = useRef<HTMLDivElement>(null);
   const [showSelectionActionsMenu, setShowSelectionActionsMenu] = useState(false);
   const selectionActionsMenuRef = useRef<HTMLDivElement>(null);
-  const [isCompressDialogOpen, setIsCompressDialogOpen] = useState(false);
-  const [compressDialogAssets, setCompressDialogAssets] = useState<MediaAsset[]>([]);
-  const [compressQueue, setCompressQueue] = useState<CompressJob[]>([]);
-  const [showQueuePanel, setShowQueuePanel] = useState(false);
-  const compressQueueRef = useRef<CompressJob[]>([]);
   const [showNewFolderDialog, setShowNewFolderDialog] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
@@ -317,6 +301,7 @@ export default function Dashboard() {
     openConfirm,
   });
   const search = useSearch({ currentPath, rootPath, sortOption });
+  const compress = useCompressQueue({ user, currentPath, rootPath, loadDirectoryIntoCache });
   const refreshInFlightRef = useRef(false);
   const thumbnailPollTimerRef = useRef<number | null>(null);
   const thumbnailPollAttemptsRef = useRef(0);
@@ -327,7 +312,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (searchParams.get("queue") === "open") {
-      setShowQueuePanel(true);
+      compress.setShowQueuePanel(true);
       const next = new URLSearchParams(searchParams);
       next.delete("queue");
       setSearchParams(next, { replace: true });
@@ -496,270 +481,6 @@ export default function Dashboard() {
       },
     });
   };
-
-  // Keep queue ref in sync so confirmCompressJob can read current jobs without stale closures
-  useEffect(() => { compressQueueRef.current = compressQueue; }, [compressQueue]);
-
-  // Load queue from server on login
-  useEffect(() => {
-    if (!user) return;
-    const token = getAuthToken();
-    if (!token) return;
-    fetch(`${API_URL}/api/queue-state`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json())
-      .then(({ queue }) => {
-        if (!Array.isArray(queue) || queue.length === 0) return;
-        setCompressQueue(
-          (queue as CompressJob[]).map(job => ({
-            ...job,
-            progress: {},
-            currentFileId: null,
-            fileStatuses: job.fileStatuses ?? Object.fromEntries(
-              (job.assets ?? []).map(a => [
-                a.id,
-                job.status === "done" ? "confirmed" as const : "pending" as const,
-              ])
-            ),
-            status: (
-              job.status === "compressing" ? "pending"       // BullMQ retries the job
-              : job.status === "transcoding" ? "pending"     // BullMQ retries the job
-              : job.status === "confirming" ? "preview_ready" // let user retry confirm
-              : job.status
-            ) as CompressJob["status"],
-          }))
-        );
-      })
-      .catch(() => {});
-  }, [user?.username]);
-
-  // Poll for queue updates every 5 s when jobs are active
-  const hasActiveJobs = compressQueue.some(j => j.status === "pending" || j.status === "compressing" || j.status === "transcoding");
-  useEffect(() => {
-    if (!hasActiveJobs || !user) return;
-    const token = getAuthToken();
-    if (!token) return;
-    const intervalId = setInterval(() => {
-      fetch(`${API_URL}/api/queue-state`, { headers: { Authorization: `Bearer ${token}` } })
-        .then(r => r.json())
-        .then(({ queue }) => {
-          if (!Array.isArray(queue)) return;
-          setCompressQueue(prev =>
-            (queue as CompressJob[]).map(serverJob => {
-              const local = prev.find(j => j.id === serverJob.id);
-              return {
-                ...serverJob,
-                fileStatuses: local?.fileStatuses ?? Object.fromEntries(
-                  (serverJob.assets ?? []).map(a => [a.id, "pending" as const])
-                ),
-              };
-            })
-          );
-        })
-        .catch(() => {});
-    }, 5000);
-    return () => clearInterval(intervalId);
-  }, [hasActiveJobs, user]);
-
-  const addToCompressQueue = useCallback(async (assets: MediaAsset[], options: { resolution: string; quality: number }) => {
-    const token = getAuthToken();
-    if (!token) return;
-    try {
-      const res = await fetch(`${API_URL}/api/compress/enqueue`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ ids: assets.map(a => a.id), options }),
-      });
-      if (!res.ok) throw new Error(`Server error ${res.status}`);
-      const { jobId } = await res.json();
-      setCompressQueue(prev => [...prev, {
-        id: jobId,
-        assets,
-        options,
-        status: "pending" as const,
-        progress: {},
-        currentFileId: null,
-        previews: [],
-        fileStatuses: Object.fromEntries(assets.map(a => [a.id, "pending" as const])),
-        addedAt: Date.now(),
-      }]);
-      setShowQueuePanel(true);
-    } catch (err: any) {
-      console.error("Failed to enqueue compression job:", err.message);
-    }
-  }, []);
-
-  const saveQueueToServer = useCallback((updatedQueue: CompressJob[]) => {
-    const token = getAuthToken();
-    if (!token || !user) return;
-    fetch(`${API_URL}/api/queue-state`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ queue: updatedQueue }),
-    }).catch(() => {});
-  }, [user]);
-
-  const confirmCompressJob = useCallback(async (jobId: string) => {
-    const job = compressQueueRef.current.find(j => j.id === jobId);
-    if (!job) return;
-    const pendingIds = job.assets
-      .filter(a => (job.fileStatuses?.[a.id] ?? "pending") === "pending")
-      .map(a => a.id);
-    if (pendingIds.length === 0) return;
-
-    setCompressQueue(prev => prev.map(j => j.id !== jobId ? j : {
-      ...j,
-      status: "confirming" as const,
-      fileStatuses: {
-        ...j.fileStatuses,
-        ...Object.fromEntries(pendingIds.map(id => [id, "confirming" as const])),
-      },
-    }));
-    try {
-      const token = getAuthToken();
-      if (!token) throw new Error("Not authenticated");
-      await createGraphQLClient(token).request(CONFIRM_COMPRESS_MUTATION, { ids: pendingIds });
-      const updated = compressQueueRef.current.map(j => j.id !== jobId ? j : {
-        ...j,
-        status: "done" as const,
-        fileStatuses: {
-          ...j.fileStatuses,
-          ...Object.fromEntries(pendingIds.map(id => [id, "confirmed" as const])),
-        },
-      });
-      setCompressQueue(updated);
-      saveQueueToServer(updated);
-      if (currentPath) await loadDirectoryIntoCache(currentPath);
-      if (rootPath && rootPath !== currentPath) await loadDirectoryIntoCache(rootPath);
-    } catch (err: any) {
-      setCompressQueue(prev => prev.map(j => j.id !== jobId ? j : {
-        ...j,
-        status: "error" as const,
-        fileStatuses: {
-          ...j.fileStatuses,
-          ...Object.fromEntries(pendingIds.map(id => [id, "pending" as const])),
-        },
-        errorMessage: err.message || "Failed to apply compression",
-      }));
-    }
-  }, [currentPath, rootPath, saveQueueToServer]);
-
-  const dismissCompressJob = useCallback((jobId: string) => {
-    const job = compressQueueRef.current.find(j => j.id === jobId);
-    if (!job) return;
-    const pendingIds = job.assets
-      .filter(a => (job.fileStatuses?.[a.id] ?? "pending") === "pending")
-      .map(a => a.id);
-    if (pendingIds.length > 0) {
-      const token = getAuthToken();
-      if (token) {
-        createGraphQLClient(token)
-          .request(CANCEL_COMPRESS_MUTATION, { ids: pendingIds })
-          .catch(() => {});
-      }
-    }
-    setCompressQueue(prev => {
-      const updated = prev.filter(j => j.id !== jobId);
-      saveQueueToServer(updated);
-      return updated;
-    });
-  }, [saveQueueToServer]);
-
-  const confirmSingleCompressFile = useCallback(async (jobId: string, assetId: string) => {
-    setCompressQueue(prev => prev.map(j => j.id !== jobId ? j : {
-      ...j,
-      fileStatuses: { ...j.fileStatuses, [assetId]: "confirming" as const },
-    }));
-    try {
-      const token = getAuthToken();
-      if (!token) throw new Error("Not authenticated");
-      await createGraphQLClient(token).request(CONFIRM_COMPRESS_MUTATION, { ids: [assetId] });
-      setCompressQueue(prev => {
-        const updated = prev.map(j => {
-          if (j.id !== jobId) return j;
-          const newStatuses = { ...j.fileStatuses, [assetId]: "confirmed" as const };
-          const allDecided = Object.values(newStatuses).every(
-            s => s === "confirmed" || s === "discarded" || s === "error"
-          );
-          return { ...j, fileStatuses: newStatuses, status: allDecided ? "done" as const : j.status };
-        });
-        saveQueueToServer(updated);
-        return updated;
-      });
-      if (currentPath) await loadDirectoryIntoCache(currentPath);
-      if (rootPath && rootPath !== currentPath) await loadDirectoryIntoCache(rootPath);
-    } catch (err: any) {
-      setCompressQueue(prev => prev.map(j => j.id !== jobId ? j : {
-        ...j,
-        fileStatuses: { ...j.fileStatuses, [assetId]: "error" as const },
-      }));
-    }
-  }, [currentPath, rootPath, saveQueueToServer]);
-
-  const discardSingleCompressFile = useCallback(async (jobId: string, assetId: string) => {
-    try {
-      const token = getAuthToken();
-      if (token) {
-        await createGraphQLClient(token).request(CANCEL_COMPRESS_MUTATION, { ids: [assetId] });
-      }
-    } catch {
-      // best-effort preview cleanup — don't block the UI update
-    }
-    setCompressQueue(prev => {
-      const updated = prev.map(j => {
-        if (j.id !== jobId) return j;
-        const newStatuses = { ...j.fileStatuses, [assetId]: "discarded" as const };
-        const allDecided = Object.values(newStatuses).every(
-          s => s === "confirmed" || s === "discarded" || s === "error"
-        );
-        const anyConfirmed = Object.values(newStatuses).some(s => s === "confirmed");
-        if (allDecided && !anyConfirmed) return null; // all skipped → remove job
-        return { ...j, fileStatuses: newStatuses, status: allDecided ? "done" as const : j.status };
-      }).filter((j): j is CompressJob => j !== null);
-      saveQueueToServer(updated);
-      return updated;
-    });
-  }, [saveQueueToServer]);
-
-  const cancelCompressJob = useCallback(async (jobId: string) => {
-    const token = getAuthToken();
-    if (!token) return;
-    // Optimistic UI: mark cancelled locally right away so the user gets feedback.
-    setCompressQueue(prev => prev.map(j => j.id === jobId
-      ? { ...j, status: "cancelled" as const, currentFileId: null, progress: {} }
-      : j));
-    try {
-      const res = await fetch(`${API_URL}/api/compress/cancel`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ jobId }),
-      });
-      if (!res.ok) throw new Error(`Server error ${res.status}`);
-    } catch (err: any) {
-      console.error("Failed to cancel compression job:", err.message);
-      // Roll back to error state so the user knows the cancel didn't land.
-      setCompressQueue(prev => prev.map(j => j.id === jobId
-        ? { ...j, status: "error" as const, errorMessage: "Failed to cancel job" }
-        : j));
-    }
-  }, []);
-
-  const clearCompletedJobs = useCallback(() => {
-    const isFinished = (s: CompressJob["status"]) => s === "done" || s === "error" || s === "cancelled";
-    setCompressQueue(prev => {
-      const updated = prev.filter(j => !isFinished(j.status));
-      // Cancel preview files for completed jobs that had previews
-      const toCancel = prev.filter(j => isFinished(j.status) && j.previews.length > 0);
-      if (toCancel.length > 0) {
-        const token = getAuthToken();
-        if (token) {
-          const ids = toCancel.flatMap(j => j.assets.map(a => a.id));
-          createGraphQLClient(token).request(CANCEL_COMPRESS_MUTATION, { ids }).catch(() => {});
-        }
-      }
-      saveQueueToServer(updated);
-      return updated;
-    });
-  }, [saveQueueToServer]);
 
   const handleCreateFile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1134,7 +855,7 @@ export default function Dashboard() {
         throw new Error(body?.error ?? `Server error ${res.status}`);
       }
       const { jobId } = await res.json();
-      setCompressQueue(prev => [...prev, {
+      compress.setCompressQueue(prev => [...prev, {
         id: jobId,
         kind: "transcode" as const,
         assets: selectedVideoAssets,
@@ -1145,7 +866,7 @@ export default function Dashboard() {
         fileStatuses: Object.fromEntries(selectedVideoAssets.map(a => [a.id, "pending" as const])),
         addedAt: Date.now(),
       }]);
-      setShowQueuePanel(true);
+      compress.setShowQueuePanel(true);
       setSelectionMode(false);
       setSelectedAssetIds(new Set());
     } catch (err: any) {
@@ -1427,8 +1148,8 @@ export default function Dashboard() {
             <SidebarNavItem
               icon={ListTodo}
               label="Queue"
-              onClick={() => setShowQueuePanel(true)}
-              badge={compressQueue.filter(j => !["done", "error"].includes(j.status)).length || undefined}
+              onClick={() => compress.setShowQueuePanel(true)}
+              badge={compress.compressQueue.filter(j => !["done", "error"].includes(j.status)).length || undefined}
             />
           )}
           {user?.role === "admin" && (
@@ -1572,8 +1293,8 @@ export default function Dashboard() {
                 <SidebarNavItem
                   icon={ListTodo}
                   label="Queue"
-                  onClick={() => { setShowQueuePanel(true); setMobileMenuOpen(false); }}
-                  badge={compressQueue.filter(j => !["done", "error"].includes(j.status)).length || undefined}
+                  onClick={() => { compress.setShowQueuePanel(true); setMobileMenuOpen(false); }}
+                  badge={compress.compressQueue.filter(j => !["done", "error"].includes(j.status)).length || undefined}
                 />
               )}
               {user?.role === "admin" && (
@@ -1805,8 +1526,8 @@ export default function Dashboard() {
                           if (skipped > 0) {
                             alert(`${skipped} unsupported file${skipped === 1 ? "" : "s"} will be skipped.`);
                           }
-                          setCompressDialogAssets(selectedCompressibleAssets);
-                          setIsCompressDialogOpen(true);
+                          compress.setCompressDialogAssets(selectedCompressibleAssets);
+                          compress.setIsCompressDialogOpen(true);
                         }}
                         disabled={selectedCompressibleAssets.length === 0}
                         title={selectedCompressibleAssets.length === 0 ? "No selected files can be compressed" : undefined}
@@ -1921,8 +1642,8 @@ export default function Dashboard() {
                             { label: `Compress (${selectedCompressibleAssets.length})`, icon: Minimize2, disabled: selectedCompressibleAssets.length === 0, destructive: false, show: selectedAssetIds.size > 0, run: () => {
                               const skipped = selectedAssets.length - selectedCompressibleAssets.length;
                               if (skipped > 0) alert(`${skipped} unsupported file${skipped === 1 ? "" : "s"} will be skipped.`);
-                              setCompressDialogAssets(selectedCompressibleAssets);
-                              setIsCompressDialogOpen(true);
+                              compress.setCompressDialogAssets(selectedCompressibleAssets);
+                              compress.setIsCompressDialogOpen(true);
                             } },
                             { label: `Transcode (${selectedVideoAssets.length})`, icon: Film, disabled: selectedVideoAssets.length === 0, destructive: false, show: user?.role === "admin" || user?.role === "editor", run: () => void handleTranscodeSelected() },
                             { label: `Thumbnails (${selectedThumbableAssets.length})`, icon: RefreshCw, disabled: selectedThumbableAssets.length === 0, destructive: false, show: true, run: () => void handleRegenerateThumbnailsSelected() },
@@ -2488,8 +2209,8 @@ export default function Dashboard() {
         autoEdit={selectedAsset != null && selectedAsset.id === autoEditAssetId}
         onCompress={selectedAsset && canCompressAsset(selectedAsset) ? () => {
           if (selectedAsset) {
-            setCompressDialogAssets([selectedAsset]);
-            setIsCompressDialogOpen(true);
+            compress.setCompressDialogAssets([selectedAsset]);
+            compress.setIsCompressDialogOpen(true);
           }
         } : undefined}
         onRemoveTag={async (tagName) => {
@@ -2534,12 +2255,12 @@ export default function Dashboard() {
       />
 
       <CompressDialog
-        isOpen={isCompressDialogOpen}
-        onClose={() => setIsCompressDialogOpen(false)}
-        selectedAssets={compressDialogAssets}
+        isOpen={compress.isCompressDialogOpen}
+        onClose={() => compress.setIsCompressDialogOpen(false)}
+        selectedAssets={compress.compressDialogAssets}
         onAddToQueue={(options) => {
-          addToCompressQueue(compressDialogAssets, options);
-          setIsCompressDialogOpen(false);
+          compress.addToCompressQueue(compress.compressDialogAssets, options);
+          compress.setIsCompressDialogOpen(false);
           setSelectionMode(false);
           setSelectedAssetIds(new Set());
         }}
@@ -2582,15 +2303,15 @@ export default function Dashboard() {
       />
 
       <CompressQueuePanel
-        isOpen={showQueuePanel}
-        onClose={() => setShowQueuePanel(false)}
-        jobs={compressQueue}
-        onConfirm={confirmCompressJob}
-        onDismiss={dismissCompressJob}
-        onCancel={cancelCompressJob}
-        onClearCompleted={clearCompletedJobs}
-        onConfirmFile={confirmSingleCompressFile}
-        onDiscardFile={discardSingleCompressFile}
+        isOpen={compress.showQueuePanel}
+        onClose={() => compress.setShowQueuePanel(false)}
+        jobs={compress.compressQueue}
+        onConfirm={compress.confirmCompressJob}
+        onDismiss={compress.dismissCompressJob}
+        onCancel={compress.cancelCompressJob}
+        onClearCompleted={compress.clearCompletedJobs}
+        onConfirmFile={compress.confirmSingleCompressFile}
+        onDiscardFile={compress.discardSingleCompressFile}
         apiUrl={API_URL}
       />
 
