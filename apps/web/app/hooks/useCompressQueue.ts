@@ -189,7 +189,7 @@ export function useCompressQueue({ user, currentPath, rootPath, loadDirectoryInt
         errorMessage: err.message || "Failed to apply compression",
       }));
     }
-  }, [currentPath, rootPath, saveQueueToServer, loadDirectoryIntoCache]);
+  }, [currentPath, rootPath, saveQueueToServer]);
 
   const dismissCompressJob = useCallback((jobId: string) => {
     const job = compressQueueRef.current.find(j => j.id === jobId);
@@ -241,7 +241,7 @@ export function useCompressQueue({ user, currentPath, rootPath, loadDirectoryInt
         fileStatuses: { ...j.fileStatuses, [assetId]: "error" as const },
       }));
     }
-  }, [currentPath, rootPath, saveQueueToServer, loadDirectoryIntoCache]);
+  }, [currentPath, rootPath, saveQueueToServer]);
 
   const discardSingleCompressFile = useCallback(async (jobId: string, assetId: string) => {
     try {
