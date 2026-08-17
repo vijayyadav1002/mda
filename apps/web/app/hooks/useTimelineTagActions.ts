@@ -86,7 +86,7 @@ export function useTimelineTagActions({
       return next;
     });
     setSelectedAsset((prev) => (prev && byId.has(prev.id) ? { ...prev, tags: byId.get(prev.id) } : prev));
-  }, [setSections, setSelectedAsset]);
+  }, []);
 
   const handleApplyTags = async (tagNames: string[]) => {
     const token = getAuthToken();
