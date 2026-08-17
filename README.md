@@ -12,7 +12,7 @@ A full-stack file library for media, documents, and general files, built with a 
 - 📋 **Copy and Move** - Move, rename, delete, duplicate, upload, and download files and folders
 - 🗑️ **Trash Bin** - Deleting files or folders moves them to a trash bin instead of erasing them. A dedicated Trash page shows deleted items with their thumbnails, grouped by deletion date with per-item expiry countdowns; select items visually to restore them to their original location or delete them permanently. Anything left in the trash is auto-purged after 30 days (configurable via `TRASH_RETENTION_DAYS`)
 - 🔒 **Role-Based Access Control** - Admin, Editor, and ReadOnly roles
-- 🎨 **Modern UI** - React with Remix Router and shadcn UI components
+- 🎨 **Modern UI** - React with React Router and shadcn UI components
 - 🚀 **Fast Backend** - Fastify server with Mercurius GraphQL
 - 🗄️ **PostgreSQL Database** - Reliable data persistence
 - 📊 **Directory Tree View** - Render exact filesystem structure
@@ -31,7 +31,7 @@ A full-stack file library for media, documents, and general files, built with a 
 mda/
 ├── apps/
 │   ├── backend/          # Fastify + Mercurius GraphQL API
-│   └── web/              # Remix React frontend
+│   └── web/              # React Router frontend
 ├── packages/
 │   └── tsconfig/         # Shared TypeScript configurations
 ├── package.json          # Root workspace configuration
@@ -308,9 +308,12 @@ mutation {
 - `GET /file-preview/:id/pdf` - Stream a PDF inline.
 - `GET /file-preview/:id/content` - Return preview content for `.txt`, `.md`, `.docx`, and `.xlsx`.
 - `PUT /file-preview/:id/content` - Save edits to `.txt` and Markdown files in place.
+- `GET /image/:id` - Serve an image asset's raw file content.
 - `GET /video/:id/prepare` and related `/video` endpoints - Prepare web playback and HLS. Prefers a cached transcode when one exists.
-- `/api/compress/*` and `/api/queue-state` - Compression preview queue support.
+- `/api/compress/*` - Compression preview queue support.
+- `GET`/`PUT /api/queue-state` - Read or update the authenticated user's compression/transcode queue panel state.
 - `POST /api/transcode/enqueue` - Queue selected videos for background transcoding to web-compatible MP4 (shares the queue panel and cancel endpoint with compression jobs).
+- `GET /health` and `GET /health/queues` - Liveness and BullMQ queue health checks.
 
 ## Project Structure
 
@@ -324,22 +327,29 @@ backend/
 │   │   ├── migrate.ts        # Schema migrations
 │   │   └── seed.ts           # Database seeding
 │   ├── graphql/
-│   │   ├── schema.ts         # GraphQL schema
-│   │   ├── resolvers.ts      # GraphQL resolvers
+│   │   ├── schema/           # Per-domain SDL (auth, media, directory, tags, compress, cache-audit, timeline, trash), merged in index.ts
+│   │   ├── resolvers/        # Per-domain resolvers, merged in index.ts
 │   │   └── context.ts        # Request context builder
+│   ├── routes/
+│   │   ├── upload.routes.ts, download.routes.ts, file-preview.routes.ts, image.routes.ts
+│   │   └── video.routes.ts, compress.routes.ts, transcode.routes.ts, queue-state.routes.ts, health.routes.ts
 │   ├── services/
 │   │   ├── auth.ts           # Authentication logic
 │   │   ├── audit.ts          # Audit logging
-│   │   ├── cache-maintenance.ts  # Size/age eviction + stale DB reference sweeps
-│   │   ├── capture-date.ts   # Timeline capture dates (folder name → filename → mtime)
+│   │   ├── cache-maintenance/  # Size/age eviction + stale DB reference sweeps
+│   │   ├── capture-date/     # Timeline capture dates (folder name → filename → mtime; admin-selectable EXIF/created/modified)
+│   │   ├── excel.ts          # Excel sheet preview extraction
 │   │   ├── file-types.ts     # File classification and capabilities
-│   │   ├── media-indexer.ts  # Media library indexing
+│   │   ├── media-indexer/    # Media library indexing
 │   │   ├── media-watcher.ts  # Filesystem watcher
-│   │   ├── queue.ts          # BullMQ queues and workers (thumbnails, compression, transcode)
-│   │   ├── settings.ts       # DB-backed runtime cache settings (env values as defaults)
+│   │   ├── queue/            # BullMQ queues and workers (thumbnail, compression, transcode, media-refresh)
+│   │   ├── redis.ts          # ioredis client backing BullMQ
+│   │   ├── search-query.ts   # In-field search DSL (type:/tag:/ext:/size:, wildcards, folder scoping)
+│   │   ├── settings.ts       # DB-backed runtime cache + timeline settings (env values as defaults)
 │   │   ├── tags.ts           # Tag management
-│   │   ├── thumbnail.ts      # Thumbnail, document snapshots, compression helpers
-│   │   └── video-transcode.ts
+│   │   ├── thumbnail/        # Thumbnail, document snapshots, compression helpers
+│   │   ├── trash.ts          # Soft-delete into hidden .trash dir, restore/purge, expiry
+│   │   └── video-transcode/  # MP4 compatibility + HLS generation
 │   ├── config.ts             # Configuration
 │   └── index.ts              # Application entry point
 └── package.json
@@ -351,12 +361,19 @@ backend/
 web/
 ├── app/
 │   ├── components/
-│   │   ├── ui/              # shadcn UI components
+│   │   ├── ui/               # shadcn UI primitives (button, card, dialog, input)
+│   │   ├── timeline/         # TimelineGrid, TimelineHeader, TimelineSelectionBar, AssetTile, CoverMosaic
+│   │   ├── viewer/           # ImagePreview, VideoPreview, PdfPreview, DocumentPreview
 │   │   ├── MediaAssetViewer.tsx
+│   │   ├── MediaGrid.tsx
+│   │   ├── Sidebar.tsx
+│   │   ├── SearchBar.tsx
+│   │   ├── TagDialog.tsx
 │   │   ├── CompressDialog.tsx
 │   │   ├── CompressQueuePanel.tsx
-│   │   ├── SearchBar.tsx
-│   │   └── TagDialog.tsx
+│   │   ├── TrashGrid.tsx
+│   │   ├── AuditLogTable.tsx
+│   │   └── ...                # move/duplicate/upload dialogs, user admin dialogs, etc.
 │   ├── lib/
 │   │   ├── api.ts           # GraphQL client
 │   │   └── utils.ts         # Utility functions
