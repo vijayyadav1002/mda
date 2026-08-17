@@ -16,8 +16,8 @@ import { MoveDialog } from "~/components/MoveDialog";
 import { DuplicateDialog } from "~/components/DuplicateDialog";
 import { RenameFolderDialog } from "~/components/RenameFolderDialog";
 import { SearchBar } from "~/components/SearchBar";
-import { formatDate, formatBytes } from "~/lib/format";
-import { getFileCategory, getFileCategoryLabel, canCompressAsset } from "~/lib/file-type";
+import { formatBytes } from "~/lib/format";
+import { canCompressAsset } from "~/lib/file-type";
 import type { MediaAsset, DirectoryNode } from "~/lib/types";
 import { useDirectoryTree } from "~/hooks/useDirectoryTree";
 import { useMediaSelection } from "~/hooks/useMediaSelection";
@@ -33,17 +33,17 @@ import { useFileCrud } from "~/hooks/useFileCrud";
 import { useFolderCrud } from "~/hooks/useFolderCrud";
 import { Sidebar } from "~/components/Sidebar";
 import { MobileNav } from "~/components/MobileNav";
-import { FileTypeIcon } from "~/components/FileTypeIcon";
 import { TagFilterMenu } from "~/components/TagFilterMenu";
 import { SortMenu } from "~/components/SortMenu";
 import { ToolbarActions } from "~/components/ToolbarActions";
+import { MediaGrid } from "~/components/MediaGrid";
 import {
   Folder, FileImage, FileText, ArrowLeft, ChevronDown, ChevronRight,
   Trash2, CheckSquare, Square,
-  X, ImagePlus,
-  Download, FolderPlus,
-  Moon, Sun, Tag as TagIcon, Pencil,
-  Copy, Zap,
+  ImagePlus,
+  FolderPlus,
+  Moon, Sun, Pencil,
+  Copy,
 } from "lucide-react";
 
 const API_URL = getApiUrl();
@@ -795,6 +795,8 @@ export default function Dashboard() {
         ? `${folderHistory.length + 1} level${folderHistory.length > 0 ? "s" : ""} deep`
         : "Organized precision for your creative assets and digital artifacts.";
 
+  const canManage = user?.role === "admin" || user?.role === "editor";
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background dark:bg-background">
@@ -1126,242 +1128,27 @@ export default function Dashboard() {
         {/* Grid / Tree content */}
         <div className="flex-1 px-4 md:px-10 pb-10">
           {view === "grid" ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 md:gap-4">
-              {sortedFolderChildren.map((node) => {
-                if (node.type === "directory") {
-                  return (
-                    <div key={node.path} className="group relative">
-                      <button
-                        type="button"
-                        onClick={() => void handleFolderClick(node)}
-                        className={`w-full rounded-2xl bg-card hover:bg-accent transition-all duration-300 p-6 flex flex-col items-center justify-center gap-4 min-h-[180px] text-center ${
-                          selectedFolderPaths.has(node.path) ? 'ring-2 ring-brand-primary ring-offset-2 ring-offset-background' : ''
-                        }`}
-                      >
-                        {selectionMode && (
-                          <div className="absolute top-3 left-3 z-10">
-                            {selectedFolderPaths.has(node.path)
-                              ? <CheckSquare className="w-5 h-5 text-brand-primary drop-shadow-sm" />
-                              : <Square className="w-5 h-5 text-white drop-shadow-sm" />}
-                          </div>
-                        )}
-                        <div className="w-16 h-16 rounded-2xl gradient-brand flex items-center justify-center shadow-ambient group-hover:scale-110 transition-transform duration-300">
-                          <Folder className="w-8 h-8 text-[#060e20]" />
-                        </div>
-                        <div>
-                          <p className="font-manrope font-semibold text-sm text-foreground truncate max-w-[120px]">
-                            {node.name}
-                          </p>
-                          <p className="label-meta mt-1">
-                            {node.size != null && node.size > 0 ? formatBytes(node.size) : "Folder"}
-                          </p>
-                        </div>
-                      </button>
-                      {!selectionMode && (user?.role === "admin" || user?.role === "editor") && (
-                        <div className="absolute top-3 right-3 flex gap-1 opacity-0 group-hover:opacity-100">
-                          <button
-                            type="button"
-                            onClick={(e) => { e.stopPropagation(); folderCrud.setRenamingFolder({ path: node.path, name: node.name }); folderCrud.setRenameFolderValue(node.name); }}
-                            className="w-8 h-8 bg-background/80 backdrop-blur-xs rounded-xl flex items-center justify-center hover:bg-accent transition-all duration-200"
-                            title="Rename folder"
-                          >
-                            <Pencil className="w-3.5 h-3.5 text-foreground" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => { e.stopPropagation(); folderCrud.openDuplicateFolderDialog({ path: node.path, name: node.name }); }}
-                            className="w-8 h-8 bg-background/80 backdrop-blur-xs rounded-xl flex items-center justify-center hover:bg-accent transition-all duration-200"
-                            title="Duplicate folder"
-                          >
-                            <Copy className="w-3.5 h-3.5 text-foreground" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => { e.stopPropagation(); void folderCrud.handleDeleteFolder(node.path, node.name); }}
-                            className="w-8 h-8 bg-background/80 backdrop-blur-xs rounded-xl flex items-center justify-center hover:bg-destructive/20 transition-all duration-200"
-                            title="Delete folder"
-                          >
-                            <Trash2 className="w-3.5 h-3.5 text-destructive" />
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  );
-                } else if (node.mediaAsset) {
-                  const asset = node.mediaAsset;
-                  const isSelected = selectedAssetIds.has(asset.id);
-                  return (
-                    <div
-                      key={asset.id}
-                      onClick={() => handleAssetClick(asset)}
-                      className={`group cursor-pointer rounded-2xl overflow-hidden bg-card transition-all duration-300 relative ${
-                        isSelected ? "ring-2 ring-brand-primary ring-offset-2 ring-offset-background" : "hover:bg-accent"
-                      }`}
-                    >
-                      {/* Selection checkbox */}
-                      {selectionMode && (
-                        <div className="absolute top-3 left-3 z-10">
-                          {isSelected ? (
-                            <CheckSquare className="w-5 h-5 text-brand-primary drop-shadow-sm" />
-                          ) : (
-                            <Square className="w-5 h-5 text-white drop-shadow-sm" />
-                          )}
-                        </div>
-                      )}
-
-                      {/* Delete button */}
-                      {!selectionMode && (user?.role === "admin" || user?.role === "editor") && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteSingle(asset.id, asset.fileName);
-                          }}
-                          className="absolute top-3 right-3 z-10 opacity-0 group-hover:opacity-100 w-8 h-8 bg-background/80 backdrop-blur-xs rounded-xl flex items-center justify-center hover:bg-destructive/20 transition-all duration-200"
-                        >
-                          <Trash2 className="w-3.5 h-3.5 text-destructive" />
-                        </button>
-                      )}
-
-                      {/* Thumbnail — 4:5 portrait */}
-                      {/* overflow-hidden is on the inner div so the download button isn't clipped */}
-                      <div
-                        className="aspect-[4/5] bg-muted relative"
-                        ref={asset.thumbnailUrl ? undefined : registerLazyThumbnailCard(asset.id)}
-                      >
-                        <div className="absolute inset-0 overflow-hidden">
-                          {asset.thumbnailUrl ? (
-                            <img
-                              src={`${API_URL}${asset.thumbnailUrl}`}
-                              alt={asset.fileName}
-                              loading="lazy"
-                              decoding="async"
-                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                            />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center">
-                              <FileTypeIcon asset={asset} className="w-12 h-12 text-muted-foreground/30" />
-                            </div>
-                          )}
-
-                          {/* Gradient overlay */}
-                          <div className="absolute inset-0 bg-gradient-to-t from-background/50 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                        </div>
-
-                        {/* Type badge */}
-                        <div className="absolute top-3 left-3 z-10 flex items-center gap-1">
-                          <div className="bg-background/70 backdrop-blur-xs px-2 py-0.5 rounded-lg">
-                            <span className="label-meta">{getFileCategoryLabel(getFileCategory(asset))}</span>
-                          </div>
-                          {asset.mimeType.startsWith("video/") && asset.transcodedUrl && (
-                            <div
-                              className="bg-emerald-500/20 backdrop-blur-xs px-1.5 py-0.5 rounded-lg flex items-center gap-0.5"
-                              title="Transcoded — plays instantly"
-                            >
-                              <Zap className="w-2.5 h-2.5 text-emerald-400 fill-emerald-400" />
-                              <span className="text-[10px] font-medium text-emerald-400">Transcoded</span>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Download button */}
-                        {!selectionMode && (
-                          <a
-                            href={`${API_URL}/download/${asset.id}`}
-                            onClick={(e) => e.stopPropagation()}
-                            className="absolute bottom-3 right-3 z-10 opacity-0 group-hover:opacity-100 w-8 h-8 bg-background/80 backdrop-blur-xs rounded-xl flex items-center justify-center hover:bg-accent transition-all duration-200"
-                            title={`Download ${asset.fileName}`}
-                          >
-                            <Download className="w-3.5 h-3.5 text-foreground" />
-                          </a>
-                        )}
-                      </div>
-
-                      {/* Meta */}
-                      <div className="p-3">
-                        <p className="font-medium text-sm text-foreground truncate">{asset.fileName}</p>
-                        <p className="label-meta mt-1">
-                          {formatBytes(asset.fileSize)} · {formatDate(asset.capturedAt ?? asset.createdAt)}
-                        </p>
-                        {search.searchQuery && rootPath && (
-                          <p className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground/70">
-                            {(asset.filePath.substring(0, asset.filePath.lastIndexOf('/')).replace(rootPath, '') || '/').replace(/^\//, '') || '/'}
-                          </p>
-                        )}
-                        {asset.tags && asset.tags.length > 0 && (
-                          <div className="mt-2 flex flex-wrap gap-1">
-                            {asset.tags.map((tag) => (
-                              <span
-                                key={tag.id}
-                                className={`inline-flex items-center rounded-full pl-1.5 text-[10px] font-medium transition-colors ${
-                                  activeTagFilter === tag.name
-                                    ? "bg-brand-primary text-[#060e20]"
-                                    : "bg-brand-primary/10 text-brand-primary hover:bg-brand-primary/20"
-                                }`}
-                              >
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    void applyTagFilter(tag.name);
-                                  }}
-                                  className="py-0.5 pr-1"
-                                  title={`Filter by #${tag.name}`}
-                                >
-                                  #{tag.name}
-                                </button>
-                                {!selectionMode && (user?.role === "admin" || user?.role === "editor") && (
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      void removeTagFromAsset(asset.id, tag.name);
-                                    }}
-                                    className="px-1 py-0.5 rounded-r-full hover:bg-brand-primary/30 transition-colors"
-                                    title={`Remove #${tag.name} from this file`}
-                                    aria-label={`Remove ${tag.name}`}
-                                  >
-                                    <X className="w-2.5 h-2.5" />
-                                  </button>
-                                )}
-                                {(selectionMode || (user?.role !== "admin" && user?.role !== "editor")) && (
-                                  <span className="pr-1.5" />
-                                )}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                }
-                return null;
-              })}
-
-              {/* Empty states */}
-              {(activeTagFilter ? tagFilterLoading : isCurrentFolderLoading) && (
-                <div className="col-span-full flex flex-col items-center justify-center py-24 text-muted-foreground">
-                  <div className="w-10 h-10 rounded-2xl gradient-brand flex items-center justify-center mx-auto mb-4 animate-pulse">
-                    <Folder className="w-5 h-5 text-[#060e20]" />
-                  </div>
-                  <p className="text-sm">{activeTagFilter ? "Loading tagged files…" : "Loading folder…"}</p>
-                </div>
-              )}
-              {activeTagFilter && !tagFilterLoading && sortedFolderChildren.length === 0 && (
-                <div className="col-span-full flex flex-col items-center justify-center py-24 text-muted-foreground">
-                  <TagIcon className="w-16 h-16 opacity-20 mb-4" />
-                  <p className="font-manrope font-semibold text-foreground">No files with #{activeTagFilter}</p>
-                  <p className="text-sm mt-1">Apply this tag to media files to see them here.</p>
-                </div>
-              )}
-              {!activeTagFilter && !isCurrentFolderLoading && sortedFolderChildren.length === 0 && (
-                <div className="col-span-full flex flex-col items-center justify-center py-24 text-muted-foreground">
-                  <Folder className="w-16 h-16 opacity-20 mb-4" />
-                  <p className="font-manrope font-semibold text-foreground">This folder is empty</p>
-                  <p className="text-sm mt-1">No items found in this directory</p>
-                </div>
-              )}
-            </div>
+            <MediaGrid
+              nodes={sortedFolderChildren}
+              apiUrl={API_URL}
+              selectionMode={selectionMode}
+              canManage={canManage}
+              selectedFolderPaths={selectedFolderPaths}
+              selectedAssetIds={selectedAssetIds}
+              activeTagFilter={activeTagFilter}
+              isLoading={activeTagFilter ? tagFilterLoading : isCurrentFolderLoading}
+              showAssetPath={Boolean(search.searchQuery && rootPath)}
+              rootPath={rootPath}
+              registerLazyThumbnailCard={registerLazyThumbnailCard}
+              onFolderClick={handleFolderClick}
+              onRenameFolder={(node) => { folderCrud.setRenamingFolder({ path: node.path, name: node.name }); folderCrud.setRenameFolderValue(node.name); }}
+              onDuplicateFolder={(node) => folderCrud.openDuplicateFolderDialog({ path: node.path, name: node.name })}
+              onDeleteFolder={(path, name) => void folderCrud.handleDeleteFolder(path, name)}
+              onAssetClick={handleAssetClick}
+              onDeleteAsset={(id, fileName) => handleDeleteSingle(id, fileName)}
+              onApplyTagFilter={(tagName) => void applyTagFilter(tagName)}
+              onRemoveTag={(assetId, tagName) => void removeTagFromAsset(assetId, tagName)}
+            />
           ) : (
             <div className="bg-card rounded-2xl p-4 md:p-6 overflow-auto max-h-[calc(100vh-300px)]">
               {directoryTree ? (
