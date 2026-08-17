@@ -17,14 +17,11 @@ import { useToast } from "~/hooks/useToast";
 import { useTimelineSelection } from "~/hooks/useTimelineSelection";
 import { useThumbnailRefresh } from "~/hooks/useThumbnailRefresh";
 import { useTimelineTagActions } from "~/hooks/useTimelineTagActions";
+import { useTimelineAssetActions } from "~/hooks/useTimelineAssetActions";
 
 export const meta: MetaFunction = () => [{ title: "Timeline — MDA" }];
 
 /* ── GraphQL ────────────────────────────────────────────────────── */
-
-const DELETE_MEDIA_ASSET_MUTATION = `
-  mutation DeleteMediaAsset($id: ID!) { deleteMediaAsset(id: $id) }
-`;
 
 const TIMELINE_SETTINGS_QUERY = `
   query TimelineSettings { timelineSettings { dateSource } }
@@ -159,7 +156,6 @@ export default function Timeline() {
     toggleSectionSelection,
     exitSelection,
   } = useTimelineSelection();
-  const [isCompressDialogOpen, setIsCompressDialogOpen] = useState(false);
   const { toast, setToast, showToast } = useToast();
   const tagActions = useTimelineTagActions({
     selectionMode,
@@ -177,7 +173,6 @@ export default function Timeline() {
   const zoomMenuRef = useRef<HTMLDivElement>(null);
   const [showActionsMenu, setShowActionsMenu] = useState(false);
   const actionsMenuRef = useRef<HTMLDivElement>(null);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const gridRef = useRef<HTMLDivElement>(null);
 
@@ -338,94 +333,16 @@ export default function Timeline() {
     [selectedAssets]
   );
 
-  const handleDeleteSelected = async () => {
-    const token = getAuthToken();
-    if (!token || selectedAssets.length === 0) return;
-    const client = createGraphQLClient(token);
-    let deleted = 0;
-    const deletedIds = new Set<string>();
-    for (const asset of selectedAssets) {
-      try {
-        await client.request(DELETE_MEDIA_ASSET_MUTATION, { id: asset.id });
-        deleted += 1;
-        deletedIds.add(asset.id);
-      } catch (err) {
-        console.error(`Failed to delete asset ${asset.id}:`, err);
-      }
-    }
-
-    if (deletedIds.size > 0) {
-      // Remove deleted assets from loaded sections and shrink bucket counts
-      const removedPerMonth = new Map<string, number>();
-      for (const [key, section] of Object.entries(sectionsRef.current)) {
-        const removed = section.assets?.filter((a) => deletedIds.has(a.id)).length ?? 0;
-        if (removed > 0) removedPerMonth.set(key, removed);
-      }
-      setSections((prev) => {
-        const next: typeof prev = {};
-        for (const [key, section] of Object.entries(prev)) {
-          next[key] = section.assets?.some((a) => deletedIds.has(a.id))
-            ? { ...section, assets: section.assets.filter((a) => !deletedIds.has(a.id)) }
-            : section;
-        }
-        return next;
-      });
-      setMonthBuckets((prev) =>
-        prev
-          ? prev
-              .map((b) => {
-                const removed = removedPerMonth.get(monthKeyOf(b.period)) ?? 0;
-                return removed > 0 ? { ...b, count: Math.max(0, b.count - removed) } : b;
-              })
-              .filter((b) => b.count > 0)
-          : prev
-      );
-    }
-
-    showToast(
-      deleted === selectedAssets.length
-        ? `Moved ${deleted} item${deleted !== 1 ? "s" : ""} to Trash`
-        : `Moved ${deleted} of ${selectedAssets.length} items to Trash — some failed`
-    );
-    exitSelection();
-  };
-
-  const handleAddToCompressQueue = async (options: { resolution: string; quality: number }) => {
-    const token = getAuthToken();
-    if (!token) return;
-    try {
-      const res = await fetch(`${API_URL}/api/compress/enqueue`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ ids: selectedAssets.map((a) => a.id), options }),
-      });
-      if (!res.ok) throw new Error(`Server error ${res.status}`);
-      showToast("Compression job queued", true);
-      exitSelection();
-    } catch (err: any) {
-      showToast(`Failed to queue compression: ${err.message}`);
-    }
-  };
-
-  const handleTranscode = async () => {
-    const token = getAuthToken();
-    if (!token || selectedVideos.length === 0) return;
-    try {
-      const res = await fetch(`${API_URL}/api/transcode/enqueue`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ ids: selectedVideos.map((a) => a.id) }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => null);
-        throw new Error(body?.error ?? `Server error ${res.status}`);
-      }
-      showToast(`Transcoding ${selectedVideos.length} video${selectedVideos.length !== 1 ? "s" : ""}`, true);
-      exitSelection();
-    } catch (err: any) {
-      showToast(`Failed to queue transcode: ${err.message}`);
-    }
-  };
+  const assetActions = useTimelineAssetActions({
+    apiUrl: API_URL,
+    selectedAssets,
+    selectedVideos,
+    sectionsRef,
+    setSections,
+    setMonthBuckets,
+    showToast,
+    exitSelection,
+  });
 
   /* ── Timeline settings (admin) ── */
 
@@ -944,7 +861,7 @@ export default function Timeline() {
             </button>
             <button
               type="button"
-              onClick={() => setIsCompressDialogOpen(true)}
+              onClick={() => assetActions.setIsCompressDialogOpen(true)}
               disabled={selectedIds.size === 0}
               className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-40 transition-all whitespace-nowrap"
             >
@@ -952,7 +869,7 @@ export default function Timeline() {
             </button>
             <button
               type="button"
-              onClick={() => void handleTranscode()}
+              onClick={() => void assetActions.handleTranscode()}
               disabled={selectedVideos.length === 0}
               className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-40 transition-all whitespace-nowrap"
               title="Transcode selected videos to web format"
@@ -970,7 +887,7 @@ export default function Timeline() {
             </button>
             <button
               type="button"
-              onClick={() => setShowDeleteConfirm(true)}
+              onClick={() => assetActions.setShowDeleteConfirm(true)}
               disabled={selectedIds.size === 0}
               className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs text-destructive hover:bg-destructive/10 disabled:opacity-40 transition-all whitespace-nowrap"
               title="Move selected items to the Trash"
@@ -995,10 +912,10 @@ export default function Timeline() {
                 {[
                   { label: "Add tags", icon: TagIcon, disabled: selectedIds.size === 0, destructive: false, run: () => { tagActions.setTagTargets(selectedAssets); tagActions.setIsTagDialogOpen(true); } },
                   { label: "Remove tags", icon: TagIcon, disabled: selectedIds.size === 0, destructive: false, run: () => { tagActions.setTagTargets(selectedAssets); tagActions.setIsRemoveTagsDialogOpen(true); } },
-                  { label: "Compress", icon: ListTodo, disabled: selectedIds.size === 0, destructive: false, run: () => setIsCompressDialogOpen(true) },
-                  { label: `Transcode${selectedVideos.length > 0 ? ` (${selectedVideos.length})` : ""}`, icon: Film, disabled: selectedVideos.length === 0, destructive: false, run: () => void handleTranscode() },
+                  { label: "Compress", icon: ListTodo, disabled: selectedIds.size === 0, destructive: false, run: () => assetActions.setIsCompressDialogOpen(true) },
+                  { label: `Transcode${selectedVideos.length > 0 ? ` (${selectedVideos.length})` : ""}`, icon: Film, disabled: selectedVideos.length === 0, destructive: false, run: () => void assetActions.handleTranscode() },
                   { label: "Regenerate thumbnails", icon: RefreshCw, disabled: selectedIds.size === 0, destructive: false, run: () => void handleRegenerateThumbnails() },
-                  { label: "Delete", icon: Trash2, disabled: selectedIds.size === 0, destructive: true, run: () => setShowDeleteConfirm(true) },
+                  { label: "Delete", icon: Trash2, disabled: selectedIds.size === 0, destructive: true, run: () => assetActions.setShowDeleteConfirm(true) },
                 ].map((item) => (
                   <button
                     key={item.label}
@@ -1068,20 +985,20 @@ export default function Timeline() {
         onRemove={tagActions.handleRemoveTagsBulk}
       />
       <ConfirmDialog
-        open={showDeleteConfirm}
-        onOpenChange={setShowDeleteConfirm}
+        open={assetActions.showDeleteConfirm}
+        onOpenChange={assetActions.setShowDeleteConfirm}
         title="Delete Items"
         description={`Delete ${selectedIds.size} selected item${selectedIds.size === 1 ? "" : "s"}?`}
         warning="Items are moved to the Trash and kept for 30 days before permanent deletion."
-        onConfirm={handleDeleteSelected}
+        onConfirm={assetActions.handleDeleteSelected}
       />
       <CompressDialog
-        isOpen={isCompressDialogOpen}
-        onClose={() => setIsCompressDialogOpen(false)}
+        isOpen={assetActions.isCompressDialogOpen}
+        onClose={() => assetActions.setIsCompressDialogOpen(false)}
         selectedAssets={selectedAssets as any}
         onAddToQueue={(options) => {
-          void handleAddToCompressQueue(options);
-          setIsCompressDialogOpen(false);
+          void assetActions.handleAddToCompressQueue(options);
+          assetActions.setIsCompressDialogOpen(false);
         }}
       />
 
