@@ -29,6 +29,8 @@ import { useCacheSettings } from "~/hooks/useCacheSettings";
 import { usePasswordChange } from "~/hooks/usePasswordChange";
 import { useSearch } from "~/hooks/useSearch";
 import { useCompressQueue } from "~/hooks/useCompressQueue";
+import { useFileCrud } from "~/hooks/useFileCrud";
+import { useFolderCrud } from "~/hooks/useFolderCrud";
 import { CachePanelBody } from "~/components/CachePanelBody";
 import { SidebarNavItem } from "~/components/SidebarNavItem";
 import { FileTypeIcon } from "~/components/FileTypeIcon";
@@ -64,78 +66,6 @@ const GENERATE_THUMBNAILS_FOR_PATH_MUTATION = `
 const GENERATE_THUMBNAILS_FOR_ASSETS_MUTATION = `
   mutation GenerateThumbnailsForAssets($ids: [ID!]!, $sessionId: String, $force: Boolean) {
     generateThumbnailsForAssets(ids: $ids, sessionId: $sessionId, force: $force)
-  }
-`;
-
-const CREATE_TEXT_FILE_MUTATION = `
-  mutation CreateTextFile($parentPath: String, $name: String!) {
-    createTextFile(parentPath: $parentPath, name: $name) {
-      id fileName filePath mimeType fileSize thumbnailUrl transcodedUrl createdAt capturedAt tags { id name }
-    }
-  }
-`;
-
-const CREATE_FOLDER_MUTATION = `
-  mutation CreateFolder($parentPath: String, $name: String!) {
-    createFolder(parentPath: $parentPath, name: $name) {
-      name
-      path
-      type
-    }
-  }
-`;
-
-const DELETE_FOLDER_MUTATION = `
-  mutation DeleteFolder($path: String!) {
-    deleteFolder(path: $path)
-  }
-`;
-
-const RENAME_MEDIA_ASSET_MUTATION = `
-  mutation RenameMediaAsset($id: ID!, $newName: String!) {
-    renameMediaAsset(id: $id, newName: $newName) {
-      id fileName filePath mimeType fileSize thumbnailUrl transcodedUrl createdAt capturedAt tags { id name }
-    }
-  }
-`;
-
-const MOVE_MEDIA_ASSET_MUTATION = `
-  mutation MoveMediaAsset($id: ID!, $newPath: String!) {
-    moveMediaAsset(id: $id, newPath: $newPath) {
-      id fileName filePath mimeType fileSize thumbnailUrl transcodedUrl createdAt capturedAt tags { id name }
-    }
-  }
-`;
-
-const DUPLICATE_MEDIA_ASSET_MUTATION = `
-  mutation DuplicateMediaAsset($id: ID!, $destinationFolder: String) {
-    duplicateMediaAsset(id: $id, destinationFolder: $destinationFolder) {
-      id fileName filePath mimeType fileSize thumbnailUrl transcodedUrl createdAt capturedAt tags { id name }
-    }
-  }
-`;
-
-const DUPLICATE_FOLDER_MUTATION = `
-  mutation DuplicateFolder($path: String!, $destinationFolder: String) {
-    duplicateFolder(path: $path, destinationFolder: $destinationFolder) {
-      name path type
-    }
-  }
-`;
-
-const RENAME_FOLDER_MUTATION = `
-  mutation RenameFolder($path: String!, $newName: String!) {
-    renameFolder(path: $path, newName: $newName) {
-      name path type
-    }
-  }
-`;
-
-const MOVE_FOLDER_MUTATION = `
-  mutation MoveFolder($path: String!, $destinationFolder: String!) {
-    moveFolder(path: $path, destinationFolder: $destinationFolder) {
-      name path type
-    }
   }
 `;
 
@@ -224,24 +154,7 @@ export default function Dashboard() {
   const sortMenuRef = useRef<HTMLDivElement>(null);
   const [showSelectionActionsMenu, setShowSelectionActionsMenu] = useState(false);
   const selectionActionsMenuRef = useRef<HTMLDivElement>(null);
-  const [showNewFolderDialog, setShowNewFolderDialog] = useState(false);
-  const [newFolderName, setNewFolderName] = useState('');
-  const [isCreatingFolder, setIsCreatingFolder] = useState(false);
-  const [showNewFileDialog, setShowNewFileDialog] = useState(false);
-  const [newFileName, setNewFileName] = useState('');
-  const [newFileType, setNewFileType] = useState<'md' | 'txt'>('md');
-  const [isCreatingFile, setIsCreatingFile] = useState(false);
   const [autoEditAssetId, setAutoEditAssetId] = useState<string | null>(null);
-  const [showMoveDialog, setShowMoveDialog] = useState(false);
-  const [moveTargetFolderPath, setMoveTargetFolderPath] = useState('');
-  const [isMoving, setIsMoving] = useState(false);
-  const [showDuplicateDialog, setShowDuplicateDialog] = useState(false);
-  const [duplicateTargetFolderPath, setDuplicateTargetFolderPath] = useState('');
-  const [duplicateSourceFolder, setDuplicateSourceFolder] = useState<{ path: string; name: string } | null>(null);
-  const [isDuplicating, setIsDuplicating] = useState(false);
-  const [renamingFolder, setRenamingFolder] = useState<{ path: string; name: string } | null>(null);
-  const [renameFolderValue, setRenameFolderValue] = useState('');
-  const [isRenamingFolder, setIsRenamingFolder] = useState(false);
   const { confirmDialog, setConfirmDialog, openConfirm } = useConfirmDialog();
   const {
     isTagDialogOpen,
@@ -302,6 +215,10 @@ export default function Dashboard() {
   });
   const search = useSearch({ currentPath, rootPath, sortOption });
   const compress = useCompressQueue({ user, currentPath, rootPath, loadDirectoryIntoCache });
+  const fileCrud = useFileCrud({
+    currentPath, loadDirectoryIntoCache,
+    setSelectedAsset, setAutoEditAssetId, setIsViewerOpen,
+  });
   const refreshInFlightRef = useRef(false);
   const thumbnailPollTimerRef = useRef<number | null>(null);
   const thumbnailPollAttemptsRef = useRef(0);
@@ -482,216 +399,6 @@ export default function Dashboard() {
     });
   };
 
-  const handleCreateFile = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const trimmed = newFileName.trim();
-    if (!trimmed || isCreatingFile) return;
-    // Append the chosen extension unless the user already typed a valid one
-    const hasValidExt = /\.(txt|md|markdown)$/i.test(trimmed);
-    const finalName = hasValidExt ? trimmed : `${trimmed}.${newFileType}`;
-    try {
-      setIsCreatingFile(true);
-      const token = getAuthToken();
-      if (!token) return;
-      const client = createGraphQLClient(token);
-      const data: any = await client.request(CREATE_TEXT_FILE_MUTATION, {
-        parentPath: currentPath,
-        name: finalName,
-      });
-      setShowNewFileDialog(false);
-      setNewFileName('');
-      if (currentPath) await loadDirectoryIntoCache(currentPath);
-      // Open the new document straight in the editor
-      const created = data.createTextFile as MediaAsset;
-      setAutoEditAssetId(created.id);
-      setSelectedAsset(created);
-      setIsViewerOpen(true);
-    } catch (err: any) {
-      alert(`Failed to create file: ${err?.response?.errors?.[0]?.message || err.message || 'Unknown error'}`);
-    } finally {
-      setIsCreatingFile(false);
-    }
-  };
-
-  const handleCreateFolder = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newFolderName.trim() || isCreatingFolder) return;
-    try {
-      setIsCreatingFolder(true);
-      const token = getAuthToken();
-      if (!token) return;
-      const client = createGraphQLClient(token);
-      await client.request(CREATE_FOLDER_MUTATION, { parentPath: currentPath, name: newFolderName.trim() });
-      setShowNewFolderDialog(false);
-      setNewFolderName('');
-      if (currentPath) await loadDirectoryIntoCache(currentPath);
-    } catch (err: any) {
-      alert(`Failed to create folder: ${err.message || 'Unknown error'}`);
-    } finally {
-      setIsCreatingFolder(false);
-    }
-  };
-
-  const handleDeleteFolder = (folderPath: string, folderName: string) => {
-    openConfirm({
-      title: "Delete Folder",
-      description: `Delete folder "${folderName}" and all its contents?`,
-      warning: "The folder is moved to the Trash and kept for 30 days before permanent deletion.",
-      onConfirm: async () => {
-        try {
-          const token = getAuthToken();
-          if (!token) return;
-          const client = createGraphQLClient(token);
-          await client.request(DELETE_FOLDER_MUTATION, { path: folderPath });
-          // Remove deleted folder from cache
-          setDirectoryCache((prev) => {
-            const next = { ...prev };
-            for (const key of Object.keys(next)) {
-              if (key === folderPath || key.startsWith(`${folderPath}/`)) delete next[key];
-            }
-            return next;
-          });
-          if (currentPath === folderPath) {
-            await handleBackClick();
-          } else {
-            if (currentPath) await loadDirectoryIntoCache(currentPath);
-          }
-        } catch (err: any) {
-          alert(`Failed to delete folder: ${err.message || 'Unknown error'}`);
-        }
-      },
-    });
-  };
-
-  const handleMoveAsset = async () => {
-    if (!selectedAsset || !moveTargetFolderPath || isMoving) return;
-    setIsMoving(true);
-    try {
-      const token = getAuthToken();
-      if (!token) return;
-      const client = createGraphQLClient(token);
-      const newPath = `${moveTargetFolderPath}/${selectedAsset.fileName}`;
-      const data: any = await client.request(MOVE_MEDIA_ASSET_MUTATION, { id: selectedAsset.id, newPath });
-      setSelectedAsset(data.moveMediaAsset);
-      setShowMoveDialog(false);
-      setMoveTargetFolderPath('');
-      if (rootPath) await loadDirectoryIntoCache(rootPath);
-      if (currentPath && currentPath !== rootPath) await loadDirectoryIntoCache(currentPath);
-      if (moveTargetFolderPath !== rootPath && moveTargetFolderPath !== currentPath) {
-        await loadDirectoryIntoCache(moveTargetFolderPath);
-      }
-    } catch (err: any) {
-      alert(`Failed to move file: ${err.message || 'Unknown error'}`);
-    } finally {
-      setIsMoving(false);
-    }
-  };
-
-  const handleDuplicateAsset = async () => {
-    if ((!selectedAsset && !duplicateSourceFolder) || !duplicateTargetFolderPath || isDuplicating) return;
-    setIsDuplicating(true);
-    try {
-      const token = getAuthToken();
-      if (!token) return;
-      const client = createGraphQLClient(token);
-      if (duplicateSourceFolder) {
-        await client.request(DUPLICATE_FOLDER_MUTATION, {
-          path: duplicateSourceFolder.path,
-          destinationFolder: duplicateTargetFolderPath,
-        });
-      } else if (selectedAsset) {
-        const data: any = await client.request(DUPLICATE_MEDIA_ASSET_MUTATION, {
-          id: selectedAsset.id,
-          destinationFolder: duplicateTargetFolderPath,
-        });
-        setSelectedAsset(data.duplicateMediaAsset);
-      }
-      setShowDuplicateDialog(false);
-      setDuplicateTargetFolderPath('');
-      setDuplicateSourceFolder(null);
-      if (rootPath) await loadDirectoryIntoCache(rootPath);
-      if (currentPath && currentPath !== rootPath) await loadDirectoryIntoCache(currentPath);
-      if (duplicateTargetFolderPath !== rootPath && duplicateTargetFolderPath !== currentPath) {
-        await loadDirectoryIntoCache(duplicateTargetFolderPath);
-      }
-    } catch (err: any) {
-      alert(`Failed to duplicate item: ${err.message || 'Unknown error'}`);
-    } finally {
-      setIsDuplicating(false);
-    }
-  };
-
-  const openDuplicateFolderDialog = (folder: { path: string; name: string }) => {
-    setSelectedAsset(null);
-    setDuplicateSourceFolder(folder);
-    setDuplicateTargetFolderPath(folder.path.substring(0, folder.path.lastIndexOf('/')) || currentPath || rootPath || '');
-    setShowDuplicateDialog(true);
-  };
-
-  const handleBulkMove = async () => {
-    if (!moveTargetFolderPath || isMoving) return;
-    const token = getAuthToken();
-    if (!token) return;
-    setIsMoving(true);
-    try {
-      const client = createGraphQLClient(token);
-      for (const node of sortedFolderChildren) {
-        if (node.type === 'file' && node.mediaAsset && selectedAssetIds.has(node.mediaAsset.id)) {
-          const newPath = `${moveTargetFolderPath}/${node.mediaAsset.fileName}`;
-          await client.request(MOVE_MEDIA_ASSET_MUTATION, { id: node.mediaAsset.id, newPath });
-        }
-      }
-      for (const folderPath of selectedFolderPaths) {
-        await client.request(MOVE_FOLDER_MUTATION, { path: folderPath, destinationFolder: moveTargetFolderPath });
-      }
-      setSelectedAssetIds(new Set());
-      setSelectedFolderPaths(new Set());
-      setSelectionMode(false);
-      setShowMoveDialog(false);
-      setMoveTargetFolderPath('');
-      if (rootPath) await loadDirectoryIntoCache(rootPath);
-      if (currentPath && currentPath !== rootPath) await loadDirectoryIntoCache(currentPath);
-      if (moveTargetFolderPath !== rootPath && moveTargetFolderPath !== currentPath) {
-        await loadDirectoryIntoCache(moveTargetFolderPath);
-      }
-    } catch (err: any) {
-      alert(`Failed to move items: ${err.message || 'Unknown error'}`);
-    } finally {
-      setIsMoving(false);
-    }
-  };
-
-  const handleRenameFolder = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!renamingFolder || !renameFolderValue.trim() || isRenamingFolder) return;
-    setIsRenamingFolder(true);
-    try {
-      const token = getAuthToken();
-      if (!token) return;
-      const client = createGraphQLClient(token);
-      await client.request(RENAME_FOLDER_MUTATION, { path: renamingFolder.path, newName: renameFolderValue.trim() });
-      const renamedPath = renamingFolder.path;
-      setRenamingFolder(null);
-      setRenameFolderValue('');
-      setDirectoryCache((prev) => {
-        const next = { ...prev };
-        for (const key of Object.keys(next)) {
-          if (key === renamedPath || key.startsWith(`${renamedPath}/`)) delete next[key];
-        }
-        return next;
-      });
-      if (currentPath && (currentPath === renamedPath || currentPath.startsWith(`${renamedPath}/`))) {
-        await handleBackClick();
-      } else {
-        if (currentPath) await loadDirectoryIntoCache(currentPath);
-      }
-    } catch (err: any) {
-      alert(`Failed to rename folder: ${err.message || 'Unknown error'}`);
-    } finally {
-      setIsRenamingFolder(false);
-    }
-  };
-
   const handleFolderClick = async (folder: DirectoryNode) => {
     if (selectionMode) {
       toggleFolderSelection(folder.path);
@@ -787,6 +494,14 @@ export default function Dashboard() {
     });
     return [...folders, ...sorted];
   }, [activeTagFilter, currentFolderChildren, search.searchQuery, search.searchResultNodes, sortOption, tagFilterNodes]);
+
+  const folderCrud = useFolderCrud({
+    currentPath, rootPath, loadDirectoryIntoCache,
+    setDirectoryCache, handleBackClick, openConfirm,
+    selectedAsset, setSelectedAsset,
+    sortedFolderChildren, selectedAssetIds, selectedFolderPaths,
+    setSelectedAssetIds, setSelectedFolderPaths, setSelectionMode,
+  });
 
   const selectedAssets = useMemo(() => {
     return sortedFolderChildren
@@ -1042,7 +757,7 @@ export default function Dashboard() {
             <>
               <button
                 type="button"
-                onClick={() => { setRenamingFolder({ path: node.path, name: node.name }); setRenameFolderValue(node.name); }}
+                onClick={() => { folderCrud.setRenamingFolder({ path: node.path, name: node.name }); folderCrud.setRenameFolderValue(node.name); }}
                 className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-accent rounded-lg transition-all duration-150 shrink-0"
                 title="Rename folder"
               >
@@ -1050,7 +765,7 @@ export default function Dashboard() {
               </button>
               <button
                 type="button"
-                onClick={() => openDuplicateFolderDialog({ path: node.path, name: node.name })}
+                onClick={() => folderCrud.openDuplicateFolderDialog({ path: node.path, name: node.name })}
                 className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-accent rounded-lg transition-all duration-150 shrink-0"
                 title="Duplicate folder"
               >
@@ -1058,7 +773,7 @@ export default function Dashboard() {
               </button>
               <button
                 type="button"
-                onClick={() => void handleDeleteFolder(node.path, node.name)}
+                onClick={() => void folderCrud.handleDeleteFolder(node.path, node.name)}
                 className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-destructive/10 rounded-lg transition-all duration-150 mr-1 shrink-0"
                 title="Delete folder"
               >
@@ -1606,7 +1321,7 @@ export default function Dashboard() {
                     {(user?.role === "admin" || user?.role === "editor") && (
                       <button
                         type="button"
-                        onClick={() => { setMoveTargetFolderPath(''); setShowMoveDialog(true); }}
+                        onClick={() => { folderCrud.setMoveTargetFolderPath(''); folderCrud.setShowMoveDialog(true); }}
                         className="flex items-center gap-1 px-2.5 py-2 rounded-xl text-sm text-brand-primary hover:bg-accent transition-all"
                       >
                         <FolderOpen className="w-4 h-4" />
@@ -1657,7 +1372,7 @@ export default function Dashboard() {
                               setRemoveTagsAssets(pool.filter((a) => selectedAssetIds.has(a.id)));
                               setIsRemoveTagsDialogOpen(true);
                             } },
-                            { label: `Move (${selectedAssetIds.size + selectedFolderPaths.size})`, icon: FolderOpen, disabled: false, destructive: false, show: user?.role === "admin" || user?.role === "editor", run: () => { setMoveTargetFolderPath(''); setShowMoveDialog(true); } },
+                            { label: `Move (${selectedAssetIds.size + selectedFolderPaths.size})`, icon: FolderOpen, disabled: false, destructive: false, show: user?.role === "admin" || user?.role === "editor", run: () => { folderCrud.setMoveTargetFolderPath(''); folderCrud.setShowMoveDialog(true); } },
                             { label: `Delete (${selectedAssetIds.size})`, icon: Trash2, disabled: false, destructive: true, show: true, run: () => handleDeleteSelected() },
                           ].filter((item) => item.show).map((item) => (
                             <button
@@ -1687,7 +1402,7 @@ export default function Dashboard() {
             {(user?.role === "admin" || user?.role === "editor") && !selectionMode && (
               <button
                 type="button"
-                onClick={() => setShowNewFolderDialog(true)}
+                onClick={() => folderCrud.setShowNewFolderDialog(true)}
                 className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
                 title="New folder"
               >
@@ -1700,7 +1415,7 @@ export default function Dashboard() {
             {(user?.role === "admin" || user?.role === "editor") && !selectionMode && (
               <button
                 type="button"
-                onClick={() => setShowNewFileDialog(true)}
+                onClick={() => fileCrud.setShowNewFileDialog(true)}
                 className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
                 title="New text or Markdown file"
               >
@@ -1979,7 +1694,7 @@ export default function Dashboard() {
                         <div className="absolute top-3 right-3 flex gap-1 opacity-0 group-hover:opacity-100">
                           <button
                             type="button"
-                            onClick={(e) => { e.stopPropagation(); setRenamingFolder({ path: node.path, name: node.name }); setRenameFolderValue(node.name); }}
+                            onClick={(e) => { e.stopPropagation(); folderCrud.setRenamingFolder({ path: node.path, name: node.name }); folderCrud.setRenameFolderValue(node.name); }}
                             className="w-8 h-8 bg-background/80 backdrop-blur-xs rounded-xl flex items-center justify-center hover:bg-accent transition-all duration-200"
                             title="Rename folder"
                           >
@@ -1987,7 +1702,7 @@ export default function Dashboard() {
                           </button>
                           <button
                             type="button"
-                            onClick={(e) => { e.stopPropagation(); openDuplicateFolderDialog({ path: node.path, name: node.name }); }}
+                            onClick={(e) => { e.stopPropagation(); folderCrud.openDuplicateFolderDialog({ path: node.path, name: node.name }); }}
                             className="w-8 h-8 bg-background/80 backdrop-blur-xs rounded-xl flex items-center justify-center hover:bg-accent transition-all duration-200"
                             title="Duplicate folder"
                           >
@@ -1995,7 +1710,7 @@ export default function Dashboard() {
                           </button>
                           <button
                             type="button"
-                            onClick={(e) => { e.stopPropagation(); void handleDeleteFolder(node.path, node.name); }}
+                            onClick={(e) => { e.stopPropagation(); void folderCrud.handleDeleteFolder(node.path, node.name); }}
                             className="w-8 h-8 bg-background/80 backdrop-blur-xs rounded-xl flex items-center justify-center hover:bg-destructive/20 transition-all duration-200"
                             title="Delete folder"
                           >
@@ -2226,26 +1941,17 @@ export default function Dashboard() {
             setIsTagDialogOpen(true);
           }
         }}
-        onRename={async (newName) => {
-          if (!selectedAsset) return;
-          const token = getAuthToken();
-          if (!token) return;
-          const client = createGraphQLClient(token);
-          const data: any = await client.request(RENAME_MEDIA_ASSET_MUTATION, { id: selectedAsset.id, newName });
-          setSelectedAsset(data.renameMediaAsset);
-          if (rootPath) await loadDirectoryIntoCache(rootPath);
-          if (currentPath && currentPath !== rootPath) await loadDirectoryIntoCache(currentPath);
-        }}
+        onRename={folderCrud.handleRenameAsset}
         onMove={() => {
-          setMoveTargetFolderPath('');
-          setShowMoveDialog(true);
+          folderCrud.setMoveTargetFolderPath('');
+          folderCrud.setShowMoveDialog(true);
         }}
         onDuplicate={() => {
           if (!selectedAsset) return;
           const currentFolderPath = selectedAsset.filePath.substring(0, selectedAsset.filePath.lastIndexOf('/'));
-          setDuplicateSourceFolder(null);
-          setDuplicateTargetFolderPath(currentFolderPath || currentPath || rootPath || '');
-          setShowDuplicateDialog(true);
+          folderCrud.setDuplicateSourceFolder(null);
+          folderCrud.setDuplicateTargetFolderPath(currentFolderPath || currentPath || rootPath || '');
+          folderCrud.setShowDuplicateDialog(true);
         }}
         onAssetUpdated={(updates) => {
           setSelectedAsset((prev) => prev ? { ...prev, ...updates } : prev);
@@ -2317,44 +2023,44 @@ export default function Dashboard() {
 
       {/* Duplicate Asset */}
       <DuplicateDialog
-        isOpen={showDuplicateDialog}
-        onOpenChange={setShowDuplicateDialog}
-        duplicateTargetFolderPath={duplicateTargetFolderPath}
-        setDuplicateTargetFolderPath={setDuplicateTargetFolderPath}
-        duplicateSourceFolder={duplicateSourceFolder}
-        setDuplicateSourceFolder={setDuplicateSourceFolder}
+        isOpen={folderCrud.showDuplicateDialog}
+        onOpenChange={folderCrud.setShowDuplicateDialog}
+        duplicateTargetFolderPath={folderCrud.duplicateTargetFolderPath}
+        setDuplicateTargetFolderPath={folderCrud.setDuplicateTargetFolderPath}
+        duplicateSourceFolder={folderCrud.duplicateSourceFolder}
+        setDuplicateSourceFolder={folderCrud.setDuplicateSourceFolder}
         allAvailableFolders={allAvailableFolders}
         rootPath={rootPath}
         selectedAsset={selectedAsset}
-        isDuplicating={isDuplicating}
-        handleDuplicateAsset={handleDuplicateAsset}
+        isDuplicating={folderCrud.isDuplicating}
+        handleDuplicateAsset={folderCrud.handleDuplicateAsset}
       />
 
       {/* Move Asset */}
       <MoveDialog
-        isOpen={showMoveDialog}
-        onOpenChange={setShowMoveDialog}
-        moveTargetFolderPath={moveTargetFolderPath}
-        setMoveTargetFolderPath={setMoveTargetFolderPath}
+        isOpen={folderCrud.showMoveDialog}
+        onOpenChange={folderCrud.setShowMoveDialog}
+        moveTargetFolderPath={folderCrud.moveTargetFolderPath}
+        setMoveTargetFolderPath={folderCrud.setMoveTargetFolderPath}
         allAvailableFolders={allAvailableFolders}
         rootPath={rootPath}
         selectionMode={selectionMode}
         selectedAsset={selectedAsset}
         selectedAssetCount={selectedAssetIds.size}
         selectedFolderPaths={selectedFolderPaths}
-        isMoving={isMoving}
-        handleMoveAsset={handleMoveAsset}
-        handleBulkMove={handleBulkMove}
+        isMoving={folderCrud.isMoving}
+        handleMoveAsset={folderCrud.handleMoveAsset}
+        handleBulkMove={folderCrud.handleBulkMove}
       />
 
       {/* Rename Folder */}
       <RenameFolderDialog
-        renamingFolder={renamingFolder}
-        onClose={() => setRenamingFolder(null)}
-        renameFolderValue={renameFolderValue}
-        setRenameFolderValue={setRenameFolderValue}
-        isRenamingFolder={isRenamingFolder}
-        onSubmit={(e) => void handleRenameFolder(e)}
+        renamingFolder={folderCrud.renamingFolder}
+        onClose={() => folderCrud.setRenamingFolder(null)}
+        renameFolderValue={folderCrud.renameFolderValue}
+        setRenameFolderValue={folderCrud.setRenameFolderValue}
+        isRenamingFolder={folderCrud.isRenamingFolder}
+        onSubmit={(e) => void folderCrud.handleRenameFolder(e)}
       />
 
       {/* Change Password */}
@@ -2374,26 +2080,26 @@ export default function Dashboard() {
 
       {/* New File Dialog */}
       <NewFileDialog
-        isOpen={showNewFileDialog}
-        onOpenChange={setShowNewFileDialog}
-        newFileName={newFileName}
-        setNewFileName={setNewFileName}
-        newFileType={newFileType}
-        setNewFileType={setNewFileType}
-        isCreatingFile={isCreatingFile}
+        isOpen={fileCrud.showNewFileDialog}
+        onOpenChange={fileCrud.setShowNewFileDialog}
+        newFileName={fileCrud.newFileName}
+        setNewFileName={fileCrud.setNewFileName}
+        newFileType={fileCrud.newFileType}
+        setNewFileType={fileCrud.setNewFileType}
+        isCreatingFile={fileCrud.isCreatingFile}
         currentFolder={currentFolder}
-        onSubmit={handleCreateFile}
+        onSubmit={fileCrud.handleCreateFile}
       />
 
       {/* New Folder Dialog */}
       <NewFolderDialog
-        isOpen={showNewFolderDialog}
-        onOpenChange={setShowNewFolderDialog}
-        newFolderName={newFolderName}
-        setNewFolderName={setNewFolderName}
-        isCreatingFolder={isCreatingFolder}
+        isOpen={folderCrud.showNewFolderDialog}
+        onOpenChange={folderCrud.setShowNewFolderDialog}
+        newFolderName={folderCrud.newFolderName}
+        setNewFolderName={folderCrud.setNewFolderName}
+        isCreatingFolder={folderCrud.isCreatingFolder}
         currentFolder={currentFolder}
-        onSubmit={handleCreateFolder}
+        onSubmit={folderCrud.handleCreateFolder}
       />
 
       {/* Upload Dialog */}
