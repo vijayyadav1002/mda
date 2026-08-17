@@ -14,7 +14,7 @@ interface MediaGridProps {
   activeTagFilter: string | null;
   isLoading: boolean;
   showAssetPath: boolean;
-  rootPath: string;
+  rootPath: string | null;
   registerLazyThumbnailCard: (assetId: string) => (element: HTMLDivElement | null) => void;
   onFolderClick: (node: DirectoryNode) => void;
   onRenameFolder: (node: { path: string; name: string }) => void;
@@ -195,7 +195,7 @@ export function MediaGrid({
                 </p>
                 {showAssetPath && (
                   <p className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground/70">
-                    {(asset.filePath.substring(0, asset.filePath.lastIndexOf("/")).replace(rootPath, "") || "/").replace(/^\//, "") || "/"}
+                    {(asset.filePath.substring(0, asset.filePath.lastIndexOf("/")).replace(rootPath ?? "", "") || "/").replace(/^\//, "") || "/"}
                   </p>
                 )}
                 {asset.tags && asset.tags.length > 0 && (
