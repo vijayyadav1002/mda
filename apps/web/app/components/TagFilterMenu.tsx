@@ -6,8 +6,8 @@ interface TagFilterMenuProps {
   tagSuggestions: TagSuggestion[];
   showTagFilterMenu: boolean;
   activeTagFilter: string | null;
-  tagFilterMenuRef: RefObject<HTMLDivElement>;
-  tagFilterTriggerRef: RefObject<HTMLButtonElement>;
+  tagFilterMenuRef: RefObject<HTMLDivElement | null>;
+  tagFilterTriggerRef: RefObject<HTMLButtonElement | null>;
   tagFilterMenuRight: number;
   userRole: string | undefined;
   onToggleMenu: () => void;
