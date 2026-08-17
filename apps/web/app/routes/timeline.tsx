@@ -1,12 +1,13 @@
 import type { MetaFunction } from "react-router";
 import { useNavigate } from "react-router";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, CalendarDays, Check, CheckSquare, ChevronDown, Film, ImageIcon, ListTodo, Minus, Play, Plus, RefreshCw, Settings, Square, Tag as TagIcon, Trash2, X, Zap } from "lucide-react";
+import { CalendarDays, CheckSquare, ChevronDown, Film, ImageIcon, ListTodo, Play, RefreshCw, Square, Tag as TagIcon, Trash2, X, Zap } from "lucide-react";
 import { ConfirmDialog } from "~/components/ConfirmDialog";
 import { MediaAssetViewer } from "~/components/MediaAssetViewer";
 import { CompressDialog } from "~/components/CompressDialog";
 import { TagDialog } from "~/components/TagDialog";
 import { RemoveTagsDialog } from "~/components/RemoveTagsDialog";
+import { TimelineHeader } from "~/components/timeline/TimelineHeader";
 import { createGraphQLClient, getApiUrl, getAuthToken } from "~/lib/api";
 import { formatBytes, formatDuration } from "~/lib/format";
 import { monthKeyOf, monthShortLabel, monthLabel } from "~/lib/date";
@@ -24,19 +25,11 @@ export const meta: MetaFunction = () => [{ title: "Timeline — MDA" }];
 
 /* ── GraphQL ────────────────────────────────────────────────────── */
 
-const DATE_SOURCE_OPTIONS: Array<{ value: string; label: string; description: string }> = [
-  { value: "folder", label: "Folder & file names", description: "Dates from folder names like 2022-02, then filename patterns (default)" },
-  { value: "exif", label: "Embedded metadata (EXIF)", description: "Capture date written inside the file by the camera; falls back to folder & file names when missing. Slower to re-index" },
-  { value: "created", label: "File creation time", description: "When the file was created on disk" },
-  { value: "modified", label: "File modified time", description: "When the file was last changed" },
-];
-
 /* ── Types ──────────────────────────────────────────────────────── */
 
 // Zoom levels, iOS-Photos style: 0 = years, 1 = months, 2 = comfy grid, 3 = dense grid
 const MIN_ZOOM = 0;
 const MAX_ZOOM = 3;
-const ZOOM_LEVEL_LABELS = ["Years", "Months", "Grid", "Dense"] as const;
 const TILE_SIZE: Record<number, number> = { 2: 168, 3: 96 };
 const TILE_GAP: Record<number, number> = { 2: 8, 3: 4 };
 const SECTION_HEADER_H = 52;
@@ -432,167 +425,27 @@ export default function Timeline() {
   return (
     <div className="min-h-screen bg-background text-foreground">
       {/* ── Top bar ── */}
-      <header className="sticky top-0 z-30 bg-background/80 backdrop-blur-md border-b border-border/20">
-        <div className="flex items-center justify-between px-4 md:px-6 py-3 gap-3">
-          <div className="flex items-center gap-3 min-w-0">
-            <button
-              type="button"
-              onClick={() => navigate("/dashboard")}
-              className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              <span className="hidden sm:inline">Collections</span>
-            </button>
-            <div className="w-px h-5 bg-border/40" />
-            <h1 className="font-manrope font-bold text-lg flex items-center gap-2 truncate">
-              <CalendarDays className="w-5 h-5 text-brand-primary shrink-0" />
-              Timeline
-            </h1>
-            {monthBuckets && (
-              <span className="hidden md:inline text-xs text-muted-foreground font-mono">
-                {totalCount.toLocaleString()} items
-              </span>
-            )}
-          </div>
-
-          <div className="flex items-center gap-2">
-          {/* Timeline settings (admin only) */}
-          {userRole === "admin" && (
-            <div className="relative" ref={settings.settingsMenuRef}>
-              <button
-                type="button"
-                onClick={() => settings.setShowSettingsMenu((p) => !p)}
-                className={`p-2 rounded-xl border transition-all ${
-                  settings.showSettingsMenu
-                    ? "bg-accent border-border/50 text-foreground"
-                    : "bg-card border-border/30 text-muted-foreground hover:text-foreground"
-                }`}
-                title="Timeline settings"
-              >
-                <Settings className="w-4 h-4" />
-              </button>
-              {settings.showSettingsMenu && (
-                <div className="absolute right-0 top-full mt-2 w-72 rounded-2xl bg-card border border-border/30 shadow-ambient p-3 z-40">
-                  <p className="text-xs font-manrope font-semibold text-foreground px-1 pb-2">
-                    Timeline date source
-                  </p>
-                  <div className="space-y-1">
-                    {DATE_SOURCE_OPTIONS.map((option) => (
-                      <button
-                        key={option.value}
-                        type="button"
-                        onClick={() => void settings.handleChangeDateSource(option.value)}
-                        disabled={settings.dateSourceSaving}
-                        className={`w-full flex items-start gap-2 px-2 py-2 rounded-xl text-left transition-colors disabled:opacity-50 ${
-                          settings.dateSource === option.value ? "bg-accent" : "hover:bg-accent/50"
-                        }`}
-                      >
-                        <span className="w-4 pt-0.5 shrink-0">
-                          {settings.dateSource === option.value && <Check className="w-4 h-4 text-brand-primary" />}
-                        </span>
-                        <span>
-                          <span className="block text-xs font-medium text-foreground">{option.label}</span>
-                          <span className="block text-[10px] text-muted-foreground mt-0.5">{option.description}</span>
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                  <p className="text-[10px] text-muted-foreground px-1 pt-2 border-t border-border/20 mt-2">
-                    Changing this re-dates the whole library in the background.
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Select toggle */}
-          {canEdit && isGridLevel && (
-            <button
-              type="button"
-              onClick={() => (selectionMode ? exitSelection() : setSelectionMode(true))}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-medium transition-all ${
-                selectionMode
-                  ? "gradient-brand text-[#060e20] border-transparent"
-                  : "bg-card border-border/30 text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <CheckSquare className="w-3.5 h-3.5" />
-              {selectionMode ? "Cancel" : "Select"}
-            </button>
-          )}
-
-          {/* Zoom controls — segmented on desktop, compact dropdown on mobile */}
-          <div className="hidden md:flex items-center gap-1 bg-card rounded-xl border border-border/30 p-1">
-            <button
-              type="button"
-              onClick={() => anchorAndSetZoom(zoom - 1)}
-              disabled={zoom === MIN_ZOOM}
-              className="p-1.5 rounded-lg hover:bg-accent disabled:opacity-30 transition-colors"
-              title="Zoom out"
-            >
-              <Minus className="w-4 h-4" />
-            </button>
-            <div className="flex items-center gap-1 px-1">
-              {ZOOM_LEVEL_LABELS.map((label, i) => (
-                <button
-                  key={label}
-                  type="button"
-                  onClick={() => anchorAndSetZoom(i)}
-                  className={`px-2 py-1 rounded-lg text-xs font-medium transition-all ${
-                    zoom === i ? "gradient-brand text-[#060e20]" : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            <button
-              type="button"
-              onClick={() => anchorAndSetZoom(zoom + 1)}
-              disabled={zoom === MAX_ZOOM}
-              className="p-1.5 rounded-lg hover:bg-accent disabled:opacity-30 transition-colors"
-              title="Zoom in"
-            >
-              <Plus className="w-4 h-4" />
-            </button>
-          </div>
-
-          <div className="relative md:hidden" ref={zoomMenuRef}>
-            <button
-              type="button"
-              onClick={() => setShowZoomMenu((p) => !p)}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-card border border-border/30 text-xs font-medium text-foreground"
-              aria-label="Change zoom level"
-            >
-              {ZOOM_LEVEL_LABELS[zoom]}
-              <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${showZoomMenu ? "rotate-180" : ""}`} />
-            </button>
-            {showZoomMenu && (
-              <div className="absolute right-0 top-full mt-2 w-40 rounded-2xl bg-card border border-border/30 shadow-ambient p-1.5 z-40">
-                {ZOOM_LEVEL_LABELS.map((label, i) => (
-                  <button
-                    key={label}
-                    type="button"
-                    onClick={() => {
-                      anchorAndSetZoom(i);
-                      setShowZoomMenu(false);
-                    }}
-                    className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-xl text-left text-xs transition-colors ${
-                      zoom === i ? "bg-accent font-medium text-foreground" : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
-                    }`}
-                  >
-                    <span className="w-4 shrink-0">
-                      {zoom === i && <Check className="w-3.5 h-3.5 text-brand-primary" />}
-                    </span>
-                    {label}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-          </div>
-        </div>
-      </header>
+      <TimelineHeader
+        itemCount={monthBuckets ? totalCount : null}
+        userRole={userRole}
+        canEdit={canEdit}
+        isGridLevel={isGridLevel}
+        zoom={zoom}
+        selectionMode={selectionMode}
+        showSettingsMenu={settings.showSettingsMenu}
+        settingsMenuRef={settings.settingsMenuRef}
+        dateSource={settings.dateSource}
+        dateSourceSaving={settings.dateSourceSaving}
+        showZoomMenu={showZoomMenu}
+        zoomMenuRef={zoomMenuRef}
+        onNavigateBack={() => navigate("/dashboard")}
+        onToggleSettingsMenu={() => settings.setShowSettingsMenu((p) => !p)}
+        onChangeDateSource={settings.handleChangeDateSource}
+        onToggleSelectionMode={() => (selectionMode ? exitSelection() : setSelectionMode(true))}
+        onZoomChange={anchorAndSetZoom}
+        onToggleZoomMenu={() => setShowZoomMenu((p) => !p)}
+        onCloseZoomMenu={() => setShowZoomMenu(false)}
+      />
 
       {/* Floating current-period pill */}
       {isGridLevel && currentPeriod && (
