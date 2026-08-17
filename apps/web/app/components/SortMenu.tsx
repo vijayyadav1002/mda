@@ -6,7 +6,7 @@ export type SortOption = "default" | "size-asc" | "size-desc" | "date-asc" | "da
 interface SortMenuProps {
   sortOption: SortOption;
   onSortOptionChange: (option: SortOption) => void;
-  searchQuery: string;
+  searchQuery: unknown;
   searchLimit: 25 | 50 | 100 | 250 | 0;
   onSearchLimitChange: (limit: 25 | 50 | 100 | 250 | 0) => void;
   minSizeBytes: number;
