@@ -197,15 +197,6 @@ export default function Timeline() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const gridRef = useRef<HTMLDivElement>(null);
-  const wheelAccumRef = useRef(0);
-  const pinchDistanceRef = useRef<number | null>(null);
-  const { anchorAndSetZoom, zoomAnchorRef } = useZoomAnchor({
-    zoom,
-    setZoom,
-    observedSectionsRef,
-    minZoom: MIN_ZOOM,
-    maxZoom: MAX_ZOOM,
-  });
 
   /* ── Bootstrapping ── */
 
@@ -278,6 +269,15 @@ export default function Timeline() {
     setSelectedIds,
   });
 
+  const { anchorAndSetZoom, zoomAnchorRef } = useZoomAnchor({
+    zoom,
+    setZoom,
+    observedSectionsRef,
+    isDragSelectingRef,
+    minZoom: MIN_ZOOM,
+    maxZoom: MAX_ZOOM,
+  });
+
   /* ── Scroll position → floating period pill ── */
 
   useEffect(() => {
@@ -297,62 +297,6 @@ export default function Timeline() {
     onScroll();
     return () => window.removeEventListener("scroll", onScroll);
   }, [isGridLevel, zoom]);
-
-  /* ── Zoom interactions ── */
-
-  // Ctrl+wheel / trackpad pinch
-  useEffect(() => {
-    const handler = (e: WheelEvent) => {
-      if (!e.ctrlKey) return;
-      e.preventDefault();
-      wheelAccumRef.current += -e.deltaY;
-      if (wheelAccumRef.current > 60) {
-        wheelAccumRef.current = 0;
-        anchorAndSetZoom(zoom + 1);
-      } else if (wheelAccumRef.current < -60) {
-        wheelAccumRef.current = 0;
-        anchorAndSetZoom(zoom - 1);
-      }
-    };
-    window.addEventListener("wheel", handler, { passive: false });
-    return () => window.removeEventListener("wheel", handler);
-  }, [zoom, anchorAndSetZoom]);
-
-  // Touch pinch
-  useEffect(() => {
-    const distance = (e: TouchEvent) => {
-      const [a, b] = [e.touches[0], e.touches[1]];
-      return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
-    };
-    const onTouchStart = (e: TouchEvent) => {
-      if (e.touches.length === 2) pinchDistanceRef.current = distance(e);
-    };
-    const onTouchMove = (e: TouchEvent) => {
-      if (e.touches.length !== 2 || pinchDistanceRef.current === null) return;
-      e.preventDefault();
-      // A two-finger drag-select owns the gesture; don't also change zoom.
-      if (isDragSelectingRef.current) return;
-      const ratio = distance(e) / pinchDistanceRef.current;
-      if (ratio > 1.3) {
-        pinchDistanceRef.current = distance(e);
-        anchorAndSetZoom(zoom + 1);
-      } else if (ratio < 0.77) {
-        pinchDistanceRef.current = distance(e);
-        anchorAndSetZoom(zoom - 1);
-      }
-    };
-    const onTouchEnd = () => {
-      pinchDistanceRef.current = null;
-    };
-    window.addEventListener("touchstart", onTouchStart, { passive: true });
-    window.addEventListener("touchmove", onTouchMove, { passive: false });
-    window.addEventListener("touchend", onTouchEnd, { passive: true });
-    return () => {
-      window.removeEventListener("touchstart", onTouchStart);
-      window.removeEventListener("touchmove", onTouchMove);
-      window.removeEventListener("touchend", onTouchEnd);
-    };
-  }, [zoom, anchorAndSetZoom]);
 
   /* ── Lightbox ── */
 

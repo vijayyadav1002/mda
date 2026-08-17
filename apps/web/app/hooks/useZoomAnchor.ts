@@ -17,16 +17,20 @@ export function useZoomAnchor({
   zoom,
   setZoom,
   observedSectionsRef,
+  isDragSelectingRef,
   minZoom,
   maxZoom,
 }: Readonly<{
   zoom: number;
   setZoom: (value: number | ((prev: number) => number)) => void;
   observedSectionsRef: React.RefObject<Map<Element, string>>;
+  isDragSelectingRef: React.RefObject<boolean>;
   minZoom: number;
   maxZoom: number;
 }>) {
   const zoomAnchorRef = useRef<string | null>(null);
+  const wheelAccumRef = useRef(0);
+  const pinchDistanceRef = useRef<number | null>(null);
 
   const anchorAndSetZoom = useCallback((next: number) => {
     setZoom((prev) => {
@@ -56,6 +60,60 @@ export function useZoomAnchor({
       window.scrollBy(0, -80);
     });
   }, [zoom]);
+
+  // Ctrl+wheel / trackpad pinch
+  useEffect(() => {
+    const handler = (e: WheelEvent) => {
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      wheelAccumRef.current += -e.deltaY;
+      if (wheelAccumRef.current > 60) {
+        wheelAccumRef.current = 0;
+        anchorAndSetZoom(zoom + 1);
+      } else if (wheelAccumRef.current < -60) {
+        wheelAccumRef.current = 0;
+        anchorAndSetZoom(zoom - 1);
+      }
+    };
+    window.addEventListener("wheel", handler, { passive: false });
+    return () => window.removeEventListener("wheel", handler);
+  }, [zoom, anchorAndSetZoom]);
+
+  // Touch pinch
+  useEffect(() => {
+    const distance = (e: TouchEvent) => {
+      const [a, b] = [e.touches[0], e.touches[1]];
+      return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+    };
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 2) pinchDistanceRef.current = distance(e);
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      if (e.touches.length !== 2 || pinchDistanceRef.current === null) return;
+      e.preventDefault();
+      // A two-finger drag-select owns the gesture; don't also change zoom.
+      if (isDragSelectingRef.current) return;
+      const ratio = distance(e) / pinchDistanceRef.current;
+      if (ratio > 1.3) {
+        pinchDistanceRef.current = distance(e);
+        anchorAndSetZoom(zoom + 1);
+      } else if (ratio < 0.77) {
+        pinchDistanceRef.current = distance(e);
+        anchorAndSetZoom(zoom - 1);
+      }
+    };
+    const onTouchEnd = () => {
+      pinchDistanceRef.current = null;
+    };
+    window.addEventListener("touchstart", onTouchStart, { passive: true });
+    window.addEventListener("touchmove", onTouchMove, { passive: false });
+    window.addEventListener("touchend", onTouchEnd, { passive: true });
+    return () => {
+      window.removeEventListener("touchstart", onTouchStart);
+      window.removeEventListener("touchmove", onTouchMove);
+      window.removeEventListener("touchend", onTouchEnd);
+    };
+  }, [zoom, anchorAndSetZoom]);
 
   return { anchorAndSetZoom, zoomAnchorRef };
 }
