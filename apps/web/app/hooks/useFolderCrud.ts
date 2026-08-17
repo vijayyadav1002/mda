@@ -19,14 +19,6 @@ const DELETE_FOLDER_MUTATION = `
   }
 `;
 
-const RENAME_MEDIA_ASSET_MUTATION = `
-  mutation RenameMediaAsset($id: ID!, $newName: String!) {
-    renameMediaAsset(id: $id, newName: $newName) {
-      id fileName filePath mimeType fileSize thumbnailUrl transcodedUrl createdAt capturedAt tags { id name }
-    }
-  }
-`;
-
 const MOVE_MEDIA_ASSET_MUTATION = `
   mutation MoveMediaAsset($id: ID!, $newPath: String!) {
     moveMediaAsset(id: $id, newPath: $newPath) {
@@ -320,17 +312,6 @@ export function useFolderCrud({
     }
   };
 
-  const handleRenameAsset = async (newName: string) => {
-    if (!selectedAsset) return;
-    const token = getAuthToken();
-    if (!token) return;
-    const client = createGraphQLClient(token);
-    const data: any = await client.request(RENAME_MEDIA_ASSET_MUTATION, { id: selectedAsset.id, newName });
-    setSelectedAsset(data.renameMediaAsset);
-    if (rootPath) await loadDirectoryIntoCache(rootPath);
-    if (currentPath && currentPath !== rootPath) await loadDirectoryIntoCache(currentPath);
-  };
-
   return {
     showNewFolderDialog,
     setShowNewFolderDialog,
@@ -361,6 +342,5 @@ export function useFolderCrud({
     openDuplicateFolderDialog,
     handleBulkMove,
     handleRenameFolder,
-    handleRenameAsset,
   };
 }

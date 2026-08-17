@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { createGraphQLClient, getAuthToken } from "~/lib/api";
 import type { DirectoryNode, MediaAsset } from "~/lib/types";
+import type { SortOption } from "~/components/SortMenu";
 
 const SEARCH_RESULTS_QUERY = `
   query SearchResults($term: String, $mediaType: String, $sortBy: String, $limit: Int, $minSize: Float, $maxSize: Float, $path: String) {
@@ -22,7 +23,7 @@ interface UseSearchParams {
   /** Library root; search is unscoped when `currentPath` equals this. */
   rootPath: string | null;
   /** Dashboard's active sort, forwarded to the search query as `sortBy`. */
-  sortOption: "default" | "size-asc" | "size-desc" | "date-asc" | "date-desc";
+  sortOption: SortOption;
 }
 
 /**
@@ -105,7 +106,6 @@ export function useSearch({ currentPath, rootPath, sortOption }: UseSearchParams
   return {
     searchQuery,
     searchAssets,
-    searchFolders,
     searchLoading,
     searchLimit,
     setSearchLimit,

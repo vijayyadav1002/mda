@@ -6,7 +6,7 @@ export type SortOption = "default" | "size-asc" | "size-desc" | "date-asc" | "da
 interface SortMenuProps {
   sortOption: SortOption;
   onSortOptionChange: (option: SortOption) => void;
-  searchQuery: unknown;
+  isSearchActive: boolean;
   searchLimit: 25 | 50 | 100 | 250 | 0;
   onSearchLimitChange: (limit: 25 | 50 | 100 | 250 | 0) => void;
   minSizeBytes: number;
@@ -24,7 +24,7 @@ const SORT_OPTIONS: [SortOption, string][] = [
 export function SortMenu({
   sortOption,
   onSortOptionChange,
-  searchQuery,
+  isSearchActive,
   searchLimit,
   onSearchLimitChange,
   minSizeBytes,
@@ -85,7 +85,7 @@ export function SortMenu({
       </div>
 
       {/* Search result limit — only visible during active search */}
-      {searchQuery && (
+      {isSearchActive && (
         <select
           value={searchLimit}
           onChange={(e) => onSearchLimitChange(Number(e.target.value) as typeof searchLimit)}
@@ -101,7 +101,7 @@ export function SortMenu({
       )}
 
       {/* File size filter — only visible during active search */}
-      {searchQuery && (
+      {isSearchActive && (
         <select
           value={minSizeBytes}
           onChange={(e) => onMinSizeBytesChange(Number(e.target.value))}

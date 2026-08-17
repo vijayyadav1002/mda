@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useRef } from "react";
 
+// Zoom levels, iOS-Photos style: 0 = years, 1 = months, 2 = comfy grid, 3 = dense grid
+export const MIN_ZOOM = 0;
+export const MAX_ZOOM = 3;
+
 /**
  * Keeps scroll position stable across zoom-level changes.
  *
@@ -13,6 +17,17 @@ import { useCallback, useEffect, useRef } from "react";
  * more than one zoom level at once, so it doesn't go through
  * `anchorAndSetZoom`.
  */
+interface UseZoomAnchorParams {
+  zoom: number;
+  setZoom: (value: number | ((prev: number) => number)) => void;
+  /** Populated by `useTimelineSections`; scanned for the section nearest the top of the viewport. */
+  observedSectionsRef: React.RefObject<Map<Element, string>>;
+  /** Suppresses pinch-to-zoom while a two-finger drag-select gesture is in progress. */
+  isDragSelectingRef: React.RefObject<boolean>;
+  minZoom: number;
+  maxZoom: number;
+}
+
 export function useZoomAnchor({
   zoom,
   setZoom,
@@ -20,14 +35,7 @@ export function useZoomAnchor({
   isDragSelectingRef,
   minZoom,
   maxZoom,
-}: Readonly<{
-  zoom: number;
-  setZoom: (value: number | ((prev: number) => number)) => void;
-  observedSectionsRef: React.RefObject<Map<Element, string>>;
-  isDragSelectingRef: React.RefObject<boolean>;
-  minZoom: number;
-  maxZoom: number;
-}>) {
+}: UseZoomAnchorParams) {
   const zoomAnchorRef = useRef<string | null>(null);
   const wheelAccumRef = useRef(0);
   const pinchDistanceRef = useRef<number | null>(null);

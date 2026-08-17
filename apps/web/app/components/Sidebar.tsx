@@ -19,26 +19,26 @@ import { formatBytes } from "~/lib/format";
 import type { CacheSettingsData, CacheStats } from "~/lib/types";
 
 interface SidebarProps {
-  readonly user: { username: string; role: string } | null;
-  readonly rootSize: number | null;
-  readonly onNavigateHome: () => void;
-  readonly onNavigateTimeline: () => void;
-  readonly onNavigateTrash: () => void;
-  readonly onNavigateUsers: () => void;
-  readonly onNavigateAudit: () => void;
-  readonly onOpenQueuePanel: () => void;
-  readonly queueBadgeCount?: number;
-  readonly cacheStats: CacheStats | null;
-  readonly cacheSettings: CacheSettingsData | null;
-  readonly showCachePanel: boolean;
-  readonly onToggleCachePanel: () => void;
-  readonly onClearCache: (type: "thumbnails" | "previews" | "hls" | "transcoded" | "all") => void;
-  readonly onSaveCacheSettings: (input: Partial<CacheSettingsData>) => Promise<void>;
-  readonly isRefreshing: boolean;
-  readonly onRefreshLibrary: () => void;
-  readonly onUpload: () => void;
-  readonly onChangePassword: () => void;
-  readonly onLogout: () => void;
+  user: { username: string; role: string } | null;
+  rootSize: number | null;
+  onNavigateHome: () => void;
+  onNavigateTimeline: () => void;
+  onNavigateTrash: () => void;
+  onNavigateUsers: () => void;
+  onNavigateAudit: () => void;
+  onOpenQueuePanel: () => void;
+  queueBadgeCount?: number;
+  cacheStats: CacheStats | null;
+  cacheSettings: CacheSettingsData | null;
+  showCachePanel: boolean;
+  onToggleCachePanel: () => void;
+  onClearCache: (type: "thumbnails" | "previews" | "hls" | "transcoded" | "all") => void;
+  onSaveCacheSettings: (input: Partial<CacheSettingsData>) => Promise<void>;
+  isRefreshing: boolean;
+  onRefreshLibrary: () => void;
+  onUpload: () => void;
+  onChangePassword: () => void;
+  onLogout: () => void;
 }
 
 export function Sidebar({

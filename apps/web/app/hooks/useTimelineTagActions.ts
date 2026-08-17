@@ -138,7 +138,6 @@ export function useTimelineTagActions({
     tagTargets,
     setTagTargets,
     tagSuggestions,
-    updateLocalAssetTags,
     handleApplyTags,
     handleRemoveTagsBulk,
     handleRemoveSingleTag,

@@ -1,9 +1,21 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { createGraphQLClient, getApiUrl, getAuthToken, clearAuthToken } from "~/lib/api";
-import { DashboardDialogs } from "~/components/DashboardDialogs";
+import { MediaAssetViewer } from "~/components/MediaAssetViewer";
+import { CompressDialog } from "~/components/CompressDialog";
+import { CompressQueuePanel } from "~/components/CompressQueuePanel";
+import { TagDialog } from "~/components/TagDialog";
+import { RemoveTagsDialog } from "~/components/RemoveTagsDialog";
+import { ConfirmDialog } from "~/components/ConfirmDialog";
+import { ChangePasswordDialog } from "~/components/ChangePasswordDialog";
+import { LogoutConfirmDialog } from "~/components/LogoutConfirmDialog";
+import { NewFileDialog } from "~/components/NewFileDialog";
+import { NewFolderDialog } from "~/components/NewFolderDialog";
+import { UploadDialog } from "~/components/UploadDialog";
+import { MoveDialog } from "~/components/MoveDialog";
+import { DuplicateDialog } from "~/components/DuplicateDialog";
+import { RenameFolderDialog } from "~/components/RenameFolderDialog";
 import { SearchBar } from "~/components/SearchBar";
-import { formatBytes } from "~/lib/format";
 import { canCompressAsset } from "~/lib/file-type";
 import type { MediaAsset, DirectoryNode } from "~/lib/types";
 import { useDirectoryTree } from "~/hooks/useDirectoryTree";
@@ -21,7 +33,7 @@ import { useFolderCrud } from "~/hooks/useFolderCrud";
 import { Sidebar } from "~/components/Sidebar";
 import { MobileNav } from "~/components/MobileNav";
 import { TagFilterMenu } from "~/components/TagFilterMenu";
-import { SortMenu } from "~/components/SortMenu";
+import { SortMenu, type SortOption } from "~/components/SortMenu";
 import { ToolbarActions } from "~/components/ToolbarActions";
 import { MediaGrid } from "~/components/MediaGrid";
 import { FolderTreeNode } from "~/components/FolderTree";
@@ -139,7 +151,7 @@ export default function Dashboard() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isGeneratingThumbnails, setIsGeneratingThumbnails] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [sortOption, setSortOption] = useState<"default" | "size-asc" | "size-desc" | "date-asc" | "date-desc">("default");
+  const [sortOption, setSortOption] = useState<SortOption>("default");
   const [autoEditAssetId, setAutoEditAssetId] = useState<string | null>(null);
   const { confirmDialog, setConfirmDialog, openConfirm } = useConfirmDialog();
   const {
@@ -202,8 +214,8 @@ export default function Dashboard() {
   const search = useSearch({ currentPath, rootPath, sortOption });
   const compress = useCompressQueue({ user, currentPath, rootPath, loadDirectoryIntoCache });
   const fileCrud = useFileCrud({
-    currentPath, loadDirectoryIntoCache,
-    setSelectedAsset, setAutoEditAssetId, setIsViewerOpen,
+    currentPath, rootPath, loadDirectoryIntoCache,
+    selectedAsset, setSelectedAsset, setAutoEditAssetId, setIsViewerOpen,
   });
   const refreshInFlightRef = useRef(false);
   const thumbnailPollTimerRef = useRef<number | null>(null);
@@ -951,7 +963,7 @@ export default function Dashboard() {
             <SortMenu
               sortOption={sortOption}
               onSortOptionChange={setSortOption}
-              searchQuery={search.searchQuery}
+              isSearchActive={Boolean(search.searchQuery)}
               searchLimit={search.searchLimit}
               onSearchLimitChange={search.setSearchLimit}
               minSizeBytes={search.minSizeBytes}
@@ -1050,208 +1062,227 @@ export default function Dashboard() {
 
       {/* ── Dialogs ──────────────────────────────────────────────── */}
 
-      <DashboardDialogs
-        viewer={{
-          asset: selectedAsset,
-          isOpen: isViewerOpen,
-          onClose: handleCloseViewer,
-          apiUrl: API_URL,
-          userRole: user?.role,
-          onNavigate: handleViewerNavigate,
-          hasPrev: viewerNavIndex > 0,
-          hasNext: viewerNavIndex >= 0 && viewerNavIndex < viewerNavAssets.length - 1,
-          autoEdit: selectedAsset != null && selectedAsset.id === autoEditAssetId,
-          onCompress: selectedAsset && canCompressAsset(selectedAsset) ? () => {
-            if (selectedAsset) {
-              compress.setCompressDialogAssets([selectedAsset]);
-              compress.setIsCompressDialogOpen(true);
+      <MediaAssetViewer
+        asset={selectedAsset}
+        isOpen={isViewerOpen}
+        onClose={handleCloseViewer}
+        apiUrl={API_URL}
+        userRole={user?.role}
+        onNavigate={handleViewerNavigate}
+        hasPrev={viewerNavIndex > 0}
+        hasNext={viewerNavIndex >= 0 && viewerNavIndex < viewerNavAssets.length - 1}
+        autoEdit={selectedAsset != null && selectedAsset.id === autoEditAssetId}
+        onCompress={selectedAsset && canCompressAsset(selectedAsset) ? () => {
+          if (selectedAsset) {
+            compress.setCompressDialogAssets([selectedAsset]);
+            compress.setIsCompressDialogOpen(true);
+          }
+        } : undefined}
+        onRemoveTag={async (tagName) => {
+          if (!selectedAsset) return;
+          await removeTagFromAsset(selectedAsset.id, tagName);
+          setSelectedAsset((prev) =>
+            prev ? { ...prev, tags: (prev.tags ?? []).filter((t) => t.name !== tagName) } : prev
+          );
+        }}
+        onAddTags={() => {
+          if (selectedAsset) {
+            setTagDialogAssets([selectedAsset]);
+            setIsTagDialogOpen(true);
+          }
+        }}
+        onRename={fileCrud.handleRenameAsset}
+        onMove={() => {
+          folderCrud.setMoveTargetFolderPath('');
+          folderCrud.setShowMoveDialog(true);
+        }}
+        onDuplicate={() => {
+          if (!selectedAsset) return;
+          const currentFolderPath = selectedAsset.filePath.substring(0, selectedAsset.filePath.lastIndexOf('/'));
+          folderCrud.setDuplicateSourceFolder(null);
+          folderCrud.setDuplicateTargetFolderPath(currentFolderPath || currentPath || rootPath || '');
+          folderCrud.setShowDuplicateDialog(true);
+        }}
+        onAssetUpdated={(updates) => {
+          setSelectedAsset((prev) => prev ? { ...prev, ...updates } : prev);
+          if (rootPath) void loadDirectoryIntoCache(rootPath);
+          if (currentPath && currentPath !== rootPath) void loadDirectoryIntoCache(currentPath);
+        }}
+      />
+
+      <CompressDialog
+        isOpen={compress.isCompressDialogOpen}
+        onClose={() => compress.setIsCompressDialogOpen(false)}
+        selectedAssets={compress.compressDialogAssets}
+        onAddToQueue={(options) => {
+          compress.addToCompressQueue(compress.compressDialogAssets, options);
+          compress.setIsCompressDialogOpen(false);
+          setSelectionMode(false);
+          setSelectedAssetIds(new Set());
+        }}
+      />
+
+      <TagDialog
+        isOpen={isTagDialogOpen}
+        onClose={() => setIsTagDialogOpen(false)}
+        selectedAssets={tagDialogAssets}
+        suggestions={tagSuggestions}
+        onApply={async (tagNames) => {
+          const updated = await applyTagsToAssets(tagDialogAssets.map((a) => a.id), tagNames);
+          if (isViewerOpen && selectedAsset && updated) {
+            const refreshed = updated.find((a) => a.id === selectedAsset.id);
+            if (refreshed) {
+              setSelectedAsset((prev) => prev ? { ...prev, tags: refreshed.tags } : prev);
             }
-          } : undefined,
-          onRemoveTag: async (tagName) => {
-            if (!selectedAsset) return;
-            await removeTagFromAsset(selectedAsset.id, tagName);
+          }
+          setIsTagDialogOpen(false);
+          setSelectionMode(false);
+          setSelectedAssetIds(new Set());
+        }}
+      />
+
+      <RemoveTagsDialog
+        isOpen={isRemoveTagsDialogOpen}
+        onClose={() => setIsRemoveTagsDialogOpen(false)}
+        selectedAssets={removeTagsAssets}
+        onRemove={async (tagNames) => {
+          await removeTagsFromAssets(removeTagsAssets.map((a) => a.id), tagNames);
+          if (search.searchQuery) await search.handleSearch(search.searchQuery.term, search.searchQuery.mediaType);
+          if (isViewerOpen && selectedAsset && removeTagsAssets.some((a) => a.id === selectedAsset.id)) {
             setSelectedAsset((prev) =>
-              prev ? { ...prev, tags: (prev.tags ?? []).filter((t) => t.name !== tagName) } : prev
+              prev ? { ...prev, tags: (prev.tags ?? []).filter((t) => !tagNames.includes(t.name)) } : prev
             );
-          },
-          onAddTags: () => {
-            if (selectedAsset) {
-              setTagDialogAssets([selectedAsset]);
-              setIsTagDialogOpen(true);
-            }
-          },
-          onRename: folderCrud.handleRenameAsset,
-          onMove: () => {
-            folderCrud.setMoveTargetFolderPath('');
-            folderCrud.setShowMoveDialog(true);
-          },
-          onDuplicate: () => {
-            if (!selectedAsset) return;
-            const currentFolderPath = selectedAsset.filePath.substring(0, selectedAsset.filePath.lastIndexOf('/'));
-            folderCrud.setDuplicateSourceFolder(null);
-            folderCrud.setDuplicateTargetFolderPath(currentFolderPath || currentPath || rootPath || '');
-            folderCrud.setShowDuplicateDialog(true);
-          },
-          onAssetUpdated: (updates) => {
-            setSelectedAsset((prev) => prev ? { ...prev, ...updates } : prev);
-            if (rootPath) void loadDirectoryIntoCache(rootPath);
-            if (currentPath && currentPath !== rootPath) void loadDirectoryIntoCache(currentPath);
-          },
+          }
+          setSelectionMode(false);
+          setSelectedAssetIds(new Set());
         }}
-        compress={{
-          isOpen: compress.isCompressDialogOpen,
-          onClose: () => compress.setIsCompressDialogOpen(false),
-          selectedAssets: compress.compressDialogAssets,
-          onAddToQueue: (options) => {
-            compress.addToCompressQueue(compress.compressDialogAssets, options);
-            compress.setIsCompressDialogOpen(false);
-            setSelectionMode(false);
-            setSelectedAssetIds(new Set());
-          },
-        }}
-        tag={{
-          isOpen: isTagDialogOpen,
-          onClose: () => setIsTagDialogOpen(false),
-          selectedAssets: tagDialogAssets,
-          suggestions: tagSuggestions,
-          onApply: async (tagNames) => {
-            const updated = await applyTagsToAssets(tagDialogAssets.map((a) => a.id), tagNames);
-            if (isViewerOpen && selectedAsset && updated) {
-              const refreshed = updated.find((a) => a.id === selectedAsset.id);
-              if (refreshed) {
-                setSelectedAsset((prev) => prev ? { ...prev, tags: refreshed.tags } : prev);
-              }
-            }
-            setIsTagDialogOpen(false);
-            setSelectionMode(false);
-            setSelectedAssetIds(new Set());
-          },
-        }}
-        removeTags={{
-          isOpen: isRemoveTagsDialogOpen,
-          onClose: () => setIsRemoveTagsDialogOpen(false),
-          selectedAssets: removeTagsAssets,
-          onRemove: async (tagNames) => {
-            await removeTagsFromAssets(removeTagsAssets.map((a) => a.id), tagNames);
-            if (search.searchQuery) await search.handleSearch(search.searchQuery.term, search.searchQuery.mediaType);
-            if (isViewerOpen && selectedAsset && removeTagsAssets.some((a) => a.id === selectedAsset.id)) {
-              setSelectedAsset((prev) =>
-                prev ? { ...prev, tags: (prev.tags ?? []).filter((t) => !tagNames.includes(t.name)) } : prev
-              );
-            }
-            setSelectionMode(false);
-            setSelectedAssetIds(new Set());
-          },
-        }}
-        queue={{
-          isOpen: compress.showQueuePanel,
-          onClose: () => compress.setShowQueuePanel(false),
-          jobs: compress.compressQueue,
-          onConfirm: compress.confirmCompressJob,
-          onDismiss: compress.dismissCompressJob,
-          onCancel: compress.cancelCompressJob,
-          onClearCompleted: compress.clearCompletedJobs,
-          onConfirmFile: compress.confirmSingleCompressFile,
-          onDiscardFile: compress.discardSingleCompressFile,
-          apiUrl: API_URL,
-        }}
-        duplicate={{
-          isOpen: folderCrud.showDuplicateDialog,
-          onOpenChange: folderCrud.setShowDuplicateDialog,
-          duplicateTargetFolderPath: folderCrud.duplicateTargetFolderPath,
-          setDuplicateTargetFolderPath: folderCrud.setDuplicateTargetFolderPath,
-          duplicateSourceFolder: folderCrud.duplicateSourceFolder,
-          setDuplicateSourceFolder: folderCrud.setDuplicateSourceFolder,
-          allAvailableFolders: allAvailableFolders,
-          rootPath: rootPath,
-          selectedAsset: selectedAsset,
-          isDuplicating: folderCrud.isDuplicating,
-          handleDuplicateAsset: folderCrud.handleDuplicateAsset,
-        }}
-        move={{
-          isOpen: folderCrud.showMoveDialog,
-          onOpenChange: folderCrud.setShowMoveDialog,
-          moveTargetFolderPath: folderCrud.moveTargetFolderPath,
-          setMoveTargetFolderPath: folderCrud.setMoveTargetFolderPath,
-          allAvailableFolders: allAvailableFolders,
-          rootPath: rootPath,
-          selectionMode: selectionMode,
-          selectedAsset: selectedAsset,
-          selectedAssetCount: selectedAssetIds.size,
-          selectedFolderPaths: selectedFolderPaths,
-          isMoving: folderCrud.isMoving,
-          handleMoveAsset: folderCrud.handleMoveAsset,
-          handleBulkMove: folderCrud.handleBulkMove,
-        }}
-        renameFolder={{
-          renamingFolder: folderCrud.renamingFolder,
-          onClose: () => folderCrud.setRenamingFolder(null),
-          renameFolderValue: folderCrud.renameFolderValue,
-          setRenameFolderValue: folderCrud.setRenameFolderValue,
-          isRenamingFolder: folderCrud.isRenamingFolder,
-          onSubmit: (e) => void folderCrud.handleRenameFolder(e),
-        }}
-        changePassword={{
-          isOpen: showChangePasswordDialog,
-          onOpenChange: setShowChangePasswordDialog,
-          currentPassword: currentPassword,
-          setCurrentPassword: setCurrentPassword,
-          newPassword: newPassword,
-          setNewPassword: setNewPassword,
-          confirmPassword: confirmPassword,
-          setConfirmPassword: setConfirmPassword,
-          passwordError: passwordError,
-          setPasswordError: setPasswordError,
-          onSubmit: handleChangePassword,
-        }}
-        newFile={{
-          isOpen: fileCrud.showNewFileDialog,
-          onOpenChange: fileCrud.setShowNewFileDialog,
-          newFileName: fileCrud.newFileName,
-          setNewFileName: fileCrud.setNewFileName,
-          newFileType: fileCrud.newFileType,
-          setNewFileType: fileCrud.setNewFileType,
-          isCreatingFile: fileCrud.isCreatingFile,
-          currentFolder: currentFolder,
-          onSubmit: fileCrud.handleCreateFile,
-        }}
-        newFolder={{
-          isOpen: folderCrud.showNewFolderDialog,
-          onOpenChange: folderCrud.setShowNewFolderDialog,
-          newFolderName: folderCrud.newFolderName,
-          setNewFolderName: folderCrud.setNewFolderName,
-          isCreatingFolder: folderCrud.isCreatingFolder,
-          currentFolder: currentFolder,
-          onSubmit: folderCrud.handleCreateFolder,
-        }}
-        upload={{
-          isOpen: showUploadDialog,
-          onOpenChange: setShowUploadDialog,
-          uploadFiles: uploadFiles,
-          setUploadFiles: setUploadFiles,
-          uploadTargetPath: uploadTargetPath,
-          setUploadTargetPath: setUploadTargetPath,
-          uploadProgress: uploadProgress,
-          setUploadProgress: setUploadProgress,
-          isUploading: isUploading,
-          fileInputRef: fileInputRef,
-          handleUpload: handleUpload,
-          allDirectories: allDirectories,
-        }}
-        confirm={{
-          open: confirmDialog.open,
-          onOpenChange: (open) => setConfirmDialog((prev) => ({ ...prev, open })),
-          title: confirmDialog.title,
-          description: confirmDialog.description,
-          warning: confirmDialog.warning,
-          confirmLabel: confirmDialog.confirmLabel,
-          onConfirm: confirmDialog.onConfirm,
-        }}
-        logoutConfirm={{
-          isOpen: showLogoutConfirm,
-          onCancel: () => setShowLogoutConfirm(false),
-          onConfirm: handleLogout,
-        }}
+      />
+
+      <CompressQueuePanel
+        isOpen={compress.showQueuePanel}
+        onClose={() => compress.setShowQueuePanel(false)}
+        jobs={compress.compressQueue}
+        onConfirm={compress.confirmCompressJob}
+        onDismiss={compress.dismissCompressJob}
+        onCancel={compress.cancelCompressJob}
+        onClearCompleted={compress.clearCompletedJobs}
+        onConfirmFile={compress.confirmSingleCompressFile}
+        onDiscardFile={compress.discardSingleCompressFile}
+        apiUrl={API_URL}
+      />
+
+      {/* Duplicate Asset */}
+      <DuplicateDialog
+        isOpen={folderCrud.showDuplicateDialog}
+        onOpenChange={folderCrud.setShowDuplicateDialog}
+        duplicateTargetFolderPath={folderCrud.duplicateTargetFolderPath}
+        setDuplicateTargetFolderPath={folderCrud.setDuplicateTargetFolderPath}
+        duplicateSourceFolder={folderCrud.duplicateSourceFolder}
+        setDuplicateSourceFolder={folderCrud.setDuplicateSourceFolder}
+        allAvailableFolders={allAvailableFolders}
+        rootPath={rootPath}
+        selectedAsset={selectedAsset}
+        isDuplicating={folderCrud.isDuplicating}
+        handleDuplicateAsset={folderCrud.handleDuplicateAsset}
+      />
+
+      {/* Move Asset */}
+      <MoveDialog
+        isOpen={folderCrud.showMoveDialog}
+        onOpenChange={folderCrud.setShowMoveDialog}
+        moveTargetFolderPath={folderCrud.moveTargetFolderPath}
+        setMoveTargetFolderPath={folderCrud.setMoveTargetFolderPath}
+        allAvailableFolders={allAvailableFolders}
+        rootPath={rootPath}
+        selectionMode={selectionMode}
+        selectedAsset={selectedAsset}
+        selectedAssetCount={selectedAssetIds.size}
+        selectedFolderPaths={selectedFolderPaths}
+        isMoving={folderCrud.isMoving}
+        handleMoveAsset={folderCrud.handleMoveAsset}
+        handleBulkMove={folderCrud.handleBulkMove}
+      />
+
+      {/* Rename Folder */}
+      <RenameFolderDialog
+        renamingFolder={folderCrud.renamingFolder}
+        onClose={() => folderCrud.setRenamingFolder(null)}
+        renameFolderValue={folderCrud.renameFolderValue}
+        setRenameFolderValue={folderCrud.setRenameFolderValue}
+        isRenamingFolder={folderCrud.isRenamingFolder}
+        onSubmit={(e) => void folderCrud.handleRenameFolder(e)}
+      />
+
+      {/* Change Password */}
+      <ChangePasswordDialog
+        isOpen={showChangePasswordDialog}
+        onOpenChange={setShowChangePasswordDialog}
+        currentPassword={currentPassword}
+        setCurrentPassword={setCurrentPassword}
+        newPassword={newPassword}
+        setNewPassword={setNewPassword}
+        confirmPassword={confirmPassword}
+        setConfirmPassword={setConfirmPassword}
+        passwordError={passwordError}
+        setPasswordError={setPasswordError}
+        onSubmit={handleChangePassword}
+      />
+
+      {/* New File Dialog */}
+      <NewFileDialog
+        isOpen={fileCrud.showNewFileDialog}
+        onOpenChange={fileCrud.setShowNewFileDialog}
+        newFileName={fileCrud.newFileName}
+        setNewFileName={fileCrud.setNewFileName}
+        newFileType={fileCrud.newFileType}
+        setNewFileType={fileCrud.setNewFileType}
+        isCreatingFile={fileCrud.isCreatingFile}
+        currentFolder={currentFolder}
+        onSubmit={fileCrud.handleCreateFile}
+      />
+
+      {/* New Folder Dialog */}
+      <NewFolderDialog
+        isOpen={folderCrud.showNewFolderDialog}
+        onOpenChange={folderCrud.setShowNewFolderDialog}
+        newFolderName={folderCrud.newFolderName}
+        setNewFolderName={folderCrud.setNewFolderName}
+        isCreatingFolder={folderCrud.isCreatingFolder}
+        currentFolder={currentFolder}
+        onSubmit={folderCrud.handleCreateFolder}
+      />
+
+      {/* Upload Dialog */}
+      <UploadDialog
+        isOpen={showUploadDialog}
+        onOpenChange={setShowUploadDialog}
+        uploadFiles={uploadFiles}
+        setUploadFiles={setUploadFiles}
+        uploadTargetPath={uploadTargetPath}
+        setUploadTargetPath={setUploadTargetPath}
+        uploadProgress={uploadProgress}
+        setUploadProgress={setUploadProgress}
+        isUploading={isUploading}
+        fileInputRef={fileInputRef}
+        handleUpload={handleUpload}
+        allDirectories={allDirectories}
+      />
+
+      <ConfirmDialog
+        open={confirmDialog.open}
+        onOpenChange={(open) => setConfirmDialog((prev) => ({ ...prev, open }))}
+        title={confirmDialog.title}
+        description={confirmDialog.description}
+        warning={confirmDialog.warning}
+        confirmLabel={confirmDialog.confirmLabel}
+        onConfirm={confirmDialog.onConfirm}
+      />
+
+      {/* Logout Confirmation */}
+      <LogoutConfirmDialog
+        isOpen={showLogoutConfirm}
+        onCancel={() => setShowLogoutConfirm(false)}
+        onConfirm={handleLogout}
       />
     </div>
   );

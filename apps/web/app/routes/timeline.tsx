@@ -14,7 +14,7 @@ import { createGraphQLClient, getApiUrl, getAuthToken } from "~/lib/api";
 import { monthKeyOf, monthLabel } from "~/lib/date";
 import { useDragSelect } from "~/hooks/useDragSelect";
 import { useTimelineSections, type TimelineAsset } from "~/hooks/useTimelineSections";
-import { useZoomAnchor } from "~/hooks/useZoomAnchor";
+import { useZoomAnchor, MIN_ZOOM, MAX_ZOOM } from "~/hooks/useZoomAnchor";
 import { useToast } from "~/hooks/useToast";
 import { useTimelineSelection } from "~/hooks/useTimelineSelection";
 import { useThumbnailRefresh } from "~/hooks/useThumbnailRefresh";
@@ -24,13 +24,8 @@ import { useTimelineSettings } from "~/hooks/useTimelineSettings";
 
 export const meta: MetaFunction = () => [{ title: "Timeline — MDA" }];
 
-/* ── GraphQL ────────────────────────────────────────────────────── */
-
 /* ── Types ──────────────────────────────────────────────────────── */
 
-// Zoom levels, iOS-Photos style: 0 = years, 1 = months, 2 = comfy grid, 3 = dense grid
-const MIN_ZOOM = 0;
-const MAX_ZOOM = 3;
 const TILE_SIZE: Record<number, number> = { 2: 168, 3: 96 };
 const TILE_GAP: Record<number, number> = { 2: 8, 3: 4 };
 const SECTION_HEADER_H = 52;
@@ -81,9 +76,6 @@ export default function Timeline() {
     setSections,
     showToast,
   });
-  const [showZoomMenu, setShowZoomMenu] = useState(false);
-  const zoomMenuRef = useRef<HTMLDivElement>(null);
-
   const gridRef = useRef<HTMLDivElement>(null);
 
   /* ── Bootstrapping ── */
@@ -255,18 +247,6 @@ export default function Timeline() {
   });
   const settings = useTimelineSettings({ reloadTimeline, showToast });
 
-  // Close the mobile zoom dropdown on outside click
-  useEffect(() => {
-    if (!showZoomMenu) return;
-    const handler = (e: MouseEvent) => {
-      if (zoomMenuRef.current && !zoomMenuRef.current.contains(e.target as Node)) {
-        setShowZoomMenu(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [showZoomMenu]);
-
   const { handleThumbError, handleRegenerateThumbnails } = useThumbnailRefresh({
     sections,
     setSections,
@@ -309,15 +289,11 @@ export default function Timeline() {
         settingsMenuRef={settings.settingsMenuRef}
         dateSource={settings.dateSource}
         dateSourceSaving={settings.dateSourceSaving}
-        showZoomMenu={showZoomMenu}
-        zoomMenuRef={zoomMenuRef}
         onNavigateBack={() => navigate("/dashboard")}
         onToggleSettingsMenu={() => settings.setShowSettingsMenu((p) => !p)}
         onChangeDateSource={settings.handleChangeDateSource}
         onToggleSelectionMode={() => (selectionMode ? exitSelection() : setSelectionMode(true))}
         onZoomChange={anchorAndSetZoom}
-        onToggleZoomMenu={() => setShowZoomMenu((p) => !p)}
-        onCloseZoomMenu={() => setShowZoomMenu(false)}
       />
 
       {/* Floating current-period pill */}

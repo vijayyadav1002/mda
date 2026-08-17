@@ -5,6 +5,31 @@ import type { Bucket, SectionState, TimelineAsset } from "~/hooks/useTimelineSec
 import { AssetTile } from "./AssetTile";
 import { CoverMosaic } from "./CoverMosaic";
 
+interface TimelineGridProps {
+  zoom: number;
+  monthBuckets: Bucket[];
+  yearBuckets: Bucket[] | null;
+  monthCovers: Bucket[] | null;
+  years: Array<[string, { count: number }]>;
+  sortedMonthKeys: string[];
+  sections: Record<string, SectionState>;
+  visibleMonths: Set<string>;
+  containerWidth: number;
+  cols: number;
+  tileGap: number;
+  sectionHeight: (count: number) => number;
+  gridRef: RefObject<HTMLDivElement | null>;
+  registerSection: (monthKey: string) => (element: HTMLDivElement | null) => void;
+  selectionMode: boolean;
+  selectedIds: Set<string>;
+  toggleSectionSelection: (assets: TimelineAsset[]) => void;
+  apiUrl: string;
+  onActivate: (asset: TimelineAsset) => void;
+  onThumbError: (assetId: string) => void;
+  setZoom: (zoom: number) => void;
+  zoomAnchorRef: RefObject<string | null>;
+}
+
 export function TimelineGrid({
   zoom,
   monthBuckets,
@@ -28,30 +53,7 @@ export function TimelineGrid({
   onThumbError,
   setZoom,
   zoomAnchorRef,
-}: {
-  zoom: number;
-  monthBuckets: Bucket[];
-  yearBuckets: Bucket[] | null;
-  monthCovers: Bucket[] | null;
-  years: Array<[string, { count: number }]>;
-  sortedMonthKeys: string[];
-  sections: Record<string, SectionState>;
-  visibleMonths: Set<string>;
-  containerWidth: number;
-  cols: number;
-  tileGap: number;
-  sectionHeight: (count: number) => number;
-  gridRef: RefObject<HTMLDivElement | null>;
-  registerSection: (monthKey: string) => (element: HTMLDivElement | null) => void;
-  selectionMode: boolean;
-  selectedIds: Set<string>;
-  toggleSectionSelection: (assets: TimelineAsset[]) => void;
-  apiUrl: string;
-  onActivate: (asset: TimelineAsset) => void;
-  onThumbError: (assetId: string) => void;
-  setZoom: (zoom: number) => void;
-  zoomAnchorRef: RefObject<string | null>;
-}) {
+}: TimelineGridProps) {
   return (
     <>
       {/* ── Level 0: Years ── */}

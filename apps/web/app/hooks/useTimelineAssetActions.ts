@@ -9,6 +9,19 @@ const DELETE_MEDIA_ASSET_MUTATION = `
   mutation DeleteMediaAsset($id: ID!) { deleteMediaAsset(id: $id) }
 `;
 
+interface UseTimelineAssetActionsParams {
+  apiUrl: string;
+  selectedAssets: TimelineAsset[];
+  /** Video subset of the selection — the only assets transcode operates on. */
+  selectedVideos: TimelineAsset[];
+  /** Section/bucket state from `useTimelineSections`, patched here after a delete. */
+  sectionsRef: MutableRefObject<Record<string, SectionState>>;
+  setSections: Dispatch<SetStateAction<Record<string, SectionState>>>;
+  setMonthBuckets: Dispatch<SetStateAction<Bucket[] | null>>;
+  showToast: (message: string, queueLink?: boolean) => void;
+  exitSelection: () => void;
+}
+
 /**
  * Timeline's destructive/queueing bulk actions on the current selection:
  * moving selected assets to Trash, and queueing them for compression or
@@ -29,16 +42,7 @@ export function useTimelineAssetActions({
   setMonthBuckets,
   showToast,
   exitSelection,
-}: Readonly<{
-  apiUrl: string;
-  selectedAssets: TimelineAsset[];
-  selectedVideos: TimelineAsset[];
-  sectionsRef: MutableRefObject<Record<string, SectionState>>;
-  setSections: Dispatch<SetStateAction<Record<string, SectionState>>>;
-  setMonthBuckets: Dispatch<SetStateAction<Bucket[] | null>>;
-  showToast: (message: string, queueLink?: boolean) => void;
-  exitSelection: () => void;
-}>) {
+}: UseTimelineAssetActionsParams) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isCompressDialogOpen, setIsCompressDialogOpen] = useState(false);
 

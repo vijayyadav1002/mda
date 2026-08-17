@@ -11,11 +11,23 @@ const CREATE_TEXT_FILE_MUTATION = `
   }
 `;
 
+const RENAME_MEDIA_ASSET_MUTATION = `
+  mutation RenameMediaAsset($id: ID!, $newName: String!) {
+    renameMediaAsset(id: $id, newName: $newName) {
+      id fileName filePath mimeType fileSize thumbnailUrl transcodedUrl createdAt capturedAt tags { id name }
+    }
+  }
+`;
+
 interface UseFileCrudParams {
   /** Currently open folder; new files are created here, then it's re-fetched to pick up the new entry. */
   currentPath: string | null;
-  /** From `useDirectoryTree` — refreshes `currentPath`'s cached `DirectoryNode` after creation. */
+  /** Library root; re-fetched alongside `currentPath` after a rename. */
+  rootPath: string | null;
+  /** From `useDirectoryTree` — refreshes `currentPath`'s cached `DirectoryNode` after creation/rename. */
   loadDirectoryIntoCache: (directoryPath?: string | null) => Promise<DirectoryNode | null>;
+  /** The asset currently open in the viewer; rename acts on it. */
+  selectedAsset: MediaAsset | null;
   /** Opens the newly created text file straight into the editor. */
   setSelectedAsset: Dispatch<SetStateAction<MediaAsset | null>>;
   setAutoEditAssetId: Dispatch<SetStateAction<string | null>>;
@@ -33,7 +45,9 @@ interface UseFileCrudParams {
  */
 export function useFileCrud({
   currentPath,
+  rootPath,
   loadDirectoryIntoCache,
+  selectedAsset,
   setSelectedAsset,
   setAutoEditAssetId,
   setIsViewerOpen,
@@ -74,6 +88,17 @@ export function useFileCrud({
     }
   };
 
+  const handleRenameAsset = async (newName: string) => {
+    if (!selectedAsset) return;
+    const token = getAuthToken();
+    if (!token) return;
+    const client = createGraphQLClient(token);
+    const data: any = await client.request(RENAME_MEDIA_ASSET_MUTATION, { id: selectedAsset.id, newName });
+    setSelectedAsset(data.renameMediaAsset);
+    if (rootPath) await loadDirectoryIntoCache(rootPath);
+    if (currentPath && currentPath !== rootPath) await loadDirectoryIntoCache(currentPath);
+  };
+
   return {
     showNewFileDialog,
     setShowNewFileDialog,
@@ -83,5 +108,6 @@ export function useFileCrud({
     setNewFileType,
     isCreatingFile,
     handleCreateFile,
+    handleRenameAsset,
   };
 }

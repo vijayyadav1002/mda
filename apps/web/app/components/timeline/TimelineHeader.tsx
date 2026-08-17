@@ -1,8 +1,7 @@
 import { ArrowLeft, CalendarDays, Check, CheckSquare, ChevronDown, Minus, Plus, Settings } from "lucide-react";
-import type { RefObject } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
+import { MIN_ZOOM, MAX_ZOOM } from "~/hooks/useZoomAnchor";
 
-const MIN_ZOOM = 0;
-const MAX_ZOOM = 3;
 const ZOOM_LEVEL_LABELS = ["Years", "Months", "Grid", "Dense"] as const;
 
 const DATE_SOURCE_OPTIONS: Array<{ value: string; label: string; description: string }> = [
@@ -23,15 +22,11 @@ interface TimelineHeaderProps {
   settingsMenuRef: RefObject<HTMLDivElement | null>;
   dateSource: string;
   dateSourceSaving: boolean;
-  showZoomMenu: boolean;
-  zoomMenuRef: RefObject<HTMLDivElement | null>;
   onNavigateBack: () => void;
   onToggleSettingsMenu: () => void;
   onChangeDateSource: (value: string) => void;
   onToggleSelectionMode: () => void;
   onZoomChange: (zoom: number) => void;
-  onToggleZoomMenu: () => void;
-  onCloseZoomMenu: () => void;
 }
 
 export function TimelineHeader({
@@ -45,16 +40,25 @@ export function TimelineHeader({
   settingsMenuRef,
   dateSource,
   dateSourceSaving,
-  showZoomMenu,
-  zoomMenuRef,
   onNavigateBack,
   onToggleSettingsMenu,
   onChangeDateSource,
   onToggleSelectionMode,
   onZoomChange,
-  onToggleZoomMenu,
-  onCloseZoomMenu,
 }: TimelineHeaderProps) {
+  const [showZoomMenu, setShowZoomMenu] = useState(false);
+  const zoomMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (zoomMenuRef.current && !zoomMenuRef.current.contains(e.target as Node)) {
+        setShowZoomMenu(false);
+      }
+    };
+    if (showZoomMenu) document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showZoomMenu]);
+
   return (
     <header className="sticky top-0 z-30 bg-background/80 backdrop-blur-md border-b border-border/20">
       <div className="flex items-center justify-between px-4 md:px-6 py-3 gap-3">
@@ -184,7 +188,7 @@ export function TimelineHeader({
         <div className="relative md:hidden" ref={zoomMenuRef}>
           <button
             type="button"
-            onClick={onToggleZoomMenu}
+            onClick={() => setShowZoomMenu((p) => !p)}
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-card border border-border/30 text-xs font-medium text-foreground"
             aria-label="Change zoom level"
           >
@@ -199,7 +203,7 @@ export function TimelineHeader({
                   type="button"
                   onClick={() => {
                     onZoomChange(i);
-                    onCloseZoomMenu();
+                    setShowZoomMenu(false);
                   }}
                   className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-xl text-left text-xs transition-colors ${
                     zoom === i ? "bg-accent font-medium text-foreground" : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
