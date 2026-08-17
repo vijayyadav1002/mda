@@ -5,43 +5,22 @@ import { ArrowLeft, CalendarDays, Check, CheckSquare, ChevronDown, Film, ImageIc
 import { ConfirmDialog } from "~/components/ConfirmDialog";
 import { MediaAssetViewer } from "~/components/MediaAssetViewer";
 import { CompressDialog } from "~/components/CompressDialog";
-import { TagDialog, type TagSuggestion } from "~/components/TagDialog";
+import { TagDialog } from "~/components/TagDialog";
 import { RemoveTagsDialog } from "~/components/RemoveTagsDialog";
 import { createGraphQLClient, getApiUrl, getAuthToken } from "~/lib/api";
 import { formatBytes, formatDuration } from "~/lib/format";
 import { monthKeyOf, monthShortLabel, monthLabel } from "~/lib/date";
 import { useDragSelect } from "~/hooks/useDragSelect";
-import { useTimelineSections, type AssetTag, type Bucket, type TimelineAsset } from "~/hooks/useTimelineSections";
+import { useTimelineSections, type Bucket, type TimelineAsset } from "~/hooks/useTimelineSections";
 import { useZoomAnchor } from "~/hooks/useZoomAnchor";
 import { useToast } from "~/hooks/useToast";
 import { useTimelineSelection } from "~/hooks/useTimelineSelection";
 import { useThumbnailRefresh } from "~/hooks/useThumbnailRefresh";
+import { useTimelineTagActions } from "~/hooks/useTimelineTagActions";
 
 export const meta: MetaFunction = () => [{ title: "Timeline — MDA" }];
 
 /* ── GraphQL ────────────────────────────────────────────────────── */
-
-const TAGS_QUERY = `
-  query Tags { tags { id name assetCount } }
-`;
-
-const APPLY_TAGS_MUTATION = `
-  mutation ApplyTagsToAssets($assetIds: [ID!]!, $tagNames: [String!]!) {
-    applyTagsToAssets(assetIds: $assetIds, tagNames: $tagNames) { id tags { id name } }
-  }
-`;
-
-const REMOVE_TAGS_FROM_ASSETS_MUTATION = `
-  mutation RemoveTagsFromAssets($assetIds: [ID!]!, $tagNames: [String!]!) {
-    removeTagsFromAssets(assetIds: $assetIds, tagNames: $tagNames)
-  }
-`;
-
-const REMOVE_TAG_MUTATION = `
-  mutation RemoveTagFromAsset($assetId: ID!, $tagName: String!) {
-    removeTagFromAsset(assetId: $assetId, tagName: $tagName) { id }
-  }
-`;
 
 const DELETE_MEDIA_ASSET_MUTATION = `
   mutation DeleteMediaAsset($id: ID!) { deleteMediaAsset(id: $id) }
@@ -180,12 +159,16 @@ export default function Timeline() {
     toggleSectionSelection,
     exitSelection,
   } = useTimelineSelection();
-  const [isTagDialogOpen, setIsTagDialogOpen] = useState(false);
-  const [isRemoveTagsDialogOpen, setIsRemoveTagsDialogOpen] = useState(false);
-  const [tagTargets, setTagTargets] = useState<TimelineAsset[]>([]);
-  const [tagSuggestions, setTagSuggestions] = useState<TagSuggestion[]>([]);
   const [isCompressDialogOpen, setIsCompressDialogOpen] = useState(false);
   const { toast, setToast, showToast } = useToast();
+  const tagActions = useTimelineTagActions({
+    selectionMode,
+    exitSelection,
+    selectedAsset,
+    setSelectedAsset,
+    setSections,
+    showToast,
+  });
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
   const [dateSource, setDateSource] = useState<string>("folder");
   const [dateSourceSaving, setDateSourceSaving] = useState(false);
@@ -354,79 +337,6 @@ export default function Timeline() {
     () => selectedAssets.filter((a) => a.mimeType.startsWith("video/")),
     [selectedAssets]
   );
-
-  // Load tag suggestions once selection mode or the tag dialog is first used
-  useEffect(() => {
-    if ((!selectionMode && !isTagDialogOpen) || tagSuggestions.length > 0) return;
-    const token = getAuthToken();
-    if (!token) return;
-    createGraphQLClient(token)
-      .request<{ tags: TagSuggestion[] }>(TAGS_QUERY)
-      .then((data) => setTagSuggestions(data.tags))
-      .catch(() => {});
-  }, [selectionMode, isTagDialogOpen, tagSuggestions.length]);
-
-  // Apply the given tags map to loaded sections + the open viewer asset
-  const updateLocalAssetTags = useCallback((updated: Array<{ id: string; tags: AssetTag[] }>) => {
-    const byId = new Map(updated.map((u) => [u.id, u.tags]));
-    setSections((prev) => {
-      const next: typeof prev = {};
-      for (const [key, section] of Object.entries(prev)) {
-        if (section.assets?.some((a) => byId.has(a.id))) {
-          next[key] = {
-            ...section,
-            assets: section.assets.map((a) => (byId.has(a.id) ? { ...a, tags: byId.get(a.id) } : a)),
-          };
-        } else {
-          next[key] = section;
-        }
-      }
-      return next;
-    });
-    setSelectedAsset((prev) => (prev && byId.has(prev.id) ? { ...prev, tags: byId.get(prev.id) } : prev));
-  }, []);
-
-  const handleApplyTags = async (tagNames: string[]) => {
-    const token = getAuthToken();
-    if (!token) return;
-    const data = await createGraphQLClient(token).request<{ applyTagsToAssets: Array<{ id: string; tags: AssetTag[] }> }>(
-      APPLY_TAGS_MUTATION,
-      { assetIds: tagTargets.map((a) => a.id), tagNames }
-    );
-    updateLocalAssetTags(data.applyTagsToAssets);
-    showToast(`Tagged ${tagTargets.length} item${tagTargets.length !== 1 ? "s" : ""}`);
-    if (selectionMode) exitSelection();
-  };
-
-  const handleRemoveTagsBulk = async (tagNames: string[]) => {
-    const token = getAuthToken();
-    if (!token) return;
-    await createGraphQLClient(token).request(REMOVE_TAGS_FROM_ASSETS_MUTATION, {
-      assetIds: tagTargets.map((a) => a.id),
-      tagNames,
-    });
-    updateLocalAssetTags(
-      tagTargets.map((a) => ({
-        id: a.id,
-        tags: (a.tags ?? []).filter((t) => !tagNames.includes(t.name)),
-      }))
-    );
-    showToast(`Removed tags from ${tagTargets.length} item${tagTargets.length !== 1 ? "s" : ""}`);
-    if (selectionMode) exitSelection();
-  };
-
-  const handleRemoveSingleTag = async (tagName: string) => {
-    if (!selectedAsset) return;
-    const token = getAuthToken();
-    if (!token) return;
-    await createGraphQLClient(token).request(REMOVE_TAG_MUTATION, {
-      assetId: selectedAsset.id,
-      tagName,
-    });
-    updateLocalAssetTags([
-      { id: selectedAsset.id, tags: (selectedAsset.tags ?? []).filter((t) => t.name !== tagName) },
-    ]);
-  };
 
   const handleDeleteSelected = async () => {
     const token = getAuthToken();
@@ -1017,7 +927,7 @@ export default function Timeline() {
           <div className="hidden md:flex items-center gap-1.5">
             <button
               type="button"
-              onClick={() => { setTagTargets(selectedAssets); setIsTagDialogOpen(true); }}
+              onClick={() => { tagActions.setTagTargets(selectedAssets); tagActions.setIsTagDialogOpen(true); }}
               disabled={selectedIds.size === 0}
               className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-40 transition-all whitespace-nowrap"
             >
@@ -1025,7 +935,7 @@ export default function Timeline() {
             </button>
             <button
               type="button"
-              onClick={() => { setTagTargets(selectedAssets); setIsRemoveTagsDialogOpen(true); }}
+              onClick={() => { tagActions.setTagTargets(selectedAssets); tagActions.setIsRemoveTagsDialogOpen(true); }}
               disabled={selectedIds.size === 0}
               className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-40 transition-all whitespace-nowrap"
               title="Remove tags from selected items"
@@ -1083,8 +993,8 @@ export default function Timeline() {
             {showActionsMenu && (
               <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-48 rounded-2xl bg-card border border-border/30 shadow-ambient p-1.5 z-50">
                 {[
-                  { label: "Add tags", icon: TagIcon, disabled: selectedIds.size === 0, destructive: false, run: () => { setTagTargets(selectedAssets); setIsTagDialogOpen(true); } },
-                  { label: "Remove tags", icon: TagIcon, disabled: selectedIds.size === 0, destructive: false, run: () => { setTagTargets(selectedAssets); setIsRemoveTagsDialogOpen(true); } },
+                  { label: "Add tags", icon: TagIcon, disabled: selectedIds.size === 0, destructive: false, run: () => { tagActions.setTagTargets(selectedAssets); tagActions.setIsTagDialogOpen(true); } },
+                  { label: "Remove tags", icon: TagIcon, disabled: selectedIds.size === 0, destructive: false, run: () => { tagActions.setTagTargets(selectedAssets); tagActions.setIsRemoveTagsDialogOpen(true); } },
                   { label: "Compress", icon: ListTodo, disabled: selectedIds.size === 0, destructive: false, run: () => setIsCompressDialogOpen(true) },
                   { label: `Transcode${selectedVideos.length > 0 ? ` (${selectedVideos.length})` : ""}`, icon: Film, disabled: selectedVideos.length === 0, destructive: false, run: () => void handleTranscode() },
                   { label: "Regenerate thumbnails", icon: RefreshCw, disabled: selectedIds.size === 0, destructive: false, run: () => void handleRegenerateThumbnails() },
@@ -1145,17 +1055,17 @@ export default function Timeline() {
 
       {/* ── Dialogs ── */}
       <TagDialog
-        isOpen={isTagDialogOpen}
-        onClose={() => setIsTagDialogOpen(false)}
-        selectedAssets={tagTargets as any}
-        suggestions={tagSuggestions}
-        onApply={handleApplyTags}
+        isOpen={tagActions.isTagDialogOpen}
+        onClose={() => tagActions.setIsTagDialogOpen(false)}
+        selectedAssets={tagActions.tagTargets as any}
+        suggestions={tagActions.tagSuggestions}
+        onApply={tagActions.handleApplyTags}
       />
       <RemoveTagsDialog
-        isOpen={isRemoveTagsDialogOpen}
-        onClose={() => setIsRemoveTagsDialogOpen(false)}
-        selectedAssets={tagTargets as any}
-        onRemove={handleRemoveTagsBulk}
+        isOpen={tagActions.isRemoveTagsDialogOpen}
+        onClose={() => tagActions.setIsRemoveTagsDialogOpen(false)}
+        selectedAssets={tagActions.tagTargets as any}
+        onRemove={tagActions.handleRemoveTagsBulk}
       />
       <ConfirmDialog
         open={showDeleteConfirm}
@@ -1189,10 +1099,10 @@ export default function Timeline() {
         hasPrev={viewerIndex > 0}
         hasNext={viewerIndex >= 0 && viewerIndex < flatAssets.length - 1}
         onAddTags={canEdit && selectedAsset ? () => {
-          setTagTargets(selectedAsset ? [selectedAsset] : []);
-          setIsTagDialogOpen(true);
+          tagActions.setTagTargets(selectedAsset ? [selectedAsset] : []);
+          tagActions.setIsTagDialogOpen(true);
         } : undefined}
-        onRemoveTag={canEdit ? handleRemoveSingleTag : undefined}
+        onRemoveTag={canEdit ? tagActions.handleRemoveSingleTag : undefined}
       />
     </div>
   );
