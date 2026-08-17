@@ -1,3 +1,6 @@
+# Architecture
+
+```mermaid
 flowchart TB
   %% MDA current architecture
   %% Read left to right by request path, then down into background work and storage.
@@ -13,7 +16,7 @@ flowchart TB
     CacheFiles[("/app/apps/backend/cache<br/>thumbnails, previews, HLS, transcodes")]
   end
 
-  subgraph Web["apps/web - Remix + Vite"]
+  subgraph Web["apps/web - React Router + Vite"]
     Dashboard["Dashboard route<br/>browse, upload, move, copy, delete"]
     Viewer["MediaAssetViewer<br/>preview, edit text/markdown, duplicate, actions"]
     CompressUI["CompressDialog and QueuePanel<br/>image, video, PDF compression"]
@@ -22,7 +25,7 @@ flowchart TB
 
   subgraph Backend["apps/backend - Fastify"]
     Fastify["index.ts<br/>Fastify server"]
-    GraphQL["Mercurius GraphQL<br/>schema.ts and resolvers.ts"]
+    GraphQL["Mercurius GraphQL<br/>schema/ and resolvers/ (per-domain, merged in index.ts)"]
     RestApi["REST endpoints<br/>upload, download, preview, video, queue"]
     Auth["JWT auth context<br/>admin/editor/viewer access"]
   end
@@ -34,6 +37,16 @@ flowchart TB
     Duplicate["duplicateMediaAsset and duplicateFolder<br/>copy files or folders without overwrite"]
     MoveRenameDelete["move, rename, delete<br/>files and folders"]
     Upload["/api/upload<br/>stores arbitrary files safely"]
+    TrashOps["trash.ts<br/>soft-delete into hidden .trash dir, restore, purge, expiry"]
+  end
+
+  subgraph TagsSearch["Tags and Search"]
+    TagsOps["tags.ts<br/>create, rename, delete tags; apply/remove per asset"]
+    SearchOps["search-query.ts<br/>in-field DSL: type:/tag:/ext:/size:, wildcards, folder scoping"]
+  end
+
+  subgraph Audit["Audit Logging"]
+    AuditLog["audit.ts<br/>logAudit() records move/rename/delete/duplicate/tag operations"]
   end
 
   subgraph Preview["Preview and Editing"]
@@ -79,6 +92,7 @@ flowchart TB
   RestApi --> Auth
 
   GraphQL --> FileOps
+  GraphQL --> TagsSearch
   RestApi --> Upload
   RestApi --> PreviewRoutes
   RestApi --> Compression
@@ -91,8 +105,18 @@ flowchart TB
   Indexer --> Postgres
   Duplicate --> MediaFiles
   Duplicate --> Indexer
+  MoveRenameDelete -->|"delete"| TrashOps
   MoveRenameDelete --> MediaFiles
   MoveRenameDelete --> Postgres
+  TrashOps --> MediaFiles
+  TrashOps --> Postgres
+  CacheMaintenance -->|"purges expired items"| TrashOps
+
+  TagsOps --> Postgres
+  SearchOps --> Postgres
+
+  GraphQL -.->|"logs mutations"| AuditLog
+  AuditLog --> Postgres
 
   PreviewRoutes --> PdfPreview
   PreviewRoutes --> DocPreview
@@ -141,4 +165,6 @@ flowchart TB
   class Fastify,GraphQL,RestApi,Auth,PreviewRoutes,TextEdit,DocPreview,PdfPreview backend
   class Queues,ThumbnailWorker,MediaRefreshWorker,EncodingWorker,CompressionWorker,CacheMaintenance,Thumbnails,VideoTranscode,Compression worker
   class Postgres,Redis,MediaFiles,CacheFiles store
-  class Indexer,Watcher,FileTypes,Duplicate,MoveRenameDelete,Upload file
+  class Indexer,Watcher,FileTypes,Duplicate,MoveRenameDelete,Upload,TrashOps file
+  class TagsOps,SearchOps,AuditLog backend
+```
