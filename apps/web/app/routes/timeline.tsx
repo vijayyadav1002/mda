@@ -1,7 +1,7 @@
 import type { MetaFunction } from "react-router";
 import { useNavigate } from "react-router";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CalendarDays, CheckSquare, ImageIcon, Play, Square, X, Zap } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CalendarDays, X } from "lucide-react";
 import { ConfirmDialog } from "~/components/ConfirmDialog";
 import { MediaAssetViewer } from "~/components/MediaAssetViewer";
 import { CompressDialog } from "~/components/CompressDialog";
@@ -9,11 +9,11 @@ import { TagDialog } from "~/components/TagDialog";
 import { RemoveTagsDialog } from "~/components/RemoveTagsDialog";
 import { TimelineHeader } from "~/components/timeline/TimelineHeader";
 import { TimelineSelectionBar } from "~/components/timeline/TimelineSelectionBar";
+import { TimelineGrid } from "~/components/timeline/TimelineGrid";
 import { createGraphQLClient, getApiUrl, getAuthToken } from "~/lib/api";
-import { formatBytes, formatDuration } from "~/lib/format";
-import { monthKeyOf, monthShortLabel, monthLabel } from "~/lib/date";
+import { monthKeyOf, monthLabel } from "~/lib/date";
 import { useDragSelect } from "~/hooks/useDragSelect";
-import { useTimelineSections, type Bucket, type TimelineAsset } from "~/hooks/useTimelineSections";
+import { useTimelineSections, type TimelineAsset } from "~/hooks/useTimelineSections";
 import { useZoomAnchor } from "~/hooks/useZoomAnchor";
 import { useToast } from "~/hooks/useToast";
 import { useTimelineSelection } from "~/hooks/useTimelineSelection";
@@ -34,75 +34,6 @@ const MAX_ZOOM = 3;
 const TILE_SIZE: Record<number, number> = { 2: 168, 3: 96 };
 const TILE_GAP: Record<number, number> = { 2: 8, 3: 4 };
 const SECTION_HEADER_H = 52;
-
-/* ── Tile ───────────────────────────────────────────────────────── */
-
-const AssetTile = memo(function AssetTile({
-  asset,
-  apiUrl,
-  onActivate,
-  onThumbError,
-  selectionMode = false,
-  isSelected = false,
-}: Readonly<{
-  asset: TimelineAsset;
-  apiUrl: string;
-  onActivate: (asset: TimelineAsset) => void;
-  onThumbError: (assetId: string) => void;
-  selectionMode?: boolean;
-  isSelected?: boolean;
-}>) {
-  const isVideo = asset.mimeType.startsWith("video/");
-  return (
-    <button
-      type="button"
-      data-asset-id={asset.id}
-      onClick={() => onActivate(asset)}
-      className={`relative w-full aspect-square overflow-hidden bg-muted/40 rounded-[3px] focus:outline-hidden focus:ring-2 focus:ring-brand-primary group/tile ${
-        isSelected ? "ring-2 ring-brand-primary" : ""
-      }`}
-      title={asset.fileName}
-    >
-      {selectionMode && (
-        <span className="absolute top-1 left-1 z-10">
-          {isSelected ? (
-            <CheckSquare className="w-4 h-4 text-brand-primary drop-shadow-sm bg-black/40 rounded-sm" />
-          ) : (
-            <Square className="w-4 h-4 text-white/80 drop-shadow-sm" />
-          )}
-        </span>
-      )}
-      {isSelected && <span className="absolute inset-0 bg-brand-primary/20 z-[5] pointer-events-none" />}
-      {asset.thumbnailUrl ? (
-        <img
-          src={`${apiUrl}${asset.thumbnailUrl}`}
-          alt={asset.fileName}
-          loading="lazy"
-          draggable={false}
-          className="w-full h-full object-cover transition-transform duration-300 group-hover/tile:scale-105"
-          onError={() => onThumbError(asset.id)}
-        />
-      ) : (
-        <div className="w-full h-full flex items-center justify-center">
-          <ImageIcon className="w-5 h-5 text-muted-foreground/40" />
-        </div>
-      )}
-      {isVideo && (
-        <span
-          className="absolute bottom-1 right-1 flex items-center gap-0.5 px-1 py-0.5 rounded-sm bg-black/60 text-white text-[10px] font-mono leading-none"
-          title={asset.transcodedUrl ? "Transcoded — plays instantly" : undefined}
-        >
-          {asset.transcodedUrl && <Zap className="w-2.5 h-2.5 fill-emerald-400 text-emerald-400" />}
-          <Play className="w-2.5 h-2.5 fill-current" />
-          {asset.duration ? formatDuration(asset.duration) : ""}
-        </span>
-      )}
-      <span className="absolute bottom-1 left-1 px-1 py-0.5 rounded-sm bg-black/60 text-white text-[10px] font-mono leading-none">
-        {formatBytes(asset.fileSize)}
-      </span>
-    </button>
-  );
-});
 
 /* ── Route ──────────────────────────────────────────────────────── */
 
@@ -348,51 +279,6 @@ export default function Timeline() {
     exitSelection,
   });
 
-  /* ── Summary card cover mosaic ── */
-
-  const CoverMosaic = ({ covers, fallbackLabel }: { covers: Bucket["coverAssets"]; fallbackLabel: string }) => {
-    const withThumbs = covers.filter((c) => c.thumbnailUrl);
-
-    // No usable cover images (thumbnails not generated yet, or still loading):
-    // render a decorative "photo stack" card so the tile never looks broken.
-    if (withThumbs.length === 0) {
-      return (
-        <div className="relative w-full aspect-square rounded-xl overflow-hidden border border-border/20 bg-gradient-to-br from-brand-primary/20 via-muted/50 to-transparent">
-          {/* Stacked-photos motif */}
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="relative w-1/2 aspect-square">
-              <div className="absolute inset-0 rounded-lg bg-card/70 border border-border/40 rotate-[-8deg]" />
-              <div className="absolute inset-0 rounded-lg bg-card/80 border border-border/40 rotate-[5deg]" />
-              <div className="absolute inset-0 rounded-lg bg-card border border-border/50 flex items-center justify-center">
-                <ImageIcon className="w-1/3 h-1/3 text-muted-foreground/40" />
-              </div>
-            </div>
-          </div>
-          <span className="absolute bottom-2 right-3 font-manrope font-bold text-2xl text-foreground/15 select-none">
-            {fallbackLabel}
-          </span>
-        </div>
-      );
-    }
-
-    const cells = withThumbs.length >= 4 ? withThumbs.slice(0, 4) : withThumbs.slice(0, 1);
-    return (
-      <div className={`grid ${cells.length === 4 ? "grid-cols-2" : "grid-cols-1"} gap-0.5 w-full aspect-square overflow-hidden rounded-xl bg-muted/40`}>
-        {cells.map((c) => (
-          <div key={c.id} className="relative overflow-hidden">
-            <img
-              src={`${API_URL}${c.thumbnailUrl}`}
-              alt={c.fileName}
-              loading="lazy"
-              className="w-full h-full object-cover"
-              onError={(e) => { e.currentTarget.style.display = "none"; }}
-            />
-          </div>
-        ))}
-      </div>
-    );
-  };
-
   /* ── Render ── */
 
   const years = useMemo(() => {
@@ -486,130 +372,31 @@ export default function Timeline() {
           </div>
         )}
 
-        {/* ── Level 0: Years ── */}
-        {monthBuckets && zoom === 0 && (
-          <div className="max-w-5xl mx-auto grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-            {(yearBuckets ?? years.map(([year, { count }]) => ({ period: `${year}-01-01T00:00:00.000Z`, count, coverAssets: [] }))).map((bucket) => {
-              const year = bucket.period.slice(0, 4);
-              return (
-                <button
-                  key={year}
-                  id={`tl-year-${year}`}
-                  type="button"
-                  onClick={() => {
-                    zoomAnchorRef.current = sortedMonthKeys.find((k) => k.startsWith(year)) ?? null;
-                    setZoom(1);
-                  }}
-                  className="text-left group focus:outline-hidden"
-                >
-                  <CoverMosaic covers={bucket.coverAssets} fallbackLabel={year} />
-                  <p className="mt-2 font-manrope font-bold text-xl group-hover:text-brand-primary transition-colors">{year}</p>
-                  <p className="text-xs text-muted-foreground">{bucket.count.toLocaleString()} items</p>
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        {/* ── Level 1: Months ── */}
-        {monthBuckets && zoom === 1 && (
-          <div className="max-w-6xl mx-auto grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-            {(monthCovers ?? monthBuckets).map((bucket) => {
-              const key = monthKeyOf(bucket.period);
-              return (
-                <button
-                  key={key}
-                  id={`tl-month-${key}`}
-                  type="button"
-                  onClick={() => {
-                    zoomAnchorRef.current = key;
-                    setZoom(2);
-                  }}
-                  className="text-left group focus:outline-hidden"
-                >
-                  <CoverMosaic covers={bucket.coverAssets} fallbackLabel={monthShortLabel(key)} />
-                  <p className="mt-2 font-manrope font-semibold text-sm group-hover:text-brand-primary transition-colors">
-                    {monthLabel(key)}
-                  </p>
-                  <p className="text-xs text-muted-foreground">{bucket.count.toLocaleString()} items</p>
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        {/* ── Levels 2–3: virtualized photo grid with month sections ── */}
-        {monthBuckets && isGridLevel && (
-          <div
-            ref={gridRef}
-            className="max-w-[1600px] mx-auto"
-            // `pan-y` hands vertical scrolling to the browser while leaving
-            // horizontal and multi-touch movement for drag-select to claim.
-            style={selectionMode ? { touchAction: "pan-y", userSelect: "none" } : undefined}
-          >
-            {monthBuckets.map((bucket) => {
-              const key = monthKeyOf(bucket.period);
-              const section = sections[key];
-              const materialized = visibleMonths.has(key) && section?.assets;
-              return (
-                <div
-                  key={key}
-                  id={`tl-sec-${key}`}
-                  ref={registerSection(key)}
-                  style={{ minHeight: containerWidth > 0 ? sectionHeight(bucket.count) : undefined }}
-                >
-                  <div className="flex items-baseline gap-2 pt-4 pb-2 h-[52px]">
-                    <h2 className="font-manrope font-bold text-base md:text-lg">{monthLabel(key)}</h2>
-                    <span className="text-xs text-muted-foreground font-mono">{bucket.count.toLocaleString()}</span>
-                    {selectionMode && materialized && (() => {
-                      const sectionAssets = section!.assets!;
-                      const allSelected = sectionAssets.length > 0 && sectionAssets.every((a) => selectedIds.has(a.id));
-                      return (
-                        <button
-                          type="button"
-                          onClick={() => toggleSectionSelection(sectionAssets)}
-                          className="ml-1 flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-medium text-brand-primary hover:bg-accent transition-colors"
-                        >
-                          {allSelected ? (
-                            <><Square className="w-3 h-3" /> Unselect all</>
-                          ) : (
-                            <><CheckSquare className="w-3 h-3" /> Select all</>
-                          )}
-                        </button>
-                      );
-                    })()}
-                  </div>
-                  {materialized ? (
-                    <div
-                      className="grid"
-                      style={{ gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: tileGap }}
-                    >
-                      {section!.assets!.map((asset) => (
-                        <AssetTile
-                          key={asset.id}
-                          asset={asset}
-                          apiUrl={API_URL}
-                          onActivate={openAsset}
-                          onThumbError={handleThumbError}
-                          selectionMode={selectionMode}
-                          isSelected={selectedIds.has(asset.id)}
-                        />
-                      ))}
-                    </div>
-                  ) : (
-                    <div
-                      className="grid"
-                      style={{ gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: tileGap }}
-                    >
-                      {Array.from({ length: Math.min(bucket.count, cols) }).map((_, i) => (
-                        <div key={i} className="w-full aspect-square rounded-[3px] bg-muted/30 animate-pulse" />
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+        {monthBuckets && (
+          <TimelineGrid
+            zoom={zoom}
+            monthBuckets={monthBuckets}
+            yearBuckets={yearBuckets}
+            monthCovers={monthCovers}
+            years={years}
+            sortedMonthKeys={sortedMonthKeys}
+            sections={sections}
+            visibleMonths={visibleMonths}
+            containerWidth={containerWidth}
+            cols={cols}
+            tileGap={tileGap}
+            sectionHeight={sectionHeight}
+            gridRef={gridRef}
+            registerSection={registerSection}
+            selectionMode={selectionMode}
+            selectedIds={selectedIds}
+            toggleSectionSelection={toggleSectionSelection}
+            apiUrl={API_URL}
+            onActivate={openAsset}
+            onThumbError={handleThumbError}
+            setZoom={setZoom}
+            zoomAnchorRef={zoomAnchorRef}
+          />
         )}
       </main>
 
