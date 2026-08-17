@@ -36,13 +36,14 @@ import { MobileNav } from "~/components/MobileNav";
 import { FileTypeIcon } from "~/components/FileTypeIcon";
 import { TagFilterMenu } from "~/components/TagFilterMenu";
 import { SortMenu } from "~/components/SortMenu";
+import { ToolbarActions } from "~/components/ToolbarActions";
 import {
   Folder, FileImage, FileText, ArrowLeft, ChevronDown, ChevronRight,
   Trash2, CheckSquare, Square,
-  X, ImagePlus, Minimize2,
+  X, ImagePlus,
   Download, FolderPlus,
-  Moon, Sun, Tag as TagIcon, Pencil, FolderOpen,
-  Copy, Film, RefreshCw, Zap,
+  Moon, Sun, Tag as TagIcon, Pencil,
+  Copy, Zap,
 } from "lucide-react";
 
 const API_URL = getApiUrl();
@@ -152,8 +153,6 @@ export default function Dashboard() {
   const [isGeneratingThumbnails, setIsGeneratingThumbnails] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [sortOption, setSortOption] = useState<"default" | "size-asc" | "size-desc" | "date-asc" | "date-desc">("default");
-  const [showSelectionActionsMenu, setShowSelectionActionsMenu] = useState(false);
-  const selectionActionsMenuRef = useRef<HTMLDivElement>(null);
   const [autoEditAssetId, setAutoEditAssetId] = useState<string | null>(null);
   const { confirmDialog, setConfirmDialog, openConfirm } = useConfirmDialog();
   const {
@@ -612,16 +611,6 @@ export default function Dashboard() {
   }, [viewerNavAssets]);
 
   useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (selectionActionsMenuRef.current && !selectionActionsMenuRef.current.contains(e.target as Node)) {
-        setShowSelectionActionsMenu(false);
-      }
-    };
-    if (showSelectionActionsMenu) document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [showSelectionActionsMenu]);
-
-  useEffect(() => {
     if (!search.searchQuery) return;
     void search.handleSearch(search.searchQuery.term, search.searchQuery.mediaType);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -986,182 +975,46 @@ export default function Dashboard() {
                   </button>
                 )}
                 {selectionMode && (selectedAssetIds.size > 0 || selectedFolderPaths.size > 0) && (
-                  <>
-                    <div className="hidden md:flex items-center gap-1.5 md:gap-2 flex-wrap justify-end">
-                    {selectedAssetIds.size > 0 && (
-                      <button
-                        type="button"
-                        onClick={handleDownloadSelected}
-                        className="flex items-center gap-1 px-2.5 py-2 rounded-xl text-sm text-foreground hover:bg-accent transition-all"
-                        title={`Download ${selectedAssetIds.size} file(s)`}
-                      >
-                        <Download className="w-4 h-4" />
-                        <span className="hidden sm:inline">Download</span>
-                        <span className="text-xs">({selectedAssetIds.size})</span>
-                      </button>
-                    )}
-                    {selectedAssetIds.size > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (selectedCompressibleAssets.length === 0) return;
-                          const skipped = selectedAssets.length - selectedCompressibleAssets.length;
-                          if (skipped > 0) {
-                            alert(`${skipped} unsupported file${skipped === 1 ? "" : "s"} will be skipped.`);
-                          }
-                          compress.setCompressDialogAssets(selectedCompressibleAssets);
-                          compress.setIsCompressDialogOpen(true);
-                        }}
-                        disabled={selectedCompressibleAssets.length === 0}
-                        title={selectedCompressibleAssets.length === 0 ? "No selected files can be compressed" : undefined}
-                        className="flex items-center gap-1 px-2.5 py-2 rounded-xl text-sm text-brand-primary hover:bg-accent transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        <Minimize2 className="w-4 h-4" />
-                        <span className="hidden sm:inline">Compress</span>
-                        <span className="text-xs">({selectedCompressibleAssets.length})</span>
-                      </button>
-                    )}
-                    {(user?.role === "admin" || user?.role === "editor") && selectedAssetIds.size > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => void handleTranscodeSelected()}
-                        disabled={selectedVideoAssets.length === 0}
-                        title={selectedVideoAssets.length === 0 ? "No videos selected" : "Transcode selected videos to web format"}
-                        className="flex items-center gap-1 px-2.5 py-2 rounded-xl text-sm text-brand-primary hover:bg-accent transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        <Film className="w-4 h-4" />
-                        <span className="hidden sm:inline">Transcode</span>
-                        <span className="text-xs">({selectedVideoAssets.length})</span>
-                      </button>
-                    )}
-                    {selectedAssetIds.size > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => void handleRegenerateThumbnailsSelected()}
-                        disabled={selectedThumbableAssets.length === 0}
-                        title={selectedThumbableAssets.length === 0 ? "No selected files support thumbnails" : "Regenerate thumbnails for selected items"}
-                        className="flex items-center gap-1 px-2.5 py-2 rounded-xl text-sm text-brand-primary hover:bg-accent transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        <RefreshCw className="w-4 h-4" />
-                        <span className="hidden sm:inline">Thumbnails</span>
-                        <span className="text-xs">({selectedThumbableAssets.length})</span>
-                      </button>
-                    )}
-                    {selectedAssetIds.size > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const pool: MediaAsset[] = activeTagFilter
-                            ? tagFilterAssets
-                            : sortedFolderChildren
-                                .filter((n) => n.type === "file" && n.mediaAsset)
-                                .map((n) => n.mediaAsset!);
-                          setTagDialogAssets(pool.filter((a) => selectedAssetIds.has(a.id)));
-                          setIsTagDialogOpen(true);
-                        }}
-                        className="flex items-center gap-1 px-2.5 py-2 rounded-xl text-sm text-brand-primary hover:bg-accent transition-all"
-                      >
-                        <TagIcon className="w-4 h-4" />
-                        <span className="hidden sm:inline">Tag</span>
-                        <span className="text-xs">({selectedAssetIds.size})</span>
-                      </button>
-                    )}
-                    {(user?.role === "admin" || user?.role === "editor") && selectedAssetIds.size > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const pool: MediaAsset[] = activeTagFilter
-                            ? tagFilterAssets
-                            : sortedFolderChildren
-                                .filter((n) => n.type === "file" && n.mediaAsset)
-                                .map((n) => n.mediaAsset!);
-                          setRemoveTagsAssets(pool.filter((a) => selectedAssetIds.has(a.id)));
-                          setIsRemoveTagsDialogOpen(true);
-                        }}
-                        className="flex items-center gap-1 px-2.5 py-2 rounded-xl text-sm text-brand-primary hover:bg-accent transition-all"
-                        title="Remove tags from selected items"
-                      >
-                        <TagIcon className="w-4 h-4" />
-                        <span className="hidden sm:inline">Untag</span>
-                        <span className="text-xs">({selectedAssetIds.size})</span>
-                      </button>
-                    )}
-                    {(user?.role === "admin" || user?.role === "editor") && (
-                      <button
-                        type="button"
-                        onClick={() => { folderCrud.setMoveTargetFolderPath(''); folderCrud.setShowMoveDialog(true); }}
-                        className="flex items-center gap-1 px-2.5 py-2 rounded-xl text-sm text-brand-primary hover:bg-accent transition-all"
-                      >
-                        <FolderOpen className="w-4 h-4" />
-                        <span className="hidden sm:inline">Move</span>
-                        <span className="text-xs">({selectedAssetIds.size + selectedFolderPaths.size})</span>
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={handleDeleteSelected}
-                      className="flex items-center gap-1 px-2.5 py-2 rounded-xl text-sm text-destructive hover:bg-destructive/10 transition-all"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                      <span className="hidden sm:inline">Delete</span>
-                      <span className="text-xs">({selectedAssetIds.size})</span>
-                    </button>
-                    </div>
-
-                    {/* Mobile: selection actions dropdown */}
-                    <div className="relative md:hidden" ref={selectionActionsMenuRef}>
-                      <button
-                        type="button"
-                        onClick={() => setShowSelectionActionsMenu((p) => !p)}
-                        className="flex items-center gap-1 px-3 py-2 rounded-xl text-sm font-medium text-foreground bg-muted transition-all"
-                      >
-                        Actions
-                        <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${showSelectionActionsMenu ? "rotate-180" : ""}`} />
-                      </button>
-                      {showSelectionActionsMenu && (
-                        <div className="absolute right-0 top-full mt-2 w-56 rounded-2xl bg-card border border-border/30 shadow-ambient p-1.5 z-40">
-                          {[
-                            { label: `Download (${selectedAssetIds.size})`, icon: Download, disabled: selectedAssetIds.size === 0, destructive: false, show: true, run: () => handleDownloadSelected() },
-                            { label: `Compress (${selectedCompressibleAssets.length})`, icon: Minimize2, disabled: selectedCompressibleAssets.length === 0, destructive: false, show: selectedAssetIds.size > 0, run: () => {
-                              const skipped = selectedAssets.length - selectedCompressibleAssets.length;
-                              if (skipped > 0) alert(`${skipped} unsupported file${skipped === 1 ? "" : "s"} will be skipped.`);
-                              compress.setCompressDialogAssets(selectedCompressibleAssets);
-                              compress.setIsCompressDialogOpen(true);
-                            } },
-                            { label: `Transcode (${selectedVideoAssets.length})`, icon: Film, disabled: selectedVideoAssets.length === 0, destructive: false, show: user?.role === "admin" || user?.role === "editor", run: () => void handleTranscodeSelected() },
-                            { label: `Thumbnails (${selectedThumbableAssets.length})`, icon: RefreshCw, disabled: selectedThumbableAssets.length === 0, destructive: false, show: true, run: () => void handleRegenerateThumbnailsSelected() },
-                            { label: `Add tags (${selectedAssetIds.size})`, icon: TagIcon, disabled: selectedAssetIds.size === 0, destructive: false, show: true, run: () => {
-                              const pool: MediaAsset[] = activeTagFilter ? tagFilterAssets : sortedFolderChildren.filter((n) => n.type === "file" && n.mediaAsset).map((n) => n.mediaAsset!);
-                              setTagDialogAssets(pool.filter((a) => selectedAssetIds.has(a.id)));
-                              setIsTagDialogOpen(true);
-                            } },
-                            { label: `Remove tags (${selectedAssetIds.size})`, icon: TagIcon, disabled: selectedAssetIds.size === 0, destructive: false, show: user?.role === "admin" || user?.role === "editor", run: () => {
-                              const pool: MediaAsset[] = activeTagFilter ? tagFilterAssets : sortedFolderChildren.filter((n) => n.type === "file" && n.mediaAsset).map((n) => n.mediaAsset!);
-                              setRemoveTagsAssets(pool.filter((a) => selectedAssetIds.has(a.id)));
-                              setIsRemoveTagsDialogOpen(true);
-                            } },
-                            { label: `Move (${selectedAssetIds.size + selectedFolderPaths.size})`, icon: FolderOpen, disabled: false, destructive: false, show: user?.role === "admin" || user?.role === "editor", run: () => { folderCrud.setMoveTargetFolderPath(''); folderCrud.setShowMoveDialog(true); } },
-                            { label: `Delete (${selectedAssetIds.size})`, icon: Trash2, disabled: false, destructive: true, show: true, run: () => handleDeleteSelected() },
-                          ].filter((item) => item.show).map((item) => (
-                            <button
-                              key={item.label}
-                              type="button"
-                              onClick={() => { setShowSelectionActionsMenu(false); item.run(); }}
-                              disabled={item.disabled}
-                              className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-xl text-left text-sm disabled:opacity-40 transition-colors ${
-                                item.destructive
-                                  ? "text-destructive hover:bg-destructive/10"
-                                  : "text-muted-foreground hover:text-foreground hover:bg-accent"
-                              }`}
-                            >
-                              <item.icon className="w-4 h-4 shrink-0" />
-                              {item.label}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </>
+                  <ToolbarActions
+                    role={user?.role}
+                    selectedCount={selectedAssetIds.size}
+                    selectedFolderCount={selectedFolderPaths.size}
+                    compressibleCount={selectedCompressibleAssets.length}
+                    videoCount={selectedVideoAssets.length}
+                    thumbableCount={selectedThumbableAssets.length}
+                    onDownload={handleDownloadSelected}
+                    onCompress={() => {
+                      if (selectedCompressibleAssets.length === 0) return;
+                      const skipped = selectedAssets.length - selectedCompressibleAssets.length;
+                      if (skipped > 0) {
+                        alert(`${skipped} unsupported file${skipped === 1 ? "" : "s"} will be skipped.`);
+                      }
+                      compress.setCompressDialogAssets(selectedCompressibleAssets);
+                      compress.setIsCompressDialogOpen(true);
+                    }}
+                    onTranscode={() => void handleTranscodeSelected()}
+                    onRegenerateThumbnails={() => void handleRegenerateThumbnailsSelected()}
+                    onTag={() => {
+                      const pool: MediaAsset[] = activeTagFilter
+                        ? tagFilterAssets
+                        : sortedFolderChildren
+                            .filter((n) => n.type === "file" && n.mediaAsset)
+                            .map((n) => n.mediaAsset!);
+                      setTagDialogAssets(pool.filter((a) => selectedAssetIds.has(a.id)));
+                      setIsTagDialogOpen(true);
+                    }}
+                    onUntag={() => {
+                      const pool: MediaAsset[] = activeTagFilter
+                        ? tagFilterAssets
+                        : sortedFolderChildren
+                            .filter((n) => n.type === "file" && n.mediaAsset)
+                            .map((n) => n.mediaAsset!);
+                      setRemoveTagsAssets(pool.filter((a) => selectedAssetIds.has(a.id)));
+                      setIsRemoveTagsDialogOpen(true);
+                    }}
+                    onMove={() => { folderCrud.setMoveTargetFolderPath(''); folderCrud.setShowMoveDialog(true); }}
+                    onDelete={handleDeleteSelected}
+                  />
                 )}
               </>
             )}
