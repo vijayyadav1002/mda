@@ -18,20 +18,11 @@ import { useTimelineSelection } from "~/hooks/useTimelineSelection";
 import { useThumbnailRefresh } from "~/hooks/useThumbnailRefresh";
 import { useTimelineTagActions } from "~/hooks/useTimelineTagActions";
 import { useTimelineAssetActions } from "~/hooks/useTimelineAssetActions";
+import { useTimelineSettings } from "~/hooks/useTimelineSettings";
 
 export const meta: MetaFunction = () => [{ title: "Timeline — MDA" }];
 
 /* ── GraphQL ────────────────────────────────────────────────────── */
-
-const TIMELINE_SETTINGS_QUERY = `
-  query TimelineSettings { timelineSettings { dateSource } }
-`;
-
-const UPDATE_TIMELINE_DATE_SOURCE_MUTATION = `
-  mutation UpdateTimelineDateSource($dateSource: String!) {
-    updateTimelineDateSource(dateSource: $dateSource) { dateSource }
-  }
-`;
 
 const DATE_SOURCE_OPTIONS: Array<{ value: string; label: string; description: string }> = [
   { value: "folder", label: "Folder & file names", description: "Dates from folder names like 2022-02, then filename patterns (default)" },
@@ -165,10 +156,6 @@ export default function Timeline() {
     setSections,
     showToast,
   });
-  const [showSettingsMenu, setShowSettingsMenu] = useState(false);
-  const [dateSource, setDateSource] = useState<string>("folder");
-  const [dateSourceSaving, setDateSourceSaving] = useState(false);
-  const settingsMenuRef = useRef<HTMLDivElement>(null);
   const [showZoomMenu, setShowZoomMenu] = useState(false);
   const zoomMenuRef = useRef<HTMLDivElement>(null);
   const [showActionsMenu, setShowActionsMenu] = useState(false);
@@ -343,31 +330,7 @@ export default function Timeline() {
     showToast,
     exitSelection,
   });
-
-  /* ── Timeline settings (admin) ── */
-
-  // Load current date source when the settings menu is first opened
-  useEffect(() => {
-    if (!showSettingsMenu) return;
-    const token = getAuthToken();
-    if (!token) return;
-    createGraphQLClient(token)
-      .request<{ timelineSettings: { dateSource: string } }>(TIMELINE_SETTINGS_QUERY)
-      .then((data) => setDateSource(data.timelineSettings.dateSource))
-      .catch(() => {});
-  }, [showSettingsMenu]);
-
-  // Close the settings menu on outside click
-  useEffect(() => {
-    if (!showSettingsMenu) return;
-    const handler = (e: MouseEvent) => {
-      if (settingsMenuRef.current && !settingsMenuRef.current.contains(e.target as Node)) {
-        setShowSettingsMenu(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [showSettingsMenu]);
+  const settings = useTimelineSettings({ reloadTimeline, showToast });
 
   // Close the mobile zoom dropdown on outside click
   useEffect(() => {
@@ -392,29 +355,6 @@ export default function Timeline() {
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [showActionsMenu]);
-
-  const handleChangeDateSource = async (value: string) => {
-    if (value === dateSource || dateSourceSaving) return;
-    const token = getAuthToken();
-    if (!token) return;
-    setDateSourceSaving(true);
-    try {
-      const data = await createGraphQLClient(token).request<{ updateTimelineDateSource: { dateSource: string } }>(
-        UPDATE_TIMELINE_DATE_SOURCE_MUTATION,
-        { dateSource: value }
-      );
-      setDateSource(data.updateTimelineDateSource.dateSource);
-      setShowSettingsMenu(false);
-      showToast("Date source updated — re-dating library in the background…");
-      // Give the backend a moment to recompute, then reload. Large libraries
-      // may keep reshuffling for a while; scrolling refetches as needed.
-      window.setTimeout(reloadTimeline, 4000);
-    } catch (err: any) {
-      showToast(`Failed to update date source: ${err?.response?.errors?.[0]?.message ?? err.message}`);
-    } finally {
-      setDateSourceSaving(false);
-    }
-  };
 
   const { handleThumbError, handleRegenerateThumbnails } = useThumbnailRefresh({
     sections,
@@ -518,12 +458,12 @@ export default function Timeline() {
           <div className="flex items-center gap-2">
           {/* Timeline settings (admin only) */}
           {userRole === "admin" && (
-            <div className="relative" ref={settingsMenuRef}>
+            <div className="relative" ref={settings.settingsMenuRef}>
               <button
                 type="button"
-                onClick={() => setShowSettingsMenu((p) => !p)}
+                onClick={() => settings.setShowSettingsMenu((p) => !p)}
                 className={`p-2 rounded-xl border transition-all ${
-                  showSettingsMenu
+                  settings.showSettingsMenu
                     ? "bg-accent border-border/50 text-foreground"
                     : "bg-card border-border/30 text-muted-foreground hover:text-foreground"
                 }`}
@@ -531,7 +471,7 @@ export default function Timeline() {
               >
                 <Settings className="w-4 h-4" />
               </button>
-              {showSettingsMenu && (
+              {settings.showSettingsMenu && (
                 <div className="absolute right-0 top-full mt-2 w-72 rounded-2xl bg-card border border-border/30 shadow-ambient p-3 z-40">
                   <p className="text-xs font-manrope font-semibold text-foreground px-1 pb-2">
                     Timeline date source
@@ -541,14 +481,14 @@ export default function Timeline() {
                       <button
                         key={option.value}
                         type="button"
-                        onClick={() => void handleChangeDateSource(option.value)}
-                        disabled={dateSourceSaving}
+                        onClick={() => void settings.handleChangeDateSource(option.value)}
+                        disabled={settings.dateSourceSaving}
                         className={`w-full flex items-start gap-2 px-2 py-2 rounded-xl text-left transition-colors disabled:opacity-50 ${
-                          dateSource === option.value ? "bg-accent" : "hover:bg-accent/50"
+                          settings.dateSource === option.value ? "bg-accent" : "hover:bg-accent/50"
                         }`}
                       >
                         <span className="w-4 pt-0.5 shrink-0">
-                          {dateSource === option.value && <Check className="w-4 h-4 text-brand-primary" />}
+                          {settings.dateSource === option.value && <Check className="w-4 h-4 text-brand-primary" />}
                         </span>
                         <span>
                           <span className="block text-xs font-medium text-foreground">{option.label}</span>
