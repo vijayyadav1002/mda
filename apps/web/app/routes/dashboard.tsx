@@ -31,17 +31,16 @@ import { useSearch } from "~/hooks/useSearch";
 import { useCompressQueue } from "~/hooks/useCompressQueue";
 import { useFileCrud } from "~/hooks/useFileCrud";
 import { useFolderCrud } from "~/hooks/useFolderCrud";
-import { CachePanelBody } from "~/components/CachePanelBody";
 import { Sidebar } from "~/components/Sidebar";
-import { SidebarNavItem } from "~/components/SidebarNavItem";
+import { MobileNav } from "~/components/MobileNav";
 import { FileTypeIcon } from "~/components/FileTypeIcon";
 import {
   Folder, FileImage, FileText, ArrowLeft, ChevronDown, ChevronRight,
-  Trash2, CheckSquare, Square, Users, Key, RotateCcw,
-  Menu, X, ImagePlus, ArrowUpDown, Minimize2,
-  Upload, LogOut, Download, FolderPlus, ListTodo,
-  Moon, Sun, Tag as TagIcon, Pencil, HardDrive, FolderOpen,
-  Copy, ScrollText, CalendarDays, Film, RefreshCw, Zap,
+  Trash2, CheckSquare, Square,
+  X, ImagePlus, ArrowUpDown, Minimize2,
+  Download, FolderPlus,
+  Moon, Sun, Tag as TagIcon, Pencil, FolderOpen,
+  Copy, Film, RefreshCw, Zap,
 } from "lucide-react";
 
 const API_URL = getApiUrl();
@@ -859,143 +858,36 @@ export default function Dashboard() {
       {/* ── Main content ─────────────────────────────────────────── */}
       <div className="flex-1 md:ml-64 min-h-screen flex flex-col">
 
-        {/* Mobile top bar */}
-        <div className="md:hidden flex items-center justify-between px-4 py-4 bg-card/80 backdrop-blur-xs sticky top-0 z-20">
-          <button
-            type="button"
-            onClick={() => { setCurrentPath(rootPath); setFolderHistory([]); }}
-            className="flex items-center gap-3"
-          >
-            <div className="w-8 h-8 rounded-xl gradient-brand flex items-center justify-center">
-              <Folder className="w-4 h-4 text-[#060e20]" />
-            </div>
-            <span className="font-manrope font-bold text-sm text-foreground">The Curator</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setMobileMenuOpen((p) => !p)}
-            className="p-2 rounded-xl bg-muted text-muted-foreground"
-          >
-            {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-          </button>
-        </div>
-
-        {/* Mobile drawer */}
-        {mobileMenuOpen && (
-          <div className="md:hidden fixed inset-0 z-40 flex">
-            <div className="absolute inset-0 bg-black/50" onClick={() => setMobileMenuOpen(false)} />
-            <div className="relative w-64 bg-card h-full flex flex-col p-4 space-y-1 shadow-ambient">
-              <SidebarNavItem icon={Folder} label="Collections" active onClick={() => { setCurrentPath(rootPath); setFolderHistory([]); setMobileMenuOpen(false); }} />
-              <SidebarNavItem icon={CalendarDays} label="Timeline" onClick={() => { navigate("/timeline"); setMobileMenuOpen(false); }} />
-              {(user?.role === "admin" || user?.role === "editor") && (
-                <SidebarNavItem icon={Trash2} label="Trash" onClick={() => { navigate("/trash"); setMobileMenuOpen(false); }} />
-              )}
-              {(user?.role === "admin" || user?.role === "editor") && (
-                <SidebarNavItem
-                  icon={ListTodo}
-                  label="Queue"
-                  onClick={() => { compress.setShowQueuePanel(true); setMobileMenuOpen(false); }}
-                  badge={compress.compressQueue.filter(j => !["done", "error"].includes(j.status)).length || undefined}
-                />
-              )}
-              {user?.role === "admin" && (
-                <SidebarNavItem icon={Users} label="Users" onClick={() => { navigate("/users"); setMobileMenuOpen(false); }} />
-              )}
-              {user?.role === "admin" && (
-                <SidebarNavItem icon={ScrollText} label="Audit" onClick={() => { navigate("/audit"); setMobileMenuOpen(false); }} />
-              )}
-              <div className="pt-4 space-y-2">
-                <button
-                  type="button"
-                  onClick={() => { handleRefreshMediaLibrary(); setMobileMenuOpen(false); }}
-                  disabled={isRefreshing}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-muted-foreground hover:bg-accent hover:text-foreground transition-all disabled:opacity-50"
-                >
-                  <RotateCcw className={`w-4 h-4 ${isRefreshing ? "animate-spin" : ""}`} />
-                  {isRefreshing ? "Refreshing…" : "Refresh Library"}
-                </button>
-                {(user?.role === "admin" || user?.role === "editor") && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => { handleGenerateThumbnails(); setMobileMenuOpen(false); }}
-                      disabled={isGeneratingThumbnails || !currentPath}
-                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-muted-foreground hover:bg-accent hover:text-foreground transition-all disabled:opacity-40"
-                    >
-                      <ImagePlus className="w-4 h-4" />
-                      {isGeneratingThumbnails ? "Queuing…" : "Generate Thumbnails"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => { setUploadTargetPath(currentPath || rootPath || ''); setShowUploadDialog(true); setMobileMenuOpen(false); }}
-                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl gradient-brand text-[#060e20] font-manrope font-bold text-sm shadow-ambient hover:opacity-90 transition-opacity"
-                    >
-                      <Upload className="w-4 h-4" />
-                      Upload Media
-                    </button>
-                  </>
-                )}
-                <button
-                  type="button"
-                  onClick={() => { setDarkMode(!darkMode); setMobileMenuOpen(false); }}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-muted-foreground hover:bg-accent hover:text-foreground transition-all"
-                >
-                  {darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-                  {darkMode ? "Light Mode" : "Dark Mode"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setShowChangePasswordDialog(true); setMobileMenuOpen(false); }}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-muted-foreground hover:bg-accent hover:text-foreground transition-all"
-                >
-                  <Key className="w-4 h-4" /> Change Password
-                </button>
-                {rootSize != null && rootSize > 0 && (
-                  <div className="flex items-center justify-between px-3 py-2 rounded-xl border border-border/20 text-xs text-muted-foreground">
-                    <span className="flex items-center gap-1.5">
-                      <HardDrive className="w-3.5 h-3.5 shrink-0" />
-                      Media Total
-                    </span>
-                    <span className="font-mono">{formatBytes(rootSize)}</span>
-                  </div>
-                )}
-                {user?.role === "admin" && cacheStats && (
-                  <div className="rounded-xl border border-border/20 overflow-hidden">
-                    <button
-                      type="button"
-                      onClick={toggleCachePanel}
-                      className="w-full flex items-center justify-between px-3 py-2.5 text-sm text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-all"
-                    >
-                      <span className="flex items-center gap-2">
-                        <HardDrive className="w-4 h-4 shrink-0" />
-                        Cache
-                      </span>
-                      <span className="flex items-center gap-1.5 min-w-0">
-                        <span className="font-mono text-xs truncate">{formatBytes(cacheStats.totalBytes)}</span>
-                        <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform duration-200 ${showCachePanel ? "rotate-180" : ""}`} />
-                      </span>
-                    </button>
-                    {showCachePanel && (
-                      <CachePanelBody
-                        cacheStats={cacheStats}
-                        cacheSettings={cacheSettings}
-                        onClear={(type) => void handleClearCache(type)}
-                        onSaveSettings={handleSaveCacheSettings}
-                      />
-                    )}
-                  </div>
-                )}
-                <button
-                  type="button"
-                  onClick={() => { setShowLogoutConfirm(true); setMobileMenuOpen(false); }}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-muted-foreground hover:bg-accent hover:text-foreground transition-all"
-                >
-                  <LogOut className="w-4 h-4" /> Sign Out
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        <MobileNav
+          open={mobileMenuOpen}
+          onToggle={() => setMobileMenuOpen((p) => !p)}
+          onClose={() => setMobileMenuOpen(false)}
+          user={user}
+          queueBadgeCount={compress.compressQueue.filter(j => !["done", "error"].includes(j.status)).length}
+          isRefreshing={isRefreshing}
+          isGeneratingThumbnails={isGeneratingThumbnails}
+          canGenerateThumbnails={Boolean(currentPath)}
+          darkMode={darkMode}
+          rootSize={rootSize}
+          cacheStats={cacheStats}
+          cacheSettings={cacheSettings}
+          showCachePanel={showCachePanel}
+          onNavigateHome={() => { setCurrentPath(rootPath); setFolderHistory([]); }}
+          onNavigateTimeline={() => navigate("/timeline")}
+          onNavigateTrash={() => navigate("/trash")}
+          onOpenQueue={() => compress.setShowQueuePanel(true)}
+          onNavigateUsers={() => navigate("/users")}
+          onNavigateAudit={() => navigate("/audit")}
+          onRefreshLibrary={handleRefreshMediaLibrary}
+          onGenerateThumbnails={handleGenerateThumbnails}
+          onUpload={() => { setUploadTargetPath(currentPath || rootPath || ''); setShowUploadDialog(true); }}
+          onToggleDarkMode={() => setDarkMode(!darkMode)}
+          onChangePassword={() => setShowChangePasswordDialog(true)}
+          onToggleCachePanel={toggleCachePanel}
+          onClearCache={(type) => void handleClearCache(type)}
+          onSaveCacheSettings={handleSaveCacheSettings}
+          onLogout={() => setShowLogoutConfirm(true)}
+        />
 
         {/* Search bar */}
         <div className="md:sticky md:top-0 z-20 bg-background/80 backdrop-blur-xs px-4 md:px-10 pt-3 pb-1.5">
