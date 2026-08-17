@@ -37,13 +37,13 @@ import { TagFilterMenu } from "~/components/TagFilterMenu";
 import { SortMenu } from "~/components/SortMenu";
 import { ToolbarActions } from "~/components/ToolbarActions";
 import { MediaGrid } from "~/components/MediaGrid";
+import { FolderTreeNode } from "~/components/FolderTree";
 import {
-  Folder, FileImage, FileText, ArrowLeft, ChevronDown, ChevronRight,
-  Trash2, CheckSquare, Square,
+  Folder, FileImage, FileText, ArrowLeft,
+  CheckSquare, Square,
   ImagePlus,
   FolderPlus,
-  Moon, Sun, Pencil,
-  Copy,
+  Moon, Sun,
 } from "lucide-react";
 
 const API_URL = getApiUrl();
@@ -658,122 +658,6 @@ export default function Dashboard() {
     };
   }, [currentPath, currentFolderChildren]);
 
-  const renderTree = (node: DirectoryNode) => {
-    if (node.type === "file") {
-      const isSelected = node.mediaAsset ? selectedAssetIds.has(node.mediaAsset.id) : false;
-      return (
-        <div key={node.path} className="relative group">
-          <button
-            type="button"
-            className={`w-full pl-6 py-2.5 flex items-center gap-3 cursor-pointer hover:bg-accent rounded-xl transition-all duration-150 outline-hidden focus:ring-2 focus:ring-brand-primary/30 text-left ${
-              isSelected ? "bg-accent" : ""
-            }`}
-            onClick={() => node.mediaAsset && handleAssetClick(node.mediaAsset)}
-          >
-            {selectionMode && (
-              <div className="shrink-0">
-                {isSelected ? (
-                  <CheckSquare className="w-4 h-4 text-brand-primary" />
-                ) : (
-                  <Square className="w-4 h-4 text-muted-foreground" />
-                )}
-              </div>
-            )}
-            <FileImage className="w-4 h-4 text-muted-foreground shrink-0" />
-            <span className="text-sm truncate text-foreground flex-1">{node.name}</span>
-            {!selectionMode && node.mediaAsset && (user?.role === "admin" || user?.role === "editor") && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleDeleteSingle(node.mediaAsset!.id, node.mediaAsset!.fileName);
-                }}
-                className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-destructive/10 rounded-lg transition-all duration-150 mr-2"
-              >
-                <Trash2 className="w-3.5 h-3.5 text-destructive" />
-              </button>
-            )}
-          </button>
-        </div>
-      );
-    }
-
-    const cachedNode = directoryCache[node.path] || node;
-    const children = cachedNode.children ?? null;
-    const isExpanded = expandedFolders.has(node.path);
-
-    return (
-      <div key={node.path} className="pl-4">
-        <div className="group relative flex items-center">
-          <button
-            type="button"
-            className="flex-1 py-2.5 flex items-center gap-3 font-medium text-foreground hover:bg-accent rounded-xl transition-all duration-150 outline-hidden focus:ring-2 focus:ring-brand-primary/30 text-left px-2"
-            onClick={() => void toggleFolder(node.path)}
-          >
-            {isExpanded ? (
-              <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />
-            ) : (
-              <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
-            )}
-            <div className="w-8 h-8 gradient-brand rounded-lg flex items-center justify-center shrink-0">
-              <Folder className="w-4 h-4 text-[#060e20]" />
-            </div>
-            <span className="text-sm">{node.name}</span>
-            <span className="flex items-center gap-1.5 ml-auto mr-2 shrink-0">
-              {node.size != null && node.size > 0 && (
-                <span className="text-xs text-muted-foreground font-mono">
-                  {formatBytes(node.size)}
-                </span>
-              )}
-              {Array.isArray(children) && (
-                <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
-                  {children.length}
-                </span>
-              )}
-            </span>
-          </button>
-          {(user?.role === "admin" || user?.role === "editor") && (
-            <>
-              <button
-                type="button"
-                onClick={() => { folderCrud.setRenamingFolder({ path: node.path, name: node.name }); folderCrud.setRenameFolderValue(node.name); }}
-                className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-accent rounded-lg transition-all duration-150 shrink-0"
-                title="Rename folder"
-              >
-                <Pencil className="w-3.5 h-3.5 text-foreground" />
-              </button>
-              <button
-                type="button"
-                onClick={() => folderCrud.openDuplicateFolderDialog({ path: node.path, name: node.name })}
-                className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-accent rounded-lg transition-all duration-150 shrink-0"
-                title="Duplicate folder"
-              >
-                <Copy className="w-3.5 h-3.5 text-foreground" />
-              </button>
-              <button
-                type="button"
-                onClick={() => void folderCrud.handleDeleteFolder(node.path, node.name)}
-                className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-destructive/10 rounded-lg transition-all duration-150 mr-1 shrink-0"
-                title="Delete folder"
-              >
-                <Trash2 className="w-3.5 h-3.5 text-destructive" />
-              </button>
-            </>
-          )}
-        </div>
-        {isExpanded && children === null && (
-          <div className="pl-10 py-2 text-xs text-muted-foreground">Loading…</div>
-        )}
-        {isExpanded && Array.isArray(children) && children.length > 0 && (
-          <div className="ml-4 mt-1">{children.map((child) => renderTree(child))}</div>
-        )}
-        {isExpanded && Array.isArray(children) && children.length === 0 && (
-          <div className="pl-10 py-2 text-xs text-muted-foreground">Empty folder</div>
-        )}
-      </div>
-    );
-  };
-
   const heroTitle = search.searchQuery
     ? search.searchQuery.term
       ? `"${search.searchQuery.term}"`
@@ -1152,7 +1036,20 @@ export default function Dashboard() {
           ) : (
             <div className="bg-card rounded-2xl p-4 md:p-6 overflow-auto max-h-[calc(100vh-300px)]">
               {directoryTree ? (
-                renderTree(directoryTree)
+                <FolderTreeNode
+                  node={directoryTree}
+                  directoryCache={directoryCache}
+                  expandedFolders={expandedFolders}
+                  selectedAssetIds={selectedAssetIds}
+                  selectionMode={selectionMode}
+                  canManage={canManage}
+                  onToggleFolder={(path) => void toggleFolder(path)}
+                  onAssetClick={handleAssetClick}
+                  onDeleteAsset={(id, fileName) => handleDeleteSingle(id, fileName)}
+                  onRenameFolder={(folder) => { folderCrud.setRenamingFolder(folder); folderCrud.setRenameFolderValue(folder.name); }}
+                  onDuplicateFolder={(folder) => folderCrud.openDuplicateFolderDialog(folder)}
+                  onDeleteFolder={(path, name) => void folderCrud.handleDeleteFolder(path, name)}
+                />
               ) : (
                 <div className="text-center py-12 text-muted-foreground">
                   <FileImage className="w-12 h-12 mx-auto mb-4 opacity-20" />
