@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { config } from '../config.js';
-import { deleteTranscodedVideo } from './video-transcode.js';
+import { deleteTranscodedVideo } from './video-transcode/index.js';
 
 export interface MediaAssetCleanupTarget {
   id: string | number;
