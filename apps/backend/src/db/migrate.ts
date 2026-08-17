@@ -8,9 +8,22 @@ CREATE TABLE IF NOT EXISTS users (
   id SERIAL PRIMARY KEY,
   username VARCHAR(255) UNIQUE NOT NULL,
   password_hash VARCHAR(255) NOT NULL,
-  role VARCHAR(50) NOT NULL CHECK (role IN ('admin', 'readonly')),
+  role VARCHAR(50) NOT NULL CHECK (role IN ('admin', 'editor', 'readonly')),
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Allow the 'editor' role on databases created before it was added to the
+-- check constraint (the role has always been enforced by backend
+-- authorization logic, but the DB never accepted it as a storable value).
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'users_role_check'
+  ) THEN
+    ALTER TABLE users DROP CONSTRAINT users_role_check;
+  END IF;
+  ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('admin', 'editor', 'readonly'));
+END $$;
 
 -- Media assets table
 CREATE TABLE IF NOT EXISTS media_assets (

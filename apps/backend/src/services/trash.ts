@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import { db } from '../db/index.js';
 import { config } from '../config.js';
-import { indexFile } from './media-indexer.js';
+import { indexFile } from './media-indexer/index.js';
 
 /**
  * Soft-delete trash bin. Deleted files/folders are moved (renamed) into a

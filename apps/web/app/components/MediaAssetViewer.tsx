@@ -1,38 +1,18 @@
-import { ChevronLeft, ChevronRight, Download, File, Maximize2, Minimize2, X, ListTodo, Tag as TagIcon, Plus, Pencil, FolderOpen, Save, Copy } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, File, Maximize2, Minimize2, X, ListTodo, Tag as TagIcon, Plus, Pencil, FolderOpen, Copy } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import Hls from "hls.js";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { getAuthToken } from "~/lib/api";
+import { formatDate } from "~/lib/format";
+import { formatFileSize, getExtension, getFileCategory, getFileCategoryLabel } from "~/lib/file-type";
+import type { MediaAsset } from "~/lib/types";
+import { ImagePreview } from "~/components/viewer/ImagePreview";
+import { VideoPreview, type TranscodeProgress } from "~/components/viewer/VideoPreview";
+import { PdfPreview } from "~/components/viewer/PdfPreview";
+import { DocumentPreview, type DocumentPreviewData } from "~/components/viewer/DocumentPreview";
 
 type VideoSource =
   | { kind: "mp4"; url: string }
   | { kind: "hls"; playlistUrl: string; progressUrl: string; ready: boolean };
-
-interface TranscodeProgress {
-  percent: number;
-  status: string;
-  playlistReady?: boolean;
-}
-
-interface AssetTag {
-  id: string;
-  name: string;
-}
-
-interface MediaAsset {
-  id: string;
-  fileName: string;
-  filePath: string;
-  mimeType: string;
-  fileSize: string;
-  thumbnailUrl: string | null;
-  transcodedUrl?: string;
-  createdAt: string;
-  updatedAt: string;
-  capturedAt?: string | null;
-  tags?: AssetTag[];
-}
 
 interface MediaAssetViewerProps {
   readonly asset: MediaAsset | null;
@@ -52,58 +32,6 @@ interface MediaAssetViewerProps {
   readonly hasNext?: boolean;
   /** Open text/markdown documents directly in edit mode (used for newly created files). */
   readonly autoEdit?: boolean;
-}
-
-type FileCategory = "image" | "video" | "pdf" | "word" | "excel" | "text" | "markdown" | "other";
-
-type DocumentPreview =
-  | { kind: "text" | "markdown"; text: string; truncated: boolean }
-  | { kind: "word"; html: string; messages: string[] }
-  | { kind: "excel"; sheets: { name: string; rows: string[][] }[]; maxRows: number; maxCols: number };
-
-function formatFileSize(bytes: string) {
-  const size = parseInt(bytes);
-  if (size < 1024) return `${size} B`;
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
-  return `${(size / 1024 / 1024).toFixed(2)} MB`;
-}
-
-function formatDate(dateString: string) {
-  return new Date(dateString).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
-function getExtension(fileName: string) {
-  return fileName.split(".").pop()?.toUpperCase() ?? "FILE";
-}
-
-function getFileCategory(asset: MediaAsset): FileCategory {
-  const ext = asset.fileName.split(".").pop()?.toLowerCase() ?? "";
-  if (asset.mimeType.startsWith("image/")) return "image";
-  if (asset.mimeType.startsWith("video/")) return "video";
-  if (asset.mimeType === "application/pdf" || ext === "pdf") return "pdf";
-  if (ext === "docx") return "word";
-  if (ext === "xlsx") return "excel";
-  if (ext === "md" || ext === "markdown") return "markdown";
-  if (asset.mimeType.startsWith("text/") || ext === "txt") return "text";
-  return "other";
-}
-
-function getFileCategoryLabel(category: FileCategory) {
-  const labels: Record<FileCategory, string> = {
-    image: "Image",
-    video: "Video",
-    pdf: "PDF",
-    word: "Word",
-    excel: "Excel",
-    text: "Text",
-    markdown: "Markdown",
-    other: "File",
-  };
-  return labels[category];
 }
 
 export function MediaAssetViewer({
@@ -131,12 +59,11 @@ export function MediaAssetViewer({
   const [renameValue, setRenameValue] = useState("");
   const [renameLoading, setRenameLoading] = useState(false);
   const [imageDimensions, setImageDimensions] = useState({ width: 0, height: 0 });
-  const [currentVideoId, setCurrentVideoId] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [videoSource, setVideoSource] = useState<VideoSource | null>(null);
   const [transcodeProgress, setTranscodeProgress] = useState<TranscodeProgress | null>(null);
   const [hlsReloadKey, setHlsReloadKey] = useState(0);
-  const [documentPreview, setDocumentPreview] = useState<DocumentPreview | null>(null);
+  const [documentPreview, setDocumentPreview] = useState<DocumentPreviewData | null>(null);
   const [documentPreviewStatus, setDocumentPreviewStatus] = useState<"idle" | "loading" | "error">("idle");
   const [activeSheetIndex, setActiveSheetIndex] = useState(0);
   const [isEditingDocument, setIsEditingDocument] = useState(false);
@@ -144,7 +71,6 @@ export function MediaAssetViewer({
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "error">("idle");
   const autoEditConsumedRef = useRef<string | null>(null);
   const documentScrollRef = useRef<HTMLDivElement | null>(null);
-  const videoSourceKindRef = useRef<VideoSource["kind"] | null>(null);
   const splitVideoRef = useRef<HTMLVideoElement | null>(null);
   const fullscreenVideoRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
@@ -163,12 +89,6 @@ export function MediaAssetViewer({
       setSaveStatus("idle");
     }
   }, [isOpen, asset?.id]);
-
-  useEffect(() => {
-    if (isOpen && asset?.mimeType.startsWith("video/")) {
-      setCurrentVideoId(asset.id);
-    }
-  }, [isOpen, asset]);
 
   // Start at the top when switching between edit and preview so the editor's
   // top edge (and the beginning of the document) is never hidden under the
@@ -215,7 +135,7 @@ export function MediaAssetViewer({
         if (!response.ok) throw new Error(`Preview failed (${response.status})`);
         return response.json();
       })
-      .then((preview: DocumentPreview) => {
+      .then((preview: DocumentPreviewData) => {
         setDocumentPreview(preview);
         if (preview.kind === "text" || preview.kind === "markdown") {
           setEditorText(preview.text);
@@ -269,8 +189,6 @@ export function MediaAssetViewer({
   useEffect(() => {
     const video = isFullscreen ? fullscreenVideoRef.current : splitVideoRef.current;
     if (!video || !videoSource) return;
-
-    videoSourceKindRef.current = videoSource.kind;
 
     if (videoSource.kind === "mp4") {
       video.src = videoSource.url;
@@ -347,15 +265,6 @@ export function MediaAssetViewer({
     }
   }, [isOpen]);
 
-  useEffect(() => {
-    if (!isOpen && currentVideoId) {
-      // Transcoded MP4s are kept on disk (evicted only by the size-based
-      // cache limit), so closing the viewer no longer deletes them.
-      videoSourceKindRef.current = null;
-      setCurrentVideoId(null);
-    }
-  }, [isOpen, currentVideoId, apiUrl]);
-
   // Close on Escape; navigate with arrow keys
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -418,7 +327,7 @@ export function MediaAssetViewer({
         kind: fileCategory,
         text: updated.text,
         truncated: false,
-      } as DocumentPreview);
+      } as DocumentPreviewData);
       setEditorText(updated.text);
       setIsEditingDocument(false);
       setSaveStatus("idle");
@@ -431,6 +340,11 @@ export function MediaAssetViewer({
   const handleImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
     const img = e.currentTarget;
     setImageDimensions({ width: img.naturalWidth, height: img.naturalHeight });
+  };
+
+  const handleEditorTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setEditorText(e.target.value);
+    if (saveStatus === "error") setSaveStatus("idle");
   };
 
   // Prev/next chevrons + mobile tap zones, overlaid on the media area
@@ -507,49 +421,20 @@ export function MediaAssetViewer({
         </div>
 
         {isImage && (
-          <button type="button" onClick={() => setIsFullscreen(false)} className="focus:outline-hidden">
-            <img
-              src={originalImageUrl}
-              alt={asset.fileName}
-              className="max-w-full max-h-[calc(100vh-120px)] object-contain"
-            />
-          </button>
+          <ImagePreview
+            asset={asset}
+            imageUrl={originalImageUrl}
+            apiUrl={apiUrl}
+            isFullscreen={true}
+            onToggleFullscreen={() => setIsFullscreen(false)}
+            onImageLoad={handleImageLoad}
+          />
         )}
         {isVideo && (
-          <div className="relative flex items-center justify-center">
-            <video
-              ref={fullscreenVideoRef}
-              controls
-              autoPlay
-              className="max-w-full max-h-[calc(100vh-120px)] object-contain"
-              preload="metadata"
-            >
-              <track kind="captions" />
-            </video>
-            {transcodeProgress && transcodeProgress.status !== "ready" && transcodeProgress.status !== "unknown" && (
-              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center bg-black/50 backdrop-blur-xs text-white">
-                <p className="font-manrope font-semibold mb-3">
-                  {transcodeProgress.status === "queued" ? "Preparing video…" : "Transcoding for playback"}
-                </p>
-                <div className="w-64 h-2 bg-white/20 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-emerald-400 transition-[width] duration-500"
-                    style={{ width: `${Math.max(2, Math.round(transcodeProgress.percent))}%` }}
-                  />
-                </div>
-                <p className="text-xs text-white/70 mt-2">
-                  {Math.round(transcodeProgress.percent)}% — playback will start automatically when ready
-                </p>
-              </div>
-            )}
-          </div>
+          <VideoPreview videoRef={fullscreenVideoRef} transcodeProgress={transcodeProgress} isFullscreen={true} />
         )}
         {isPdf && (
-          <iframe
-            src={pdfPreviewUrl}
-            title={asset.fileName}
-            className="w-screen h-screen border-0 bg-white"
-          />
+          <PdfPreview pdfPreviewUrl={pdfPreviewUrl} fileName={asset.fileName} isFullscreen={true} />
         )}
 
         <div className="absolute bottom-4 left-4 right-4 max-w-3xl mx-auto bg-black/50 backdrop-blur-md text-white p-4 rounded-2xl">
@@ -584,220 +469,51 @@ export function MediaAssetViewer({
         >
           {navigationOverlay}
           {isImage && (
-            <button
-              type="button"
-              onClick={() => setIsFullscreen(true)}
-              className="w-full h-full focus:outline-hidden cursor-zoom-in"
-              title="View fullscreen"
-            >
-              <img
-                src={originalImageUrl}
-                alt={asset.fileName}
-                className="w-full h-full object-contain max-h-[40vh] md:max-h-[90vh]"
-                onLoad={handleImageLoad}
-                onError={(e) => {
-                  if (asset.thumbnailUrl) e.currentTarget.src = `${apiUrl}${asset.thumbnailUrl}`;
-                }}
-              />
-            </button>
-          )}
-          {isVideo && (
-            <div className="relative w-full h-full flex items-center justify-center">
-              <video
-                ref={splitVideoRef}
-                controls
-                className="w-full h-full object-contain max-h-[40vh] md:max-h-[90vh]"
-                preload="metadata"
-              >
-                <track kind="captions" />
-              </video>
-              {transcodeProgress && transcodeProgress.status !== "ready" && transcodeProgress.status !== "unknown" && (
-                <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center bg-black/50 backdrop-blur-xs text-white">
-                  <p className="font-manrope font-semibold mb-3">
-                    {transcodeProgress.status === "queued" ? "Preparing video…" : "Transcoding for playback"}
-                  </p>
-                  <div className="w-64 h-2 bg-white/20 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-emerald-400 transition-[width] duration-500"
-                      style={{ width: `${Math.max(2, Math.round(transcodeProgress.percent))}%` }}
-                    />
-                  </div>
-                  <p className="text-xs text-white/70 mt-2">
-                    {Math.round(transcodeProgress.percent)}% — playback will start automatically when ready
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
-          {isPdf && (
-            <iframe
-              src={pdfPreviewUrl}
-              title={asset.fileName}
-              className="w-full h-full min-h-[400px] max-h-[40vh] md:max-h-[90vh] border-0 bg-white"
+            <ImagePreview
+              asset={asset}
+              imageUrl={originalImageUrl}
+              apiUrl={apiUrl}
+              isFullscreen={false}
+              onToggleFullscreen={() => setIsFullscreen(true)}
+              onImageLoad={handleImageLoad}
             />
           )}
+          {isVideo && (
+            <VideoPreview videoRef={splitVideoRef} transcodeProgress={transcodeProgress} isFullscreen={false} />
+          )}
+          {isPdf && (
+            <PdfPreview pdfPreviewUrl={pdfPreviewUrl} fileName={asset.fileName} isFullscreen={false} />
+          )}
           {isDocument && (
-            <div
-              ref={documentScrollRef}
-              className={`w-full h-full overflow-auto bg-background text-foreground ${
-                isFullscreen ? "" : "max-h-[40vh] md:max-h-[90vh]"
-              }`}
-            >
-              {documentPreviewStatus === "loading" && (
-                <div className="h-full min-h-[260px] flex items-center justify-center text-sm text-muted-foreground">
-                  Loading preview…
-                </div>
-              )}
-              {documentPreviewStatus === "error" && (
-                <div className="h-full min-h-[260px] flex items-center justify-center text-sm text-muted-foreground">
-                  Preview could not be loaded
-                </div>
-              )}
-              {documentPreview && (
-                <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-border/20 bg-background/95 px-5 py-3 backdrop-blur">
-                  <div className="min-w-0">
-                    <p className="text-xs font-medium text-muted-foreground">
-                      {isEditingDocument ? "Editing" : "Previewing"} {getFileCategoryLabel(fileCategory).toLowerCase()}
-                      {isFullscreen ? " — fullscreen" : ""}
-                    </p>
-                    {saveStatus === "error" && <p className="text-xs text-red-400 mt-0.5">Could not save changes</p>}
-                  </div>
-                  <div className="flex flex-wrap items-center justify-end gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setIsFullscreen(!isFullscreen)}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border/30 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
-                    title={isFullscreen ? "Exit fullscreen" : "View fullscreen"}
-                  >
-                    {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
-                    <span className="hidden sm:inline">{isFullscreen ? "Exit" : "Fullscreen"}</span>
-                  </button>
-                  {isFullscreen && (
-                    <button
-                      type="button"
-                      onClick={() => { setIsFullscreen(false); onClose(); }}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border/30 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
-                      title="Close"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                  {canEdit && isEditableDocument && (
-                    <div className="flex flex-wrap justify-end gap-2">
-                      {isEditingDocument ? (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditorText(originalDocumentText);
-                              setIsEditingDocument(false);
-                              setSaveStatus("idle");
-                            }}
-                            className="px-3 py-1.5 rounded-lg border border-border/30 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
-                          >
-                            Cancel
-                          </button>
-                          <button
-                            type="button"
-                            onClick={saveDocumentContent}
-                            disabled={!hasDocumentEdits || saveStatus === "saving"}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-primary text-[#060e20] text-xs font-semibold disabled:opacity-50 transition-opacity"
-                          >
-                            <Save className="w-3.5 h-3.5" />
-                            {saveStatus === "saving" ? "Saving…" : "Save"}
-                          </button>
-                        </>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditorText(originalDocumentText);
-                            setIsEditingDocument(true);
-                            setSaveStatus("idle");
-                          }}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border/30 text-xs text-foreground hover:bg-accent transition-all"
-                        >
-                          <Pencil className="w-3.5 h-3.5" />
-                          Edit
-                        </button>
-                      )}
-                    </div>
-                  )}
-                  </div>
-                </div>
-              )}
-              <div className="p-5">
-              {documentPreview?.kind === "text" && isEditingDocument && (
-                <textarea
-                  value={editorText}
-                  onChange={(e) => {
-                    setEditorText(e.target.value);
-                    if (saveStatus === "error") setSaveStatus("idle");
-                  }}
-                  className="min-h-[360px] w-full resize-y rounded-xl border border-border/30 bg-muted/20 p-4 font-mono text-sm leading-6 text-foreground outline-hidden focus:border-brand-primary/70 focus:ring-2 focus:ring-brand-primary/20"
-                  spellCheck={false}
-                />
-              )}
-              {documentPreview?.kind === "text" && !isEditingDocument && (
-                <pre className="whitespace-pre-wrap break-words text-sm leading-6 font-mono">{documentPreview.text}</pre>
-              )}
-              {documentPreview?.kind === "markdown" && isEditingDocument && (
-                <textarea
-                  value={editorText}
-                  onChange={(e) => {
-                    setEditorText(e.target.value);
-                    if (saveStatus === "error") setSaveStatus("idle");
-                  }}
-                  className="min-h-[360px] w-full resize-y rounded-xl border border-border/30 bg-muted/20 p-4 font-mono text-sm leading-6 text-foreground outline-hidden focus:border-brand-primary/70 focus:ring-2 focus:ring-brand-primary/20"
-                  spellCheck={false}
-                />
-              )}
-              {documentPreview?.kind === "markdown" && !isEditingDocument && (
-                <div className="text-sm leading-6 [&_h1]:text-2xl [&_h1]:font-bold [&_h2]:text-xl [&_h2]:font-bold [&_h3]:font-semibold [&_p]:mb-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_pre]:overflow-auto [&_pre]:rounded-xl [&_pre]:bg-muted [&_pre]:p-3">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{documentPreview.text}</ReactMarkdown>
-                </div>
-              )}
-              {documentPreview?.kind === "word" && (
-                <div
-                  className="text-sm leading-6 [&_h1]:text-2xl [&_h1]:font-bold [&_h2]:text-xl [&_h2]:font-bold [&_p]:mb-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5"
-                  dangerouslySetInnerHTML={{ __html: documentPreview.html }}
-                />
-              )}
-              {documentPreview?.kind === "excel" && (
-                <div className="space-y-3">
-                  <div className="flex gap-2 overflow-x-auto pb-1">
-                    {documentPreview.sheets.map((sheet, index) => (
-                      <button
-                        key={sheet.name}
-                        type="button"
-                        onClick={() => setActiveSheetIndex(index)}
-                        className={`px-3 py-1.5 rounded-lg text-xs shrink-0 ${
-                          activeSheetIndex === index ? "bg-brand-primary text-[#060e20]" : "bg-muted text-muted-foreground"
-                        }`}
-                      >
-                        {sheet.name}
-                      </button>
-                    ))}
-                  </div>
-                  <div className="overflow-auto rounded-xl border border-border/20">
-                    <table className="min-w-full border-collapse text-xs">
-                      <tbody>
-                        {(documentPreview.sheets[activeSheetIndex]?.rows ?? []).map((row, rowIndex) => (
-                          <tr key={rowIndex} className={rowIndex === 0 ? "bg-muted/70" : "odd:bg-muted/20"}>
-                            {row.map((cell, cellIndex) => (
-                              <td key={cellIndex} className="border border-border/10 px-2 py-1.5 max-w-[220px] truncate">
-                                {cell}
-                              </td>
-                            ))}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-              </div>
-            </div>
+            <DocumentPreview
+              scrollRef={documentScrollRef}
+              isFullscreen={isFullscreen}
+              documentPreviewStatus={documentPreviewStatus}
+              documentPreview={documentPreview}
+              documentTypeLabel={getFileCategoryLabel(fileCategory).toLowerCase()}
+              isEditingDocument={isEditingDocument}
+              saveStatus={saveStatus}
+              canEdit={canEdit}
+              isEditableDocument={isEditableDocument}
+              hasDocumentEdits={hasDocumentEdits}
+              editorText={editorText}
+              onEditorTextChange={handleEditorTextChange}
+              activeSheetIndex={activeSheetIndex}
+              onActiveSheetIndexChange={setActiveSheetIndex}
+              onToggleFullscreen={() => setIsFullscreen(!isFullscreen)}
+              onCloseFullscreen={() => { setIsFullscreen(false); onClose(); }}
+              onStartEditing={() => {
+                setEditorText(originalDocumentText);
+                setIsEditingDocument(true);
+                setSaveStatus("idle");
+              }}
+              onCancelEditing={() => {
+                setEditorText(originalDocumentText);
+                setIsEditingDocument(false);
+                setSaveStatus("idle");
+              }}
+              onSave={saveDocumentContent}
+            />
           )}
           {!isImage && !isVideo && !isPdf && !["word", "excel", "text", "markdown"].includes(fileCategory) && (
             <div className="flex flex-col items-center justify-center gap-4 text-muted-foreground">
