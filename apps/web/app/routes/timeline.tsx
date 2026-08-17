@@ -1,13 +1,14 @@
 import type { MetaFunction } from "react-router";
 import { useNavigate } from "react-router";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CalendarDays, CheckSquare, ChevronDown, Film, ImageIcon, ListTodo, Play, RefreshCw, Square, Tag as TagIcon, Trash2, X, Zap } from "lucide-react";
+import { CalendarDays, CheckSquare, ImageIcon, Play, Square, X, Zap } from "lucide-react";
 import { ConfirmDialog } from "~/components/ConfirmDialog";
 import { MediaAssetViewer } from "~/components/MediaAssetViewer";
 import { CompressDialog } from "~/components/CompressDialog";
 import { TagDialog } from "~/components/TagDialog";
 import { RemoveTagsDialog } from "~/components/RemoveTagsDialog";
 import { TimelineHeader } from "~/components/timeline/TimelineHeader";
+import { TimelineSelectionBar } from "~/components/timeline/TimelineSelectionBar";
 import { createGraphQLClient, getApiUrl, getAuthToken } from "~/lib/api";
 import { formatBytes, formatDuration } from "~/lib/format";
 import { monthKeyOf, monthShortLabel, monthLabel } from "~/lib/date";
@@ -151,8 +152,6 @@ export default function Timeline() {
   });
   const [showZoomMenu, setShowZoomMenu] = useState(false);
   const zoomMenuRef = useRef<HTMLDivElement>(null);
-  const [showActionsMenu, setShowActionsMenu] = useState(false);
-  const actionsMenuRef = useRef<HTMLDivElement>(null);
 
   const gridRef = useRef<HTMLDivElement>(null);
 
@@ -336,18 +335,6 @@ export default function Timeline() {
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [showZoomMenu]);
-
-  // Close the mobile actions dropdown on outside click
-  useEffect(() => {
-    if (!showActionsMenu) return;
-    const handler = (e: MouseEvent) => {
-      if (actionsMenuRef.current && !actionsMenuRef.current.contains(e.target as Node)) {
-        setShowActionsMenu(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [showActionsMenu]);
 
   const { handleThumbError, handleRegenerateThumbnails } = useThumbnailRefresh({
     sections,
@@ -628,116 +615,17 @@ export default function Timeline() {
 
       {/* ── Selection action bar — full bar on desktop, dropdown on mobile ── */}
       {selectionMode && (
-        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-card/95 backdrop-blur-md border border-border/30 shadow-ambient max-w-[95vw]">
-          <span className="text-xs font-manrope font-semibold px-1.5 whitespace-nowrap">
-            {selectedIds.size} selected
-          </span>
-
-          {/* Desktop: inline actions */}
-          <div className="hidden md:flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={() => { tagActions.setTagTargets(selectedAssets); tagActions.setIsTagDialogOpen(true); }}
-              disabled={selectedIds.size === 0}
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-40 transition-all whitespace-nowrap"
-            >
-              <TagIcon className="w-3.5 h-3.5" /> Tags
-            </button>
-            <button
-              type="button"
-              onClick={() => { tagActions.setTagTargets(selectedAssets); tagActions.setIsRemoveTagsDialogOpen(true); }}
-              disabled={selectedIds.size === 0}
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-40 transition-all whitespace-nowrap"
-              title="Remove tags from selected items"
-            >
-              <TagIcon className="w-3.5 h-3.5" /> Untag
-            </button>
-            <button
-              type="button"
-              onClick={() => assetActions.setIsCompressDialogOpen(true)}
-              disabled={selectedIds.size === 0}
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-40 transition-all whitespace-nowrap"
-            >
-              <ListTodo className="w-3.5 h-3.5" /> Compress
-            </button>
-            <button
-              type="button"
-              onClick={() => void assetActions.handleTranscode()}
-              disabled={selectedVideos.length === 0}
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-40 transition-all whitespace-nowrap"
-              title="Transcode selected videos to web format"
-            >
-              <Film className="w-3.5 h-3.5" /> Transcode{selectedVideos.length > 0 ? ` (${selectedVideos.length})` : ""}
-            </button>
-            <button
-              type="button"
-              onClick={() => void handleRegenerateThumbnails()}
-              disabled={selectedIds.size === 0}
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-40 transition-all whitespace-nowrap"
-              title="Regenerate thumbnails for selected items"
-            >
-              <RefreshCw className="w-3.5 h-3.5" /> Thumbnails
-            </button>
-            <button
-              type="button"
-              onClick={() => assetActions.setShowDeleteConfirm(true)}
-              disabled={selectedIds.size === 0}
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs text-destructive hover:bg-destructive/10 disabled:opacity-40 transition-all whitespace-nowrap"
-              title="Move selected items to the Trash"
-            >
-              <Trash2 className="w-3.5 h-3.5" /> Delete
-            </button>
-          </div>
-
-          {/* Mobile: actions dropdown (opens upward) */}
-          <div className="relative md:hidden" ref={actionsMenuRef}>
-            <button
-              type="button"
-              onClick={() => setShowActionsMenu((p) => !p)}
-              disabled={selectedIds.size === 0}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-medium text-foreground bg-muted disabled:opacity-40 transition-all"
-            >
-              Actions
-              <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${showActionsMenu ? "" : "rotate-180"}`} />
-            </button>
-            {showActionsMenu && (
-              <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-48 rounded-2xl bg-card border border-border/30 shadow-ambient p-1.5 z-50">
-                {[
-                  { label: "Add tags", icon: TagIcon, disabled: selectedIds.size === 0, destructive: false, run: () => { tagActions.setTagTargets(selectedAssets); tagActions.setIsTagDialogOpen(true); } },
-                  { label: "Remove tags", icon: TagIcon, disabled: selectedIds.size === 0, destructive: false, run: () => { tagActions.setTagTargets(selectedAssets); tagActions.setIsRemoveTagsDialogOpen(true); } },
-                  { label: "Compress", icon: ListTodo, disabled: selectedIds.size === 0, destructive: false, run: () => assetActions.setIsCompressDialogOpen(true) },
-                  { label: `Transcode${selectedVideos.length > 0 ? ` (${selectedVideos.length})` : ""}`, icon: Film, disabled: selectedVideos.length === 0, destructive: false, run: () => void assetActions.handleTranscode() },
-                  { label: "Regenerate thumbnails", icon: RefreshCw, disabled: selectedIds.size === 0, destructive: false, run: () => void handleRegenerateThumbnails() },
-                  { label: "Delete", icon: Trash2, disabled: selectedIds.size === 0, destructive: true, run: () => assetActions.setShowDeleteConfirm(true) },
-                ].map((item) => (
-                  <button
-                    key={item.label}
-                    type="button"
-                    onClick={() => { setShowActionsMenu(false); item.run(); }}
-                    disabled={item.disabled}
-                    className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-xl text-left text-xs disabled:opacity-40 transition-colors ${
-                      item.destructive
-                        ? "text-destructive hover:bg-destructive/10"
-                        : "text-muted-foreground hover:text-foreground hover:bg-accent"
-                    }`}
-                  >
-                    <item.icon className="w-3.5 h-3.5 shrink-0" />
-                    {item.label}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <button
-            type="button"
-            onClick={exitSelection}
-            className="p-1.5 rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
-            title="Exit selection"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
+        <TimelineSelectionBar
+          selectedCount={selectedIds.size}
+          selectedVideoCount={selectedVideos.length}
+          onAddTags={() => { tagActions.setTagTargets(selectedAssets); tagActions.setIsTagDialogOpen(true); }}
+          onRemoveTags={() => { tagActions.setTagTargets(selectedAssets); tagActions.setIsRemoveTagsDialogOpen(true); }}
+          onCompress={() => assetActions.setIsCompressDialogOpen(true)}
+          onTranscode={() => void assetActions.handleTranscode()}
+          onRegenerateThumbnails={() => void handleRegenerateThumbnails()}
+          onDelete={() => assetActions.setShowDeleteConfirm(true)}
+          onExit={exitSelection}
+        />
       )}
 
       {/* ── Toast ── */}
