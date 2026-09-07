@@ -6,6 +6,7 @@ import multipart from '@fastify/multipart';
 import fastifyStatic from '@fastify/static';
 import mercurius from 'mercurius';
 import { config } from './config.js';
+import { MAX_TEXT_CONTENT_BYTES } from './services/file-types.js';
 import { schema } from './graphql/schema/index.js';
 import { resolvers } from './graphql/resolvers/index.js';
 import { buildContext } from './graphql/context.js';
@@ -33,7 +34,8 @@ let cacheMaintenanceTimer: ReturnType<typeof setInterval> | null = null;
 
 const fastify = Fastify({
   logger: true,
-  trustProxy: true
+  trustProxy: true,
+  bodyLimit: MAX_TEXT_CONTENT_BYTES,
 });
 
 // Register plugins
