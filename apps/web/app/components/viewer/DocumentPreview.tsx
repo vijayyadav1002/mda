@@ -8,6 +8,38 @@ export type DocumentPreviewData =
   | { kind: "word"; html: string; messages: string[] }
   | { kind: "excel"; sheets: { name: string; rows: string[][] }[]; maxRows: number; maxCols: number };
 
+/**
+ * Copy must run in the same turn as the click. Raspberry Pi / LAN deploys are often
+ * HTTP or untrusted HTTPS: clipboard.writeText throws, and a fallback after await
+ * has already lost the user gesture so execCommand fails too.
+ */
+function copyWithExecCommand(text: string): boolean {
+  const el = document.createElement("textarea");
+  el.value = text;
+  el.setAttribute("readonly", "");
+  el.style.position = "fixed";
+  el.style.top = "0";
+  el.style.left = "0";
+  el.style.width = "1px";
+  el.style.height = "1px";
+  el.style.padding = "0";
+  el.style.border = "none";
+  el.style.outline = "none";
+  document.body.appendChild(el);
+  el.focus();
+  el.select();
+  el.setSelectionRange(0, text.length);
+  let ok = false;
+  try {
+    ok = document.execCommand("copy");
+  } catch {
+    ok = false;
+  } finally {
+    document.body.removeChild(el);
+  }
+  return ok;
+}
+
 interface DocumentPreviewProps {
   readonly scrollRef: React.RefObject<HTMLDivElement | null>;
   readonly isFullscreen: boolean;
@@ -68,14 +100,20 @@ export function DocumentPreview({
       ? documentPreview.truncated
       : false);
 
-  const handleCopyContent = useCallback(async () => {
+  const handleCopyContent = useCallback(() => {
     if (!canCopyContent || !textBody) return;
-    try {
-      await navigator.clipboard.writeText(textBody);
+    if (copyWithExecCommand(textBody)) {
       setCopyToast("Copied");
-    } catch {
-      setCopyToast("Couldn't copy");
+      return;
     }
+    if (!navigator.clipboard?.writeText) {
+      setCopyToast("Couldn't copy");
+      return;
+    }
+    void navigator.clipboard.writeText(textBody).then(
+      () => setCopyToast("Copied"),
+      () => setCopyToast("Couldn't copy"),
+    );
   }, [canCopyContent, textBody]);
 
   useEffect(() => {
@@ -91,7 +129,7 @@ export function DocumentPreview({
       if (!(e.metaKey || e.ctrlKey) || !e.shiftKey) return;
       if (e.key.toLowerCase() !== "c") return;
       e.preventDefault();
-      void handleCopyContent();
+      handleCopyContent();
     };
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
@@ -139,7 +177,7 @@ export function DocumentPreview({
           {isEditableDocument && documentPreviewStatus !== "error" && (
             <button
               type="button"
-              onClick={() => void handleCopyContent()}
+              onClick={handleCopyContent}
               disabled={!canCopyContent}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border/30 text-xs text-foreground hover:bg-accent transition-all disabled:opacity-50 disabled:pointer-events-none"
               title="Copy content (Ctrl/⌘⇧C)"
