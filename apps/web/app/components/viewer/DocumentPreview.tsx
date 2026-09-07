@@ -1,4 +1,5 @@
-import { Maximize2, Minimize2, Pencil, Save, X } from "lucide-react";
+import { Copy, Maximize2, Minimize2, Pencil, Save, X } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -50,6 +51,52 @@ export function DocumentPreview({
   onCancelEditing,
   onSave,
 }: Readonly<DocumentPreviewProps>) {
+  const [copyToast, setCopyToast] = useState<string | null>(null);
+
+  const textBody =
+    documentPreview?.kind === "text" || documentPreview?.kind === "markdown"
+      ? isEditingDocument
+        ? editorText
+        : documentPreview.text
+      : "";
+
+  const canCopyContent =
+    isEditableDocument &&
+    documentPreviewStatus !== "loading" &&
+    Boolean(textBody) &&
+    !(documentPreview?.kind === "text" || documentPreview?.kind === "markdown"
+      ? documentPreview.truncated
+      : false);
+
+  const handleCopyContent = useCallback(async () => {
+    if (!canCopyContent || !textBody) return;
+    try {
+      await navigator.clipboard.writeText(textBody);
+      setCopyToast("Copied");
+    } catch {
+      setCopyToast("Couldn't copy");
+    }
+  }, [canCopyContent, textBody]);
+
+  useEffect(() => {
+    if (!copyToast) return;
+    const timer = window.setTimeout(() => setCopyToast(null), 2500);
+    return () => window.clearTimeout(timer);
+  }, [copyToast]);
+
+  // Ctrl/Cmd+Shift+C — does not steal normal select-copy (Ctrl/Cmd+C)
+  useEffect(() => {
+    if (!isEditableDocument) return;
+    const handler = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || !e.shiftKey) return;
+      if (e.key.toLowerCase() !== "c") return;
+      e.preventDefault();
+      void handleCopyContent();
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [isEditableDocument, handleCopyContent]);
+
   return (
     <div
       ref={scrollRef}
@@ -57,22 +104,14 @@ export function DocumentPreview({
         isFullscreen ? "" : "max-h-[40vh] md:max-h-[90vh]"
       }`}
     >
-      {documentPreviewStatus === "loading" && (
-        <div className="h-full min-h-[260px] flex items-center justify-center text-sm text-muted-foreground">
-          Loading preview…
-        </div>
-      )}
-      {documentPreviewStatus === "error" && (
-        <div className="h-full min-h-[260px] flex items-center justify-center text-sm text-muted-foreground">
-          Preview could not be loaded
-        </div>
-      )}
-      {documentPreview && (
+      {(documentPreview || (isEditableDocument && documentPreviewStatus === "loading")) && (
         <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-border/20 bg-background/95 px-5 py-3 backdrop-blur">
           <div className="min-w-0">
             <p className="text-xs font-medium text-muted-foreground">
-              {isEditingDocument ? "Editing" : "Previewing"} {documentTypeLabel}
-              {isFullscreen ? " — fullscreen" : ""}
+              {documentPreviewStatus === "loading"
+                ? `Loading ${documentTypeLabel}…`
+                : `${isEditingDocument ? "Editing" : "Previewing"} ${documentTypeLabel}`}
+              {isFullscreen && documentPreviewStatus !== "loading" ? " — fullscreen" : ""}
             </p>
             {saveStatus === "error" && <p className="text-xs text-red-400 mt-0.5">Could not save changes</p>}
           </div>
@@ -96,7 +135,20 @@ export function DocumentPreview({
               <X className="w-3.5 h-3.5" />
             </button>
           )}
-          {canEdit && isEditableDocument && (
+          {/* Copy: open text viewer only — same row/weight as Edit; hidden when binary/oversize/error */}
+          {isEditableDocument && documentPreviewStatus !== "error" && (
+            <button
+              type="button"
+              onClick={() => void handleCopyContent()}
+              disabled={!canCopyContent}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border/30 text-xs text-foreground hover:bg-accent transition-all disabled:opacity-50 disabled:pointer-events-none"
+              title="Copy content (Ctrl/⌘⇧C)"
+            >
+              <Copy className="w-3.5 h-3.5" />
+              Copy
+            </button>
+          )}
+          {canEdit && isEditableDocument && documentPreview && (
             <div className="flex flex-wrap justify-end gap-2">
               {isEditingDocument ? (
                 <>
@@ -130,6 +182,16 @@ export function DocumentPreview({
             </div>
           )}
           </div>
+        </div>
+      )}
+      {documentPreviewStatus === "loading" && (
+        <div className="h-full min-h-[260px] flex items-center justify-center text-sm text-muted-foreground">
+          Loading preview…
+        </div>
+      )}
+      {documentPreviewStatus === "error" && (
+        <div className="h-full min-h-[260px] flex items-center justify-center text-sm text-muted-foreground">
+          Preview could not be loaded
         </div>
       )}
       <div className="p-5">
@@ -197,6 +259,20 @@ export function DocumentPreview({
         </div>
       )}
       </div>
+
+      {copyToast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[70] flex items-center gap-3 px-4 py-2.5 rounded-2xl bg-card/95 backdrop-blur-md border border-border/30 shadow-ambient">
+          <span className="text-xs text-foreground whitespace-nowrap">{copyToast}</span>
+          <button
+            type="button"
+            onClick={() => setCopyToast(null)}
+            className="p-0.5 text-muted-foreground hover:text-foreground transition-colors"
+            aria-label="Dismiss"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

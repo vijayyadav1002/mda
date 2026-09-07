@@ -4,7 +4,12 @@ import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { config } from '../config.js';
 import { db } from '../db/index.js';
-import { classifyFile } from '../services/file-types.js';
+import {
+  classifyFile,
+  isTextLikeFile,
+  looksLikeBinary,
+  MAX_TEXT_CONTENT_BYTES,
+} from '../services/file-types.js';
 
 async function authenticateRequest(request: any) {
   const fastify = request.server;
@@ -62,6 +67,22 @@ async function requirePreviewAsset(request: any, reply: any) {
   };
 }
 
+async function readUtf8TextFile(filePath: string, reply: any): Promise<string | null> {
+  const stat = await fs.promises.stat(filePath);
+  if (stat.size > MAX_TEXT_CONTENT_BYTES) {
+    reply.code(413).send({ error: 'File is too large to preview or copy (max 2 MB)' });
+    return null;
+  }
+
+  const buffer = await fs.promises.readFile(filePath);
+  if (looksLikeBinary(buffer)) {
+    reply.code(415).send({ error: 'File appears to be binary and cannot be read as text' });
+    return null;
+  }
+
+  return buffer.toString('utf8');
+}
+
 export default async function filePreviewRoutes(fastify: FastifyInstance) {
   fastify.get('/file-preview/:id/pdf', { config: { rateLimit: { max: 300, timeWindow: '1 minute' } } }, async (request, reply) => {
     const target = await requirePreviewAsset(request, reply);
@@ -91,24 +112,18 @@ export default async function filePreviewRoutes(fastify: FastifyInstance) {
     const target = await requirePreviewAsset(request, reply);
     if (!target) return;
 
-    const MAX_TEXT_BYTES = 1024 * 1024;
     const MAX_ROWS = 200;
     const MAX_COLS = 40;
 
-    if (target.classification.category === 'text' || target.classification.category === 'markdown') {
-      const handle = await fs.promises.open(target.filePath, 'r');
-      try {
-        const buffer = Buffer.alloc(MAX_TEXT_BYTES + 1);
-        const { bytesRead } = await handle.read(buffer, 0, MAX_TEXT_BYTES + 1, 0);
-        const truncated = bytesRead > MAX_TEXT_BYTES;
-        return reply.send({
-          kind: target.classification.category,
-          text: buffer.subarray(0, Math.min(bytesRead, MAX_TEXT_BYTES)).toString('utf8'),
-          truncated,
-        });
-      } finally {
-        await handle.close();
-      }
+    if (isTextLikeFile(target.classification)) {
+      const text = await readUtf8TextFile(target.filePath, reply);
+      if (text === null) return;
+      const kind = target.classification.category === 'markdown' ? 'markdown' : 'text';
+      return reply.send({
+        kind,
+        text,
+        truncated: false,
+      });
     }
 
     if (target.classification.category === 'word') {
@@ -159,10 +174,9 @@ export default async function filePreviewRoutes(fastify: FastifyInstance) {
       return reply.code(400).send({ error: 'Request body must include text' });
     }
 
-    const MAX_TEXT_BYTES = 1024 * 1024;
     const encoded = Buffer.from(body.text, 'utf8');
-    if (encoded.length > MAX_TEXT_BYTES) {
-      return reply.code(413).send({ error: 'Edited content is too large' });
+    if (encoded.length > MAX_TEXT_CONTENT_BYTES) {
+      return reply.code(413).send({ error: 'Edited content is too large (max 2 MB)' });
     }
 
     const currentStat = await fs.promises.stat(target.filePath);
