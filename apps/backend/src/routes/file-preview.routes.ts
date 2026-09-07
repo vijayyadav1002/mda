@@ -70,7 +70,9 @@ async function requirePreviewAsset(request: any, reply: any) {
 async function readUtf8TextFile(filePath: string, reply: any): Promise<string | null> {
   const stat = await fs.promises.stat(filePath);
   if (stat.size > MAX_TEXT_CONTENT_BYTES) {
-    reply.code(413).send({ error: 'File is too large to preview or copy (max 2 MB)' });
+    reply.code(413).send({
+      error: `File is too large to preview or copy (max ${Math.round(MAX_TEXT_CONTENT_BYTES / (1024 * 1024))} MB)`,
+    });
     return null;
   }
 
@@ -176,7 +178,9 @@ export default async function filePreviewRoutes(fastify: FastifyInstance) {
 
     const encoded = Buffer.from(body.text, 'utf8');
     if (encoded.length > MAX_TEXT_CONTENT_BYTES) {
-      return reply.code(413).send({ error: 'Edited content is too large (max 2 MB)' });
+      return reply.code(413).send({
+        error: `Edited content is too large (max ${Math.round(MAX_TEXT_CONTENT_BYTES / (1024 * 1024))} MB)`,
+      });
     }
 
     const currentStat = await fs.promises.stat(target.filePath);

@@ -11,8 +11,8 @@ export interface FileClassification {
   canCompress: boolean;
 }
 
-/** Soft cap for text preview / clipboard copy (~2 MB). */
-export const MAX_TEXT_CONTENT_BYTES = 2 * 1024 * 1024;
+/** Safety cap for text preview / copy / save (50 MB). Not a library storage quota. */
+export const MAX_TEXT_CONTENT_BYTES = 50 * 1024 * 1024;
 
 const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.heic', '.gif', '.webp', '.bmp']);
 const VIDEO_EXTENSIONS = new Set(['.mp4', '.mov', '.avi', '.mkv', '.webm', '.m4v']);

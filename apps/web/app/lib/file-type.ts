@@ -2,8 +2,8 @@ import type { MediaAsset } from "~/lib/types";
 
 export type FileCategory = "image" | "video" | "pdf" | "word" | "excel" | "text" | "markdown" | "other";
 
-/** Soft cap aligned with backend MAX_TEXT_CONTENT_BYTES (~2 MB). */
-export const MAX_TEXT_CONTENT_BYTES = 2 * 1024 * 1024;
+/** Safety cap aligned with backend MAX_TEXT_CONTENT_BYTES (50 MB). Preview / copy / save only — not a library storage quota. */
+export const MAX_TEXT_CONTENT_BYTES = 50 * 1024 * 1024;
 
 const TEXT_LIKE_EXTENSIONS = new Set([
   "txt",
