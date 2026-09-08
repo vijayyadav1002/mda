@@ -52,10 +52,6 @@ export function useTrashItems(navigate: NavigateFunction) {
   const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const stored = localStorage.getItem("darkMode");
-      document.documentElement.classList.toggle("dark", stored !== null ? stored === "true" : true);
-    }
     const token = getAuthToken();
     if (!token) {
       navigate("/login");

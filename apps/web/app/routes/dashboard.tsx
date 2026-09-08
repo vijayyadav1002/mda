@@ -30,6 +30,7 @@ import { useSearch } from "~/hooks/useSearch";
 import { useCompressQueue } from "~/hooks/useCompressQueue";
 import { useFileCrud } from "~/hooks/useFileCrud";
 import { useFolderCrud } from "~/hooks/useFolderCrud";
+import { useDarkMode } from "~/hooks/useDarkMode";
 import { Sidebar } from "~/components/Sidebar";
 import { MobileNav } from "~/components/MobileNav";
 import { TagFilterMenu } from "~/components/TagFilterMenu";
@@ -141,13 +142,7 @@ export default function Dashboard() {
     handleChangePassword,
   } = usePasswordChange();
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
-  const [darkMode, setDarkMode] = useState(() => {
-    if (typeof window !== "undefined") {
-      const stored = localStorage.getItem("darkMode");
-      return stored !== null ? stored === "true" : true;
-    }
-    return true;
-  });
+  const { darkMode, setDarkMode } = useDarkMode();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isGeneratingThumbnails, setIsGeneratingThumbnails] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -233,17 +228,6 @@ export default function Dashboard() {
       setSearchParams(next, { replace: true });
     }
   }, [searchParams, setSearchParams]);
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem("darkMode", darkMode.toString());
-      if (darkMode) {
-        document.documentElement.classList.add("dark");
-      } else {
-        document.documentElement.classList.remove("dark");
-      }
-    }
-  }, [darkMode]);
 
   useEffect(() => {
     const token = getAuthToken();

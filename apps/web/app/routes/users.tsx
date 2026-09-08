@@ -1,8 +1,8 @@
-import { useState, useEffect } from "react";
 import { useNavigate } from "react-router";
 import { clearAuthToken } from "~/lib/api";
 import { useActiveQueueCount } from "~/lib/useActiveQueueCount";
 import { useUsers } from "~/hooks/useUsers";
+import { useDarkMode } from "~/hooks/useDarkMode";
 import { SidebarNavItem } from "~/components/SidebarNavItem";
 import { UserTable } from "~/components/UserTable";
 import { CreateUserDialog } from "~/components/CreateUserDialog";
@@ -10,7 +10,6 @@ import { EditUserRoleDialog } from "~/components/EditUserRoleDialog";
 import { ResetPasswordDialog } from "~/components/ResetPasswordDialog";
 import { ChangeMyPasswordDialog } from "~/components/ChangeMyPasswordDialog";
 import { ConfirmDialog } from "~/components/ConfirmDialog";
-import { SearchBar } from "~/components/SearchBar";
 import {
   UserPlus, Trash2, Key, ArrowLeft,
   Users, Folder, ListTodo, ScrollText,
@@ -18,32 +17,14 @@ import {
 } from "lucide-react";
 
 export default function UsersPage() {
-  const [darkMode, setDarkMode] = useState(() => {
-    if (typeof window !== "undefined") {
-      const stored = localStorage.getItem("darkMode");
-      return stored !== null ? stored === "true" : true;
-    }
-    return true;
-  });
+  const { darkMode, setDarkMode } = useDarkMode();
   const navigate = useNavigate();
   const activeQueueCount = useActiveQueueCount();
   const u = useUsers(navigate);
 
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem("darkMode", darkMode.toString());
-      if (darkMode) document.documentElement.classList.add("dark");
-      else document.documentElement.classList.remove("dark");
-    }
-  }, [darkMode]);
-
   const handleLogout = () => {
     clearAuthToken();
     navigate("/login");
-  };
-
-  const handleSearch = (_term: string, _mediaType: string) => {
-    navigate("/dashboard");
   };
 
   if (u.loading) {
@@ -141,19 +122,14 @@ export default function UsersPage() {
       {/* ── Main content ── */}
       <div className="flex-1 md:ml-64 min-h-screen">
         {/* Toolbar */}
-        <div className="sticky top-0 z-20 bg-background/80 backdrop-blur-xs px-6 md:px-10 py-4 flex flex-col md:flex-row md:items-center gap-3">
+        <div className="sticky top-0 z-20 bg-background/80 backdrop-blur-xs px-6 md:px-10 py-4">
           <button
             type="button"
             onClick={() => navigate("/dashboard")}
-            className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors shrink-0"
+            className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
             <ArrowLeft className="w-4 h-4" /> Dashboard
           </button>
-          <SearchBar
-            onSearch={handleSearch}
-            onClear={() => {}}
-            className="w-full md:max-w-xl md:ml-auto"
-          />
         </div>
 
         {/* Hero */}

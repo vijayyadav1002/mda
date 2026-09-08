@@ -29,3 +29,6 @@ entities.json
 
 # Superpowers subagent-driven-development workspace
 .superpowers/
+.engram/
+.grok
+.engramignore

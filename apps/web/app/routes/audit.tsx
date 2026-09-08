@@ -3,6 +3,7 @@ import { useNavigate } from "react-router";
 import { createGraphQLClient, getAuthToken, clearAuthToken } from "~/lib/api";
 import { useActiveQueueCount } from "~/lib/useActiveQueueCount";
 import { useAuditLogs } from "~/hooks/useAuditLogs";
+import { useDarkMode } from "~/hooks/useDarkMode";
 import { SidebarNavItem } from "~/components/SidebarNavItem";
 import { AuditFilterBar } from "~/components/AuditFilterBar";
 import { AuditLogTable } from "~/components/AuditLogTable";
@@ -50,24 +51,10 @@ export default function AuditPage() {
   const [clearResult, setClearResult] = useState("");
   const [clearing, setClearing] = useState(false);
 
-  const [darkMode, setDarkMode] = useState(() => {
-    if (typeof window !== "undefined") {
-      const stored = localStorage.getItem("darkMode");
-      return stored !== null ? stored === "true" : true;
-    }
-    return true;
-  });
+  const { darkMode, setDarkMode } = useDarkMode();
 
   const navigate = useNavigate();
   const activeQueueCount = useActiveQueueCount();
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem("darkMode", darkMode.toString());
-      if (darkMode) document.documentElement.classList.add("dark");
-      else document.documentElement.classList.remove("dark");
-    }
-  }, [darkMode]);
 
   useEffect(() => {
     const token = getAuthToken();

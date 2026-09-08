@@ -1,8 +1,6 @@
-const STATIC_CACHE = "mda-static-v1";
-const RUNTIME_CACHE = "mda-runtime-v1";
+const STATIC_CACHE = "mda-static-v2";
+const RUNTIME_CACHE = "mda-runtime-v2";
 const STATIC_ASSETS = [
-  "/",
-  "/login",
   "/offline.html",
   "/manifest.webmanifest",
   "/icons/icon-192.svg",
