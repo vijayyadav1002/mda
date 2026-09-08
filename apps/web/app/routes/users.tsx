@@ -1,8 +1,8 @@
-import { useState, useEffect } from "react";
 import { useNavigate } from "react-router";
 import { clearAuthToken } from "~/lib/api";
 import { useActiveQueueCount } from "~/lib/useActiveQueueCount";
 import { useUsers } from "~/hooks/useUsers";
+import { useDarkMode } from "~/hooks/useDarkMode";
 import { SidebarNavItem } from "~/components/SidebarNavItem";
 import { UserTable } from "~/components/UserTable";
 import { CreateUserDialog } from "~/components/CreateUserDialog";
@@ -18,24 +18,10 @@ import {
 } from "lucide-react";
 
 export default function UsersPage() {
-  const [darkMode, setDarkMode] = useState(() => {
-    if (typeof window !== "undefined") {
-      const stored = localStorage.getItem("darkMode");
-      return stored !== null ? stored === "true" : true;
-    }
-    return true;
-  });
+  const { darkMode, setDarkMode } = useDarkMode();
   const navigate = useNavigate();
   const activeQueueCount = useActiveQueueCount();
   const u = useUsers(navigate);
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem("darkMode", darkMode.toString());
-      if (darkMode) document.documentElement.classList.add("dark");
-      else document.documentElement.classList.remove("dark");
-    }
-  }, [darkMode]);
 
   const handleLogout = () => {
     clearAuthToken();

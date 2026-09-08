@@ -16,3 +16,4 @@ media-files
 **/.env
 **/.env.local
 **/.env.*.local
+package-lock.json

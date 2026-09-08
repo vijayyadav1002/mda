@@ -81,11 +81,6 @@ export default function Timeline() {
   /* ── Bootstrapping ── */
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const stored = localStorage.getItem("darkMode");
-      const dark = stored !== null ? stored === "true" : true;
-      document.documentElement.classList.toggle("dark", dark);
-    }
     const token = getAuthToken();
     if (!token) {
       navigate("/login");

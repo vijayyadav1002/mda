@@ -6,7 +6,8 @@ import {
   ScrollRestoration,
 } from "react-router";
 import type { LinksFunction } from "react-router";
-import stylesheet from "~/styles/globals.css?url";
+import { DarkModeProvider, useDarkMode } from "~/hooks/useDarkMode";
+import "~/styles/globals.css";
 
 export const links: LinksFunction = () => [
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
@@ -15,7 +16,6 @@ export const links: LinksFunction = () => [
     rel: "stylesheet",
     href: "https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Inter:wght@400;500;600&display=swap",
   },
-  { rel: "stylesheet", href: stylesheet },
   { rel: "manifest", href: "/manifest.webmanifest" },
   { rel: "icon", href: "/icons/icon-192.svg", type: "image/svg+xml" },
   { rel: "apple-touch-icon", href: "/icons/icon-192.svg" },
@@ -23,7 +23,16 @@ export const links: LinksFunction = () => [
 
 export function Layout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <DarkModeProvider>
+      <Document>{children}</Document>
+    </DarkModeProvider>
+  );
+}
+
+function Document({ children }: { children: React.ReactNode }) {
+  const { darkMode } = useDarkMode();
+  return (
+    <html lang="en" className={darkMode ? "dark" : undefined}>
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -33,19 +42,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
         <Meta />
         <Links />
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-              try {
-                const stored = localStorage.getItem('darkMode');
-                const darkMode = stored !== null ? stored === 'true' : true;
-                if (darkMode) {
-                  document.documentElement.classList.add('dark');
-                }
-              } catch (e) {}
-            `,
-          }}
-        />
       </head>
       <body className="antialiased">
         {children}

@@ -44,9 +44,6 @@ export default function Login() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Force dark mode on login page
-    document.documentElement.classList.add("dark");
-
     const checkAdminExists = async () => {
       try {
         const client = createGraphQLClient();
