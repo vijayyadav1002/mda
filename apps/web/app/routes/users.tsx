@@ -10,7 +10,6 @@ import { EditUserRoleDialog } from "~/components/EditUserRoleDialog";
 import { ResetPasswordDialog } from "~/components/ResetPasswordDialog";
 import { ChangeMyPasswordDialog } from "~/components/ChangeMyPasswordDialog";
 import { ConfirmDialog } from "~/components/ConfirmDialog";
-import { SearchBar } from "~/components/SearchBar";
 import {
   UserPlus, Trash2, Key, ArrowLeft,
   Users, Folder, ListTodo, ScrollText,
@@ -26,10 +25,6 @@ export default function UsersPage() {
   const handleLogout = () => {
     clearAuthToken();
     navigate("/login");
-  };
-
-  const handleSearch = (_term: string, _mediaType: string) => {
-    navigate("/dashboard");
   };
 
   if (u.loading) {
@@ -127,19 +122,14 @@ export default function UsersPage() {
       {/* ── Main content ── */}
       <div className="flex-1 md:ml-64 min-h-screen">
         {/* Toolbar */}
-        <div className="sticky top-0 z-20 bg-background/80 backdrop-blur-xs px-6 md:px-10 py-4 flex flex-col md:flex-row md:items-center gap-3">
+        <div className="sticky top-0 z-20 bg-background/80 backdrop-blur-xs px-6 md:px-10 py-4">
           <button
             type="button"
             onClick={() => navigate("/dashboard")}
-            className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors shrink-0"
+            className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
             <ArrowLeft className="w-4 h-4" /> Dashboard
           </button>
-          <SearchBar
-            onSearch={handleSearch}
-            onClear={() => {}}
-            className="w-full md:max-w-xl md:ml-auto"
-          />
         </div>
 
         {/* Hero */}
