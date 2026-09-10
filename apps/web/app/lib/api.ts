@@ -23,7 +23,12 @@ function hasUnauthorizedGraphQLError(errors: { message: string }[] | undefined) 
 }
 
 export function createGraphQLClient(_token?: string) {
-  return new GraphQLClient(`${getApiUrl()}/graphql`, {
+  const apiUrl = getApiUrl();
+  // graphql-request 7 does `new URL(url)` and rejects relative `/graphql`.
+  const graphqlUrl = !apiUrl && typeof window !== 'undefined'
+    ? `${window.location.origin}/graphql`
+    : `${apiUrl}/graphql`;
+  return new GraphQLClient(graphqlUrl, {
     credentials: 'include',
     fetch: async (input, init) => {
       const response = await fetch(input, init);
