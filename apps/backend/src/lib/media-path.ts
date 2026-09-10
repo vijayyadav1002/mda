@@ -19,3 +19,13 @@ export function resolveWithinRoot(root: string, candidate: string): string | nul
   if (rel === '..' || rel.startsWith('..' + path.sep) || path.isAbsolute(rel)) return null;
   return resolvedCandidate;
 }
+
+export function joinWithinRoot(root: string, ...segments: string[]): string {
+  const resolvedRoot = path.resolve(root);
+  const joined = path.join(resolvedRoot, ...segments);
+  const rel = path.relative(resolvedRoot, joined);
+  if (rel === '..' || rel.startsWith('..' + path.sep) || path.isAbsolute(rel)) {
+    throw new Error('Path escapes allowed root');
+  }
+  return joined;
+}
