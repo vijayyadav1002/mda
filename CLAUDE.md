@@ -9,6 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 npm install          # install all workspace deps
 npm run dev          # start all apps in dev mode
 npm run build        # build all apps
+npm test             # run backend tests (tsx --test via Turbo)
 npm run lint         # root script exists, but package lint scripts are not currently wired up
 npm run clean        # clean build artifacts
 npm run db:migrate   # run database migrations
@@ -28,6 +29,7 @@ npx turbo run build --filter=apps/web
 npm run dev    # tsx watch src/index.ts (hot-reload)
 npm run build  # tsc → dist/
 npm start      # production
+npm test       # tsx --test src/**/*.test.ts
 npm run db:migrate
 npm run db:seed
 ```
@@ -80,7 +82,7 @@ mda/
 
 **TypeScript**: Backend uses ESNext modules (`type: "module"` in package.json); frontend uses Vite ESM. Path alias `~/*` → `./app/*` in the web app.
 
-**Turbo caching**: `build` is cached; `dev`, `db:migrate`, `db:seed`, and `clean` are not cached (see `turbo.json`).
+**Turbo caching**: `build` is cached; `dev`, `db:migrate`, `db:seed`, `clean`, and `test` are not cached (see `turbo.json`).
 
 ## Docs to Consult
 
@@ -91,10 +93,10 @@ mda/
 
 ## Verification
 
-Current baseline verification is `npm run build` from the repository root.
+Current baseline verification is `npm run build` from the repository root. `npm test` is an additional gate (`tsx --test` in `@mda/backend` via Turbo).
 
 Notes:
-- There are no package-level `lint` or `test` scripts currently wired up. Do not claim lint/tests passed unless you add or run an actual script.
+- There are no package-level `lint` scripts currently wired up. Do not claim lint passed unless you add or run an actual script.
 - For backend changes, prefer the narrowest meaningful check first, usually `npm --workspace=@mda/backend run build`.
 - For frontend changes, prefer `npm --workspace=@mda/web run build`.
 - For GraphQL, auth, filesystem, media processing, migrations, queues, or cache behavior, verify with a focused runtime check when practical, not just TypeScript compilation.

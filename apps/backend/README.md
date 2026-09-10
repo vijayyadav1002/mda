@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- Node.js >= 18
+- Node.js >= 24
 - PostgreSQL >= 13
 - FFmpeg (for video processing)
 

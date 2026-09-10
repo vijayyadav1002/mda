@@ -40,7 +40,7 @@ mda/
 
 ## Prerequisites
 
-- Node.js >= 18.0.0
+- Node.js >= 24.0.0
 - PostgreSQL >= 13 (if running locally without Docker)
 - Redis (if running locally without Docker)
 - npm >= 10.9.0
