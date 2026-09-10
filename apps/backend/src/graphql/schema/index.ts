@@ -32,6 +32,7 @@ const rootSdl = `
   type Mutation {
     login(username: String!, password: String!): AuthPayload!
     createFirstAdmin(username: String!, password: String!): AuthPayload!
+    logout: Boolean!
     createUser(username: String!, password: String!, role: String!): User!
     updateUserRole(id: ID!, role: String!): User!
     deleteUser(id: ID!): Boolean!

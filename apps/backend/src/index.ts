@@ -9,7 +9,7 @@ import { config } from './config.js';
 import { MAX_TEXT_CONTENT_BYTES } from './services/file-types.js';
 import { schema } from './graphql/schema/index.js';
 import { resolvers } from './graphql/resolvers/index.js';
-import { buildContext } from './graphql/context.js';
+import { buildContext, type GraphQLContext } from './graphql/context.js';
 import { db } from './db/index.js';
 import { ensureAdminExists } from './services/auth.js';
 import { indexMediaLibrary } from './services/media-indexer/index.js';
@@ -32,6 +32,48 @@ import transcodeRoutes from './routes/transcode.routes.js';
 import uploadRoutes from './routes/upload.routes.js';
 import queueStateRoutes from './routes/queue-state.routes.js';
 import healthRoutes from './routes/health.routes.js';
+
+const PUBLIC_GRAPHQL_FIELDS = new Set(['login', 'hasAdminUser', 'createFirstAdmin']);
+
+function collectRootFieldNames(document: { definitions: ReadonlyArray<any> }): string[] {
+  const fragments = new Map<string, any>();
+  for (const def of document.definitions) {
+    if (def.kind === 'FragmentDefinition') {
+      fragments.set(def.name.value, def);
+    }
+  }
+
+  const names: string[] = [];
+  const seen = new Set<string>();
+
+  const walk = (selections: any[], visited: Set<string>) => {
+    for (const sel of selections) {
+      if (sel.kind === 'Field') {
+        const name = sel.name.value;
+        if (!seen.has(name)) {
+          seen.add(name);
+          names.push(name);
+        }
+      } else if (sel.kind === 'InlineFragment' && sel.selectionSet) {
+        walk(sel.selectionSet.selections, visited);
+      } else if (sel.kind === 'FragmentSpread') {
+        const fragName = sel.name.value;
+        if (visited.has(fragName)) continue;
+        visited.add(fragName);
+        const frag = fragments.get(fragName);
+        if (frag) walk(frag.selectionSet.selections, visited);
+      }
+    }
+  };
+
+  for (const def of document.definitions) {
+    if (def.kind === 'OperationDefinition') {
+      walk(def.selectionSet.selections, new Set());
+    }
+  }
+
+  return names;
+}
 
 let workerHandles: ReturnType<typeof startWorkers> | null = null;
 let cacheMaintenanceTimer: ReturnType<typeof setInterval> | null = null;
@@ -126,6 +168,26 @@ await fastify.register(mercurius, {
   resolvers,
   context: buildContext,
   graphiql: process.env.NODE_ENV !== 'production'
+});
+
+fastify.graphql.addHook<GraphQLContext>('preExecution', async function (_schema, document, context) {
+  const rootFields = collectRootFieldNames(document);
+  const requiresUser = rootFields.some(
+    (name) => name !== 'logout' && !PUBLIC_GRAPHQL_FIELDS.has(name)
+  );
+  if (requiresUser && !context.user) {
+    throw new Error('Unauthorized');
+  }
+
+  const isPublicOnly = rootFields.every((name) => PUBLIC_GRAPHQL_FIELDS.has(name));
+  if (context.user && !isPublicOnly && !rootFields.includes('logout')) {
+    const token = await context.reply.jwtSign({
+      id: context.user.id,
+      username: context.user.username,
+      role: context.user.role,
+    });
+    context.reply.setCookie(SESSION_COOKIE_NAME, token, sessionCookieOptions(context.request));
+  }
 });
 
 fastify.addHook('onRequest', async (request, reply) => {
