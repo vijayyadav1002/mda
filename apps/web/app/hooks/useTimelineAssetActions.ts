@@ -104,7 +104,8 @@ export function useTimelineAssetActions({
     try {
       const res = await fetch(`${apiUrl}/api/compress/enqueue`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ids: selectedAssets.map((a) => a.id), options }),
       });
       if (!res.ok) throw new Error(`Server error ${res.status}`);
@@ -121,7 +122,8 @@ export function useTimelineAssetActions({
     try {
       const res = await fetch(`${apiUrl}/api/transcode/enqueue`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ids: selectedVideos.map((a) => a.id) }),
       });
       if (!res.ok) {

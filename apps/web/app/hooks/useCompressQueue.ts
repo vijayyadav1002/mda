@@ -53,7 +53,7 @@ export function useCompressQueue({ user, currentPath, rootPath, loadDirectoryInt
     if (!user) return;
     const token = getAuthToken();
     if (!token) return;
-    fetch(`${API_URL}/api/queue-state`, { headers: { Authorization: `Bearer ${token}` } })
+    fetch(`${API_URL}/api/queue-state`, { credentials: "include" })
       .then(r => r.json())
       .then(({ queue }) => {
         if (!Array.isArray(queue) || queue.length === 0) return;
@@ -87,7 +87,7 @@ export function useCompressQueue({ user, currentPath, rootPath, loadDirectoryInt
     const token = getAuthToken();
     if (!token) return;
     const intervalId = setInterval(() => {
-      fetch(`${API_URL}/api/queue-state`, { headers: { Authorization: `Bearer ${token}` } })
+      fetch(`${API_URL}/api/queue-state`, { credentials: "include" })
         .then(r => r.json())
         .then(({ queue }) => {
           if (!Array.isArray(queue)) return;
@@ -114,7 +114,8 @@ export function useCompressQueue({ user, currentPath, rootPath, loadDirectoryInt
     try {
       const res = await fetch(`${API_URL}/api/compress/enqueue`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ids: assets.map(a => a.id), options }),
       });
       if (!res.ok) throw new Error(`Server error ${res.status}`);
@@ -141,7 +142,8 @@ export function useCompressQueue({ user, currentPath, rootPath, loadDirectoryInt
     if (!token || !user) return;
     fetch(`${API_URL}/api/queue-state`, {
       method: "PUT",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ queue: updatedQueue }),
     }).catch(() => {});
   }, [user]);
@@ -278,7 +280,8 @@ export function useCompressQueue({ user, currentPath, rootPath, loadDirectoryInt
     try {
       const res = await fetch(`${API_URL}/api/compress/cancel`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ jobId }),
       });
       if (!res.ok) throw new Error(`Server error ${res.status}`);

@@ -118,7 +118,6 @@ export function MediaAssetViewer({
       return;
     }
 
-    const token = getAuthToken();
     const controller = new AbortController();
     setDocumentPreviewStatus("loading");
     setDocumentPreview(null);
@@ -128,7 +127,7 @@ export function MediaAssetViewer({
     setSaveStatus("idle");
 
     fetch(`${apiUrl}/file-preview/${asset.id}/content`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      credentials: "include",
       signal: controller.signal,
     })
       .then((response) => {
@@ -297,8 +296,7 @@ export function MediaAssetViewer({
   const isEditableDocument = fileCategory === "text" || fileCategory === "markdown";
   const isDocument = ["text", "markdown", "word", "excel"].includes(fileCategory);
   const canFullscreen = isImage || isVideo || isPdf || isDocument;
-  const token = getAuthToken();
-  const pdfPreviewUrl = `${apiUrl}/file-preview/${asset.id}/pdf${token ? `?token=${encodeURIComponent(token)}` : ""}`;
+  const pdfPreviewUrl = `${apiUrl}/file-preview/${asset.id}/pdf`;
   const originalDocumentText =
     documentPreview?.kind === "text" || documentPreview?.kind === "markdown" ? documentPreview.text : "";
   const hasDocumentEdits = isEditableDocument && editorText !== originalDocumentText;
@@ -315,8 +313,8 @@ export function MediaAssetViewer({
     try {
       const response = await fetch(`${apiUrl}/file-preview/${asset.id}/content`, {
         method: "PUT",
+        credentials: "include",
         headers: {
-          Authorization: `Bearer ${authToken}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ text: editorText }),

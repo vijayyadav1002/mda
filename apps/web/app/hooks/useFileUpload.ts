@@ -49,7 +49,7 @@ export function useFileUpload({ currentPath, rootPath, loadDirectoryIntoCache }:
         await new Promise<void>((resolve, reject) => {
           const xhr = new XMLHttpRequest();
           xhr.open('POST', url);
-          xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+          xhr.withCredentials = true;
           xhr.upload.onprogress = (e) => {
             if (e.lengthComputable) {
               newProgress[file.name] = Math.round((e.loaded / e.total) * 100);

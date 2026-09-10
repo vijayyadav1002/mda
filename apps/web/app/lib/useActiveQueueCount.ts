@@ -17,7 +17,7 @@ export function useActiveQueueCount(): number {
     const fetchCount = async () => {
       try {
         const res = await fetch(`${apiUrl}/api/queue-state`, {
-          headers: { Authorization: `Bearer ${token}` },
+          credentials: "include",
         });
         if (!res.ok) return;
         const { queue } = await res.json();

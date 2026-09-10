@@ -252,7 +252,13 @@ export default function Dashboard() {
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      const client = createGraphQLClient();
+      await client.request(`mutation { logout }`);
+    } catch {
+      // cookie already missing/expired is fine
+    }
     clearAuthToken();
     navigate("/login");
   };
@@ -544,7 +550,8 @@ export default function Dashboard() {
     try {
       const res = await fetch(`${API_URL}/api/transcode/enqueue`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ids: selectedVideoAssets.map((a) => a.id) }),
       });
       if (!res.ok) {
