@@ -1,8 +1,9 @@
-import { GraphQLClient } from 'graphql-request';
+import { ClientError, GraphQLClient } from 'graphql-request';
 
 // Cookie sessions require same-origin. VITE_API_URL remains an override;
 // do not point it at a different origin if cookies must be sent.
 const explicitApiUrl = import.meta.env.VITE_API_URL?.trim();
+const SIGNED_IN_FLAG = 'mda_signed_in';
 
 export function getApiUrl() {
   if (explicitApiUrl) return explicitApiUrl.replace(/\/$/, '');
@@ -10,27 +11,45 @@ export function getApiUrl() {
   return import.meta.env.DEV ? 'http://localhost:4000' : '';
 }
 
-export function createGraphQLClient(token?: string) {
+function handleAuthFailure() {
+  if (typeof window === 'undefined') return;
+  clearAuthToken();
+  if (window.location.pathname === '/login') return;
+  window.location.assign('/login');
+}
+
+function hasUnauthorizedGraphQLError(errors: { message: string }[] | undefined) {
+  return Boolean(errors?.some((error) => error.message === 'Unauthorized'));
+}
+
+export function createGraphQLClient(_token?: string) {
   return new GraphQLClient(`${getApiUrl()}/graphql`, {
-    headers: token
-      ? {
-          authorization: `Bearer ${token}`,
-        }
-      : {},
+    credentials: 'include',
+    fetch: async (input, init) => {
+      const response = await fetch(input, init);
+      if (response.status === 401) handleAuthFailure();
+      return response;
+    },
+    responseMiddleware: (response) => {
+      if (!(response instanceof ClientError)) return;
+      if (response.response.status === 401 || hasUnauthorizedGraphQLError(response.response.errors)) {
+        handleAuthFailure();
+      }
+    },
   });
 }
 
 export function getAuthToken(): string | null {
   if (typeof window === 'undefined') return null;
-  return localStorage.getItem('auth_token');
+  return localStorage.getItem(SIGNED_IN_FLAG) === '1' ? '1' : null;
 }
 
-export function setAuthToken(token: string) {
+export function setAuthToken(_token: string) {
   if (typeof window === 'undefined') return;
-  localStorage.setItem('auth_token', token);
+  localStorage.setItem(SIGNED_IN_FLAG, '1');
 }
 
 export function clearAuthToken() {
   if (typeof window === 'undefined') return;
-  localStorage.removeItem('auth_token');
+  localStorage.removeItem(SIGNED_IN_FLAG);
 }
