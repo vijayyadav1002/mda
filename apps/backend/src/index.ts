@@ -1,5 +1,5 @@
 import Fastify from 'fastify';
-import cors from '@fastify/cors';
+import cookie from '@fastify/cookie';
 import rateLimit from '@fastify/rate-limit';
 import jwt from '@fastify/jwt';
 import multipart from '@fastify/multipart';
@@ -17,6 +17,10 @@ import { backfillCaptureDates } from './services/capture-date/index.js';
 import { startMediaWatcher } from './services/media-watcher.js';
 import { startWorkers } from './services/queue/index.js';
 import { startCacheMaintenance } from './services/cache-maintenance/index.js';
+import { SESSION_COOKIE_NAME, sessionCookieOptions } from './lib/session-cookie.js';
+import { isProtectedMediaPath } from './lib/protected-path.js';
+import { requireUser } from './lib/require-user.js';
+import { shouldSlideSession } from './lib/slide-session.js';
 import path from 'node:path';
 import fs from 'node:fs';
 import downloadRoutes from './routes/download.routes.js';
@@ -39,12 +43,6 @@ const fastify = Fastify({
 });
 
 // Register plugins
-await fastify.register(cors, {
-  origin: true,
-  credentials: true,
-  methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE']
-});
-
 await fastify.register(rateLimit, {
   max: 300,
   timeWindow: '1 minute',
@@ -56,8 +54,11 @@ await fastify.register(rateLimit, {
   }
 });
 
+await fastify.register(cookie);
 await fastify.register(jwt, {
-  secret: config.jwtSecret
+  secret: config.jwtSecret,
+  sign: { expiresIn: '30d' },
+  cookie: { cookieName: SESSION_COOKIE_NAME, signed: false },
 });
 
 await fastify.register(multipart, {
@@ -125,6 +126,21 @@ await fastify.register(mercurius, {
   resolvers,
   context: buildContext,
   graphiql: process.env.NODE_ENV !== 'production'
+});
+
+fastify.addHook('onRequest', async (request, reply) => {
+  const pathOnly = request.url.split('?')[0];
+  if (!isProtectedMediaPath(pathOnly)) return;
+  const ok = await requireUser(request, reply);
+  if (!ok) return;
+  if (shouldSlideSession(request.method, pathOnly)) {
+    const token = await reply.jwtSign({
+      id: (request.user as any).id,
+      username: (request.user as any).username,
+      role: (request.user as any).role,
+    });
+    reply.setCookie(SESSION_COOKIE_NAME, token, sessionCookieOptions(request));
+  }
 });
 
 // Startup
