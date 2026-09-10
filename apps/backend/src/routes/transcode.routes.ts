@@ -8,22 +8,11 @@ export default async function transcodeRoutes(fastify: FastifyInstance) {
   // Enqueue a batch video-transcode job (shares the queue panel + cancel endpoint
   // with compression jobs via the same per-user Redis queue)
   fastify.post('/api/transcode/enqueue', { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } }, async (request, reply) => {
-    const authHeader = request.headers.authorization;
-    if (!authHeader?.startsWith('Bearer ')) {
-      return reply.code(401).send({ error: 'Unauthorized' });
+    const user = request.user as { id: string; role: string };
+    if (!['admin', 'editor'].includes(user.role)) {
+      return reply.code(403).send({ error: 'Forbidden' });
     }
-    const token = authHeader.slice(7);
-    let userId: string;
-    try {
-      const decoded = fastify.jwt.verify<any>(token);
-      userId = String(decoded.id);
-      const userResult = await db.query('SELECT role FROM users WHERE id = $1', [userId]);
-      if (userResult.rows.length === 0 || !['admin', 'editor'].includes(userResult.rows[0].role)) {
-        return reply.code(403).send({ error: 'Forbidden' });
-      }
-    } catch {
-      return reply.code(401).send({ error: 'Invalid token' });
-    }
+    const userId = String(user.id);
 
     const { ids } = request.body as { ids: string[] };
     if (!ids?.length) return reply.code(400).send({ error: 'No asset IDs provided' });

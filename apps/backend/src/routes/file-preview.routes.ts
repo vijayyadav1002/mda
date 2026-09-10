@@ -11,30 +11,7 @@ import {
   MAX_TEXT_CONTENT_BYTES,
 } from '../services/file-types.js';
 
-async function authenticateRequest(request: any) {
-  const fastify = request.server;
-  const authHeader = request.headers.authorization as string | undefined;
-  const queryToken = typeof request.query?.token === 'string' ? request.query.token : undefined;
-  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : queryToken;
-  if (!token) return null;
-
-  try {
-    const decoded = (fastify as any).jwt.verify(token) as any;
-    const userResult = await db.query('SELECT id, role FROM users WHERE id = $1', [decoded.id]);
-    if (userResult.rows.length === 0) return null;
-    return { id: String(userResult.rows[0].id), role: userResult.rows[0].role as string };
-  } catch {
-    return null;
-  }
-}
-
 async function requirePreviewAsset(request: any, reply: any) {
-  const user = await authenticateRequest(request);
-  if (!user) {
-    reply.code(401).send({ error: 'Unauthorized' });
-    return null;
-  }
-
   const { id } = request.params as { id: string };
   const result = await db.query(
     'SELECT file_path, file_name, mime_type FROM media_assets WHERE id = $1',
@@ -156,10 +133,7 @@ export default async function filePreviewRoutes(fastify: FastifyInstance) {
   });
 
   fastify.put('/file-preview/:id/content', { config: { rateLimit: { max: 300, timeWindow: '1 minute' } } }, async (request, reply) => {
-    const user = await authenticateRequest(request);
-    if (!user) {
-      return reply.code(401).send({ error: 'Unauthorized' });
-    }
+    const user = request.user as { role: string };
     if (user.role !== 'admin' && user.role !== 'editor') {
       return reply.code(403).send({ error: 'Forbidden' });
     }
