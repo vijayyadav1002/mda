@@ -111,8 +111,7 @@ cd apps/web
 cp .env.example .env
 ```
 
-Edit `.env`:
-- `VITE_API_URL` - Backend API URL (default: http://localhost:4000)
+Leave `VITE_API_URL` unset. The Vite dev server proxies API paths so the browser stays same-origin (required for cookies). Set `VITE_API_URL` only when the page origin is already the API origin. Pointing the SPA at `http://localhost:4000` from `:3000` is unsupported.
 
 6. Start development:
 
@@ -446,7 +445,7 @@ Thumbnails and transcoded videos are never expired by age — once generated the
 
 ### Frontend
 
-- `VITE_API_URL` - Backend API URL
+- `VITE_API_URL` - Optional API origin override. Default is same-origin (empty) via the Vite proxy in dev and Caddy in production. Set this only when the page origin is already the API origin; `http://localhost:4000` from `:3000` is unsupported.
 
 ## Security Considerations
 
