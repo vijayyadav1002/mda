@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { getApiUrl, getAuthToken } from "~/lib/api";
+import { getApiUrl, getAuthToken, handleAuthFailure } from "~/lib/api";
 import type { DirectoryNode } from "~/lib/types";
 
 const API_URL = getApiUrl();
@@ -57,6 +57,11 @@ export function useFileUpload({ currentPath, rootPath, loadDirectoryIntoCache }:
             }
           };
           xhr.onload = () => {
+            if (xhr.status === 401) {
+              handleAuthFailure();
+              reject(new Error("Unauthorized"));
+              return;
+            }
             if (xhr.status >= 200 && xhr.status < 300) {
               newProgress[file.name] = 100;
               setUploadProgress({ ...newProgress });

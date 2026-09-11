@@ -1,5 +1,5 @@
 import { useState, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
-import { createGraphQLClient, getAuthToken } from "~/lib/api";
+import { authFetch, createGraphQLClient, getAuthToken } from "~/lib/api";
 import { monthKeyOf } from "~/lib/date";
 import type { Bucket, SectionState, TimelineAsset } from "~/hooks/useTimelineSections";
 
@@ -102,9 +102,8 @@ export function useTimelineAssetActions({
     const token = getAuthToken();
     if (!token) return;
     try {
-      const res = await fetch(`${apiUrl}/api/compress/enqueue`, {
+      const res = await authFetch(`${apiUrl}/api/compress/enqueue`, {
         method: "POST",
-        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ids: selectedAssets.map((a) => a.id), options }),
       });
@@ -120,9 +119,8 @@ export function useTimelineAssetActions({
     const token = getAuthToken();
     if (!token || selectedVideos.length === 0) return;
     try {
-      const res = await fetch(`${apiUrl}/api/transcode/enqueue`, {
+      const res = await authFetch(`${apiUrl}/api/transcode/enqueue`, {
         method: "POST",
-        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ids: selectedVideos.map((a) => a.id) }),
       });

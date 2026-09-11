@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { createGraphQLClient, getApiUrl, getAuthToken } from "~/lib/api";
+import { authFetch, createGraphQLClient, getApiUrl, getAuthToken } from "~/lib/api";
 import type { MediaAsset } from "~/lib/types";
 import type { CompressJob } from "~/components/CompressQueuePanel";
 
@@ -53,7 +53,7 @@ export function useCompressQueue({ user, currentPath, rootPath, loadDirectoryInt
     if (!user) return;
     const token = getAuthToken();
     if (!token) return;
-    fetch(`${API_URL}/api/queue-state`, { credentials: "include" })
+    authFetch(`${API_URL}/api/queue-state`)
       .then(r => r.json())
       .then(({ queue }) => {
         if (!Array.isArray(queue) || queue.length === 0) return;
@@ -87,7 +87,7 @@ export function useCompressQueue({ user, currentPath, rootPath, loadDirectoryInt
     const token = getAuthToken();
     if (!token) return;
     const intervalId = setInterval(() => {
-      fetch(`${API_URL}/api/queue-state`, { credentials: "include" })
+      authFetch(`${API_URL}/api/queue-state`)
         .then(r => r.json())
         .then(({ queue }) => {
           if (!Array.isArray(queue)) return;
@@ -112,9 +112,8 @@ export function useCompressQueue({ user, currentPath, rootPath, loadDirectoryInt
     const token = getAuthToken();
     if (!token) return;
     try {
-      const res = await fetch(`${API_URL}/api/compress/enqueue`, {
+      const res = await authFetch(`${API_URL}/api/compress/enqueue`, {
         method: "POST",
-        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ids: assets.map(a => a.id), options }),
       });
@@ -140,9 +139,8 @@ export function useCompressQueue({ user, currentPath, rootPath, loadDirectoryInt
   const saveQueueToServer = useCallback((updatedQueue: CompressJob[]) => {
     const token = getAuthToken();
     if (!token || !user) return;
-    fetch(`${API_URL}/api/queue-state`, {
+    authFetch(`${API_URL}/api/queue-state`, {
       method: "PUT",
-      credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ queue: updatedQueue }),
     }).catch(() => {});
@@ -278,9 +276,8 @@ export function useCompressQueue({ user, currentPath, rootPath, loadDirectoryInt
       ? { ...j, status: "cancelled" as const, currentFileId: null, progress: {} }
       : j));
     try {
-      const res = await fetch(`${API_URL}/api/compress/cancel`, {
+      const res = await authFetch(`${API_URL}/api/compress/cancel`, {
         method: "POST",
-        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ jobId }),
       });

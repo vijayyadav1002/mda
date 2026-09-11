@@ -1,7 +1,7 @@
 import { ChevronLeft, ChevronRight, Download, File, Maximize2, Minimize2, X, ListTodo, Tag as TagIcon, Plus, Pencil, FolderOpen, Copy } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import Hls from "hls.js";
-import { getAuthToken } from "~/lib/api";
+import { authFetch, getAuthToken } from "~/lib/api";
 import { formatDate } from "~/lib/format";
 import { formatFileSize, getExtension, getFileCategory, getFileCategoryLabel } from "~/lib/file-type";
 import type { MediaAsset } from "~/lib/types";
@@ -126,8 +126,7 @@ export function MediaAssetViewer({
     setEditorText("");
     setSaveStatus("idle");
 
-    fetch(`${apiUrl}/file-preview/${asset.id}/content`, {
-      credentials: "include",
+    authFetch(`${apiUrl}/file-preview/${asset.id}/content`, {
       signal: controller.signal,
     })
       .then((response) => {
@@ -158,7 +157,7 @@ export function MediaAssetViewer({
       return;
     }
     let cancelled = false;
-    fetch(`${apiUrl}/video/${asset.id}/prepare`)
+    authFetch(`${apiUrl}/video/${asset.id}/prepare`)
       .then((r) => r.json())
       .then((data) => {
         if (cancelled) return;
@@ -230,7 +229,7 @@ export function MediaAssetViewer({
     let active = true;
     let intervalId: ReturnType<typeof setInterval> | null = null;
     const tick = () => {
-      fetch(videoSource.progressUrl)
+      authFetch(videoSource.progressUrl)
         .then((r) => r.json())
         .then((p: TranscodeProgress) => {
           if (!active) return;
@@ -311,9 +310,8 @@ export function MediaAssetViewer({
 
     setSaveStatus("saving");
     try {
-      const response = await fetch(`${apiUrl}/file-preview/${asset.id}/content`, {
+      const response = await authFetch(`${apiUrl}/file-preview/${asset.id}/content`, {
         method: "PUT",
-        credentials: "include",
         headers: {
           "Content-Type": "application/json",
         },

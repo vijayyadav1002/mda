@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getApiUrl, getAuthToken } from "~/lib/api";
+import { authFetch, getApiUrl, getAuthToken } from "~/lib/api";
 
 const TERMINAL_STATUSES = new Set(["done", "error"]);
 
@@ -16,9 +16,7 @@ export function useActiveQueueCount(): number {
 
     const fetchCount = async () => {
       try {
-        const res = await fetch(`${apiUrl}/api/queue-state`, {
-          credentials: "include",
-        });
+        const res = await authFetch(`${apiUrl}/api/queue-state`);
         if (!res.ok) return;
         const { queue } = await res.json();
         if (cancelled) return;

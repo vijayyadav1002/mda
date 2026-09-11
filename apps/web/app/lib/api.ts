@@ -11,11 +11,17 @@ export function getApiUrl() {
   return import.meta.env.DEV ? 'http://localhost:4000' : '';
 }
 
-function handleAuthFailure() {
+export function handleAuthFailure() {
   if (typeof window === 'undefined') return;
   clearAuthToken();
   if (window.location.pathname === '/login') return;
   window.location.assign('/login');
+}
+
+export async function authFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const response = await fetch(input, { ...init, credentials: 'include' });
+  if (response.status === 401) handleAuthFailure();
+  return response;
 }
 
 function hasUnauthorizedGraphQLError(errors: { message: string }[] | undefined) {
@@ -30,11 +36,7 @@ export function createGraphQLClient(_token?: string) {
     : `${apiUrl}/graphql`;
   return new GraphQLClient(graphqlUrl, {
     credentials: 'include',
-    fetch: async (input, init) => {
-      const response = await fetch(input, init);
-      if (response.status === 401) handleAuthFailure();
-      return response;
-    },
+    fetch: authFetch,
     responseMiddleware: (response) => {
       if (!(response instanceof ClientError)) return;
       if (response.response.status === 401 || hasUnauthorizedGraphQLError(response.response.errors)) {
