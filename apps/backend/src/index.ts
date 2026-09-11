@@ -21,6 +21,7 @@ import { SESSION_COOKIE_NAME, sessionCookieOptions } from './lib/session-cookie.
 import { isProtectedMediaPath } from './lib/protected-path.js';
 import { requireUser } from './lib/require-user.js';
 import { shouldSlideSession } from './lib/slide-session.js';
+import { markIndexingFailed, markIndexingStarted, markIndexingSucceeded } from './lib/indexing-status.js';
 import path from 'node:path';
 import fs from 'node:fs';
 import downloadRoutes from './routes/download.routes.js';
@@ -215,36 +216,30 @@ const start = async () => {
     // Ensure admin exists (first-time setup)
     await ensureAdminExists();
 
-    // Index existing media library
-    fastify.log.info('Starting initial media library indexing...');
-    await indexMediaLibrary();
-    fastify.log.info('Initial media library indexed');
+    await fastify.listen({ port: config.port, host: config.host });
 
-    // Backfill capture dates for assets indexed before the timeline feature (non-blocking)
-    void backfillCaptureDates().catch((error) => {
-      fastify.log.error({ err: error }, 'Capture date backfill failed');
-    });
-
-    // Start file system watcher
-    fastify.log.info('Starting media file watcher...');
-    startMediaWatcher();
+    fastify.log.info(`Server listening on ${config.host}:${config.port}`);
+    fastify.log.info(`GraphiQL available at http://${config.host}:${config.port}/graphiql`);
 
     // Transcoded videos are intentionally persistent: no inactivity cleanup.
     // Eviction is size-based only, handled by cache maintenance.
 
-    // Start cache maintenance service
     cacheMaintenanceTimer = startCacheMaintenance();
-
-    // Start background queue workers
     workerHandles = startWorkers();
+    startMediaWatcher();
 
-    await fastify.listen({
-      port: config.port,
-      host: config.host
-    });
-
-    fastify.log.info(`Server listening on ${config.host}:${config.port}`);
-    fastify.log.info(`GraphiQL available at http://${config.host}:${config.port}/graphiql`);
+    markIndexingStarted();
+    void indexMediaLibrary()
+      .then(() => {
+        markIndexingSucceeded();
+        void backfillCaptureDates().catch((error) => {
+          fastify.log.error({ err: error }, 'Capture date backfill failed');
+        });
+      })
+      .catch((error) => {
+        fastify.log.error({ err: error }, 'Initial media library indexing failed');
+        markIndexingFailed(error instanceof Error ? error.message : String(error));
+      });
   } catch (err) {
     fastify.log.error(err);
     process.exit(1);

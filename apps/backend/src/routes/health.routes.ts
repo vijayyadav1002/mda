@@ -1,9 +1,16 @@
 import type { FastifyInstance } from 'fastify';
+import { getIndexingStatus } from '../lib/indexing-status.js';
 
 export default async function healthRoutes(fastify: FastifyInstance) {
   // Health check
   fastify.get('/health', async () => {
-    return { status: 'ok', timestamp: new Date().toISOString() };
+    const indexing = getIndexingStatus();
+    return {
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      indexing: indexing.indexing,
+      indexError: indexing.indexError,
+    };
   });
 
   fastify.get('/health/queues', async (_request, reply) => {
