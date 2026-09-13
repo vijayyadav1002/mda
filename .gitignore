@@ -31,3 +31,4 @@ entities.json
 .engram/
 .grok
 .engramignore
+caddy-root.crt
