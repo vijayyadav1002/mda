@@ -32,3 +32,4 @@ entities.json
 .grok
 .engramignore
 caddy-root.crt
+graphify-out
