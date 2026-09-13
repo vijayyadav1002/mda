@@ -1,6 +1,11 @@
 import { db } from '../../db/index.js';
 import { hashPassword, verifyPassword } from '../../services/auth.js';
 import { logAudit } from '../../services/audit.js';
+import {
+  SESSION_COOKIE_NAME,
+  sessionCookieOptions,
+  clearSessionCookieOptions,
+} from '../../lib/session-cookie.js';
 import type { GraphQLContext } from '../context.js';
 
 export const authQueryResolvers = {
@@ -64,11 +69,12 @@ export const authMutationResolvers = {
       throw new Error('Invalid credentials');
     }
 
-    const token = context.reply.jwtSign({
+    const token = await context.reply.jwtSign({
       id: user.id,
       username: user.username,
-      role: user.role
+      role: user.role,
     });
+    context.reply.setCookie(SESSION_COOKIE_NAME, token, sessionCookieOptions(context.request));
 
     await logAudit(user.id, 'LOGIN', 'user', user.id);
 
@@ -101,11 +107,12 @@ export const authMutationResolvers = {
 
     const user = result.rows[0];
 
-    const token = context.reply.jwtSign({
+    const token = await context.reply.jwtSign({
       id: user.id,
       username: user.username,
-      role: user.role
+      role: user.role,
     });
+    context.reply.setCookie(SESSION_COOKIE_NAME, token, sessionCookieOptions(context.request));
 
     await logAudit(user.id, 'CREATE_FIRST_ADMIN', 'user', user.id);
 
@@ -118,6 +125,11 @@ export const authMutationResolvers = {
         createdAt: user.created_at.toISOString()
       }
     };
+  },
+
+  logout: async (_: any, __: any, context: GraphQLContext) => {
+    context.reply.clearCookie(SESSION_COOKIE_NAME, clearSessionCookieOptions(context.request));
+    return true;
   },
 
   createUser: async (_: any, args: { username: string; password: string; role: string }, context: GraphQLContext) => {

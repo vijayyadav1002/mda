@@ -3,26 +3,15 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { pipeline } from 'node:stream/promises';
 import { config } from '../config.js';
-import { db } from '../db/index.js';
 import { indexFile } from '../services/media-indexer/index.js';
 import { resolveWithinRoot } from '../lib/media-path.js';
 
 export default async function uploadRoutes(fastify: FastifyInstance) {
   // Upload endpoint
   fastify.post('/api/upload', { config: { rateLimit: { max: 100, timeWindow: '1 minute' } } }, async (request, reply) => {
-    const authHeader = request.headers.authorization;
-    if (!authHeader?.startsWith('Bearer ')) {
-      return reply.code(401).send({ error: 'Unauthorized' });
-    }
-    const token = authHeader.slice(7);
-    try {
-      const decoded = fastify.jwt.verify<any>(token);
-      const userResult = await db.query('SELECT role FROM users WHERE id = $1', [decoded.id]);
-      if (userResult.rows.length === 0 || !['admin', 'editor'].includes(userResult.rows[0].role)) {
-        return reply.code(403).send({ error: 'Forbidden' });
-      }
-    } catch {
-      return reply.code(401).send({ error: 'Invalid token' });
+    const user = request.user as { role: string };
+    if (!['admin', 'editor'].includes(user.role)) {
+      return reply.code(403).send({ error: 'Forbidden' });
     }
 
     const { targetPath: rawTargetPath } = request.query as { targetPath?: string };

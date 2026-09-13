@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router";
-import { clearAuthToken } from "~/lib/api";
+import { createGraphQLClient, clearAuthToken } from "~/lib/api";
 import { useActiveQueueCount } from "~/lib/useActiveQueueCount";
 import { useUsers } from "~/hooks/useUsers";
 import { useDarkMode } from "~/hooks/useDarkMode";
@@ -22,7 +22,13 @@ export default function UsersPage() {
   const activeQueueCount = useActiveQueueCount();
   const u = useUsers(navigate);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      const client = createGraphQLClient();
+      await client.request(`mutation { logout }`);
+    } catch {
+      // cookie already missing/expired is fine
+    }
     clearAuthToken();
     navigate("/login");
   };

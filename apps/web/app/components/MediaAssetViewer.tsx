@@ -1,7 +1,7 @@
 import { ChevronLeft, ChevronRight, Download, File, Maximize2, Minimize2, X, ListTodo, Tag as TagIcon, Plus, Pencil, FolderOpen, Copy } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import Hls from "hls.js";
-import { getAuthToken } from "~/lib/api";
+import { authFetch, getAuthToken } from "~/lib/api";
 import { formatDate } from "~/lib/format";
 import { formatFileSize, getExtension, getFileCategory, getFileCategoryLabel } from "~/lib/file-type";
 import type { MediaAsset } from "~/lib/types";
@@ -118,7 +118,6 @@ export function MediaAssetViewer({
       return;
     }
 
-    const token = getAuthToken();
     const controller = new AbortController();
     setDocumentPreviewStatus("loading");
     setDocumentPreview(null);
@@ -127,8 +126,7 @@ export function MediaAssetViewer({
     setEditorText("");
     setSaveStatus("idle");
 
-    fetch(`${apiUrl}/file-preview/${asset.id}/content`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    authFetch(`${apiUrl}/file-preview/${asset.id}/content`, {
       signal: controller.signal,
     })
       .then((response) => {
@@ -159,7 +157,7 @@ export function MediaAssetViewer({
       return;
     }
     let cancelled = false;
-    fetch(`${apiUrl}/video/${asset.id}/prepare`)
+    authFetch(`${apiUrl}/video/${asset.id}/prepare`)
       .then((r) => r.json())
       .then((data) => {
         if (cancelled) return;
@@ -231,7 +229,7 @@ export function MediaAssetViewer({
     let active = true;
     let intervalId: ReturnType<typeof setInterval> | null = null;
     const tick = () => {
-      fetch(videoSource.progressUrl)
+      authFetch(videoSource.progressUrl)
         .then((r) => r.json())
         .then((p: TranscodeProgress) => {
           if (!active) return;
@@ -297,8 +295,7 @@ export function MediaAssetViewer({
   const isEditableDocument = fileCategory === "text" || fileCategory === "markdown";
   const isDocument = ["text", "markdown", "word", "excel"].includes(fileCategory);
   const canFullscreen = isImage || isVideo || isPdf || isDocument;
-  const token = getAuthToken();
-  const pdfPreviewUrl = `${apiUrl}/file-preview/${asset.id}/pdf${token ? `?token=${encodeURIComponent(token)}` : ""}`;
+  const pdfPreviewUrl = `${apiUrl}/file-preview/${asset.id}/pdf`;
   const originalDocumentText =
     documentPreview?.kind === "text" || documentPreview?.kind === "markdown" ? documentPreview.text : "";
   const hasDocumentEdits = isEditableDocument && editorText !== originalDocumentText;
@@ -313,10 +310,9 @@ export function MediaAssetViewer({
 
     setSaveStatus("saving");
     try {
-      const response = await fetch(`${apiUrl}/file-preview/${asset.id}/content`, {
+      const response = await authFetch(`${apiUrl}/file-preview/${asset.id}/content`, {
         method: "PUT",
         headers: {
-          Authorization: `Bearer ${authToken}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ text: editorText }),

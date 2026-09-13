@@ -1,4 +1,14 @@
-{$MDA_HOSTNAME:localhost} {
+# Clients connecting by raw IP usually omit TLS SNI. Without a default
+# name, Caddy aborts the handshake even when MDA_HOSTNAME is that IP.
+{
+	default_sni {$MDA_HOSTNAME:localhost}
+}
+
+http://{$MDA_HOSTNAME:localhost}:{$CADDY_HTTP_PORT:80} {
+	redir https://{$MDA_HOSTNAME:localhost}:{$CADDY_HTTPS_PORT:443}{uri} permanent
+}
+
+{$MDA_HOSTNAME:localhost}:{$CADDY_HTTPS_PORT:443} {
 	tls internal
 	encode zstd gzip
 

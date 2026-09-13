@@ -11,22 +11,9 @@ import { redis } from '../services/redis.js';
 export default async function compressRoutes(fastify: FastifyInstance) {
   // Streaming compress preview endpoint with progress events
   fastify.post('/api/compress/preview', { config: { rateLimit: { max: 300, timeWindow: '1 minute' } } }, async (request, reply) => {
-    // Auth check
-    const authHeader = request.headers.authorization;
-    if (!authHeader?.startsWith('Bearer ')) {
-      return reply.code(401).send({ error: 'Unauthorized' });
-    }
-    const token = authHeader.slice(7);
-    let userId: string;
-    try {
-      const decoded = fastify.jwt.verify<any>(token);
-      userId = decoded.id;
-      const userResult = await db.query('SELECT role FROM users WHERE id = $1', [userId]);
-      if (userResult.rows.length === 0 || !['admin', 'editor'].includes(userResult.rows[0].role)) {
-        return reply.code(403).send({ error: 'Forbidden' });
-      }
-    } catch {
-      return reply.code(401).send({ error: 'Invalid token' });
+    const user = request.user as { role: string };
+    if (!['admin', 'editor'].includes(user.role)) {
+      return reply.code(403).send({ error: 'Forbidden' });
     }
 
     const { ids, options } = request.body as { ids: string[]; options: { resolution?: string; quality?: number } };
@@ -138,22 +125,11 @@ export default async function compressRoutes(fastify: FastifyInstance) {
 
   // Enqueue compression job — creates BullMQ job + initial Redis state
   fastify.post('/api/compress/enqueue', { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } }, async (request, reply) => {
-    const authHeader = request.headers.authorization;
-    if (!authHeader?.startsWith('Bearer ')) {
-      return reply.code(401).send({ error: 'Unauthorized' });
+    const user = request.user as { id: string; role: string };
+    if (!['admin', 'editor'].includes(user.role)) {
+      return reply.code(403).send({ error: 'Forbidden' });
     }
-    const token = authHeader.slice(7);
-    let userId: string;
-    try {
-      const decoded = fastify.jwt.verify<any>(token);
-      userId = String(decoded.id);
-      const userResult = await db.query('SELECT role FROM users WHERE id = $1', [userId]);
-      if (userResult.rows.length === 0 || !['admin', 'editor'].includes(userResult.rows[0].role)) {
-        return reply.code(403).send({ error: 'Forbidden' });
-      }
-    } catch {
-      return reply.code(401).send({ error: 'Invalid token' });
-    }
+    const userId = String(user.id);
 
     const { ids, options } = request.body as { ids: string[]; options: { resolution: string; quality: number } };
     if (!ids?.length) return reply.code(400).send({ error: 'No asset IDs provided' });
@@ -202,22 +178,11 @@ export default async function compressRoutes(fastify: FastifyInstance) {
 
   // Cancel an active or pending compression job
   fastify.post('/api/compress/cancel', { config: { rateLimit: { max: 300, timeWindow: '1 minute' } } }, async (request, reply) => {
-    const authHeader = request.headers.authorization;
-    if (!authHeader?.startsWith('Bearer ')) {
-      return reply.code(401).send({ error: 'Unauthorized' });
+    const user = request.user as { id: string; role: string };
+    if (!['admin', 'editor'].includes(user.role)) {
+      return reply.code(403).send({ error: 'Forbidden' });
     }
-    const token = authHeader.slice(7);
-    let userId: string;
-    try {
-      const decoded = fastify.jwt.verify<any>(token);
-      userId = String(decoded.id);
-      const userResult = await db.query('SELECT role FROM users WHERE id = $1', [userId]);
-      if (userResult.rows.length === 0 || !['admin', 'editor'].includes(userResult.rows[0].role)) {
-        return reply.code(403).send({ error: 'Forbidden' });
-      }
-    } catch {
-      return reply.code(401).send({ error: 'Invalid token' });
-    }
+    const userId = String(user.id);
 
     const { jobId } = request.body as { jobId?: string };
     if (!jobId) return reply.code(400).send({ error: 'jobId is required' });

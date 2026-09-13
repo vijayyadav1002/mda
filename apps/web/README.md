@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- Node.js >= 18
+- Node.js >= 24
 - Backend API running
 
 ## Installation
@@ -17,10 +17,7 @@ npm install
 cp .env.example .env
 ```
 
-Edit `.env`:
-```
-VITE_API_URL=http://localhost:4000
-```
+Leave `VITE_API_URL` unset (or commented) in `.env`. The Vite dev server proxies API paths so the browser stays same-origin, which cookies require. Set `VITE_API_URL` only when the page origin is already the API origin — `http://localhost:4000` from `:3000` is unsupported.
 
 ## Development
 
@@ -29,7 +26,7 @@ Start development server:
 npm run dev
 ```
 
-The app will be available at http://localhost:3000
+The app will be available at http://localhost:3000. Vite proxies API paths to the backend, so this origin is the one to open in development.
 
 ## Production
 
@@ -38,17 +35,16 @@ Build for production:
 npm run build
 ```
 
-Preview production build:
-```bash
-npm start
-```
+`npm start` serves the production frontend on port 3000 and **does not** proxy GraphQL. That is not a working browser URL by itself.
+
+In Docker, open the Caddy HTTPS origin (`https://<MDA_HOSTNAME>/login`). See [DOCKER.md](../../DOCKER.md). For local UI work, use `npm run dev`.
 
 ## Features
 
 ### Authentication
-- Login page with JWT token management
+- Login page with HttpOnly cookie sessions
 - First-time admin account creation
-- Automatic token storage in localStorage
+- Signed-in presence flag in localStorage (`mda_signed_in`; the JWT is not stored there)
 
 ### Dashboard
 - Grid view of media assets
@@ -94,9 +90,7 @@ Using Remix file-based routing:
 
 ## State Management
 
-Currently using React hooks and localStorage for:
-- Authentication token
-- User session
+Currently using React hooks for UI state. Auth is an HttpOnly cookie (`mda_session`); `localStorage.mda_signed_in` is a non-secret presence flag only.
 
 ## API Integration
 
@@ -119,7 +113,7 @@ const data = await client.request(QUERY, variables);
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `VITE_API_URL` | Backend API URL | `http://localhost:4000` |
+| `VITE_API_URL` | Optional API origin override. Default is same-origin via the Vite proxy. Set only when the page origin is already the API origin. | unset |
 
 ## Scripts
 

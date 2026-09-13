@@ -1,0 +1,4 @@
+palace = false
+palace_wing = "mda"
+palace_room = "decisions"
+palace_min_cosine = 0.6

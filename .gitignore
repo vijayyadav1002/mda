@@ -16,7 +16,6 @@ coverage
 *.sql.bak
 media-files
 apps/backend/cache
-graphify-out
 
 # MemPalace per-project files (issue #185)
 mempalace.yaml
@@ -32,3 +31,5 @@ entities.json
 .engram/
 .grok
 .engramignore
+caddy-root.crt
+graphify-out

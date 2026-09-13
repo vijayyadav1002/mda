@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router";
-import { createGraphQLClient, getApiUrl, getAuthToken, clearAuthToken } from "~/lib/api";
+import { authFetch, createGraphQLClient, getApiUrl, getAuthToken, clearAuthToken } from "~/lib/api";
 import { MediaAssetViewer } from "~/components/MediaAssetViewer";
 import { CompressDialog } from "~/components/CompressDialog";
 import { CompressQueuePanel } from "~/components/CompressQueuePanel";
@@ -252,7 +252,13 @@ export default function Dashboard() {
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      const client = createGraphQLClient();
+      await client.request(`mutation { logout }`);
+    } catch {
+      // cookie already missing/expired is fine
+    }
     clearAuthToken();
     navigate("/login");
   };
@@ -542,9 +548,9 @@ export default function Dashboard() {
     const token = getAuthToken();
     if (!token) return;
     try {
-      const res = await fetch(`${API_URL}/api/transcode/enqueue`, {
+      const res = await authFetch(`${API_URL}/api/transcode/enqueue`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ids: selectedVideoAssets.map((a) => a.id) }),
       });
       if (!res.ok) {

@@ -9,9 +9,11 @@
     "start": "node dist/index.js",
     "db:migrate": "tsx src/db/migrate.ts",
     "db:seed": "tsx src/db/seed.ts",
+    "test": "tsx --test src/**/*.test.ts",
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@fastify/cookie": "^11.1.2",
     "@fastify/cors": "^11.3.0",
     "@fastify/jwt": "^10.2.1",
     "@fastify/multipart": "^10.1.0",

@@ -85,7 +85,13 @@ export default function AuditPage() {
     });
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      const client = createGraphQLClient();
+      await client.request(`mutation { logout }`);
+    } catch {
+      // cookie already missing/expired is fine
+    }
     clearAuthToken();
     navigate("/login");
   };
