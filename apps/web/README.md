@@ -26,7 +26,7 @@ Start development server:
 npm run dev
 ```
 
-The app will be available at http://localhost:3000
+The app will be available at http://localhost:3000. Vite proxies API paths to the backend, so this origin is the one to open in development.
 
 ## Production
 
@@ -35,10 +35,9 @@ Build for production:
 npm run build
 ```
 
-Preview production build:
-```bash
-npm start
-```
+`npm start` serves the production frontend on port 3000 and **does not** proxy GraphQL. That is not a working browser URL by itself.
+
+In Docker, open the Caddy HTTPS origin (`https://<MDA_HOSTNAME>/login`). See [DOCKER.md](../../DOCKER.md). For local UI work, use `npm run dev`.
 
 ## Features
 

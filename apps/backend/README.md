@@ -56,6 +56,8 @@ The server will be available at:
 - API: http://localhost:4000
 - GraphiQL: http://localhost:4000/graphiql
 
+GraphiQL on `:4000` is API tooling. The SPA must not be pointed at this origin from `:3000` — cookies require same-origin. Local UI: Vite at `http://localhost:3000` (it proxies here). Docker: Caddy HTTPS origin only; see [DOCKER.md](../../DOCKER.md).
+
 ## Production
 
 Build for production:

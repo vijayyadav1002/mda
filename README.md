@@ -54,18 +54,16 @@ mda/
 ### Option A: Run Entire App in Docker (recommended)
 
 ```bash
+cp .env.example .env   # skip if .env already exists
 docker compose up --build
 ```
 
-This starts frontend, backend, PostgreSQL, and Redis in containers.
-See [DOCKER.md](./DOCKER.md) for service details, ports, and commands.
+This starts frontend, backend, PostgreSQL, Redis, and Caddy. **Open only the Caddy URL** — the browser must talk to one HTTPS origin for the UI, GraphQL, and cookies:
 
-Default Docker ports:
-- App (use this): https://localhost (Caddy; GraphQL and UI same origin)
-- GraphiQL: https://localhost/graphiql
-- Caddy HTTP/HTTPS: 80 and 443 (set `CADDY_HTTP_PORT` / `CADDY_HTTPS_PORT` in `.env` if those are taken)
-- Frontend process (debug only; GraphQL 404s here): http://localhost:3000
-- Backend API (debug only): http://localhost:4000
+- This machine: https://localhost/login
+- Raspberry Pi / LAN: set `MDA_HOSTNAME` to that host's IP or hostname, then `https://<MDA_HOSTNAME>/login`
+
+Do **not** open `http://<host>:3000` or `http://<host>:4000` in a browser. Those are internal processes published for debugging; the login page on `:3000` can render while sign-in 404s. Ports, LAN TLS, and troubleshooting are in [DOCKER.md](./DOCKER.md).
 
 ### Option B: Run App Locally (without Docker)
 
@@ -123,18 +121,18 @@ npm run dev
 ```
 
 This starts:
-- Backend API: http://localhost:4000
-- GraphiQL: http://localhost:4000/graphiql
-- Frontend: http://localhost:3000
+- App in the browser: http://localhost:3000 — Vite **proxies** `/graphql` and other API paths to the backend, so this origin works
+- Backend process: http://localhost:4000 — GraphiQL at `/graphiql` (API tooling only; not the UI)
+
+Do not point the SPA at `http://localhost:4000` from another origin. Cookies require same-origin.
 
 ## First Time Setup
 
-When no admin users exist:
+When no admin users exist, open **login on the same origin you will use for the app**:
 
-1. Visit http://localhost:3000/login
-2. Click "First Time Setup"
-3. Create your admin account
-4. Login and start managing your file library
+1. Docker: `https://<MDA_HOSTNAME>/login` (include `:8443` if you remapped HTTPS). Local `npm run dev`: `http://localhost:3000/login`.
+2. Create the first admin account (first-time setup when no admin exists).
+3. Sign in and start managing your file library.
 
 ## GraphQL API
 
@@ -412,15 +410,13 @@ npm run clean
 
 ## Production Build
 
+Prefer Docker Compose ([DOCKER.md](./DOCKER.md)). That stack serves the UI and API through Caddy as one HTTPS origin.
+
+Starting `apps/web` and `apps/backend` as two host ports (`:3000` and `:4000`) is not a supported production setup: the production frontend does not proxy GraphQL, and cookies will not be sent across origins.
+
 ```bash
-# Build all packages
+# Build all packages (used by Docker and local checks)
 npm run build
-
-# Start backend (from apps/backend)
-npm start
-
-# Start frontend (from apps/web)
-npm start
 ```
 
 ## Environment Variables
@@ -529,6 +525,9 @@ Check Redis is running and `REDIS_HOST` / `REDIS_PORT` are correct.
 
 ### Thumbnails not generating
 Ensure `THUMBNAIL_CACHE_PATH` exists and is writable. In low-storage/on-demand mode, thumbnails are generated when file cards enter the viewport or when you use the Generate Thumbnails action.
+
+### Login page loads on `:3000` but sign-in fails (Docker)
+You opened the frontend process instead of Caddy. Use `https://<MDA_HOSTNAME>/login`. Details in [DOCKER.md](./DOCKER.md).
 
 ## License
 

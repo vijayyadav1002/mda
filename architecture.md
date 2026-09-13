@@ -71,7 +71,7 @@ flowchart TB
     Compression["compress helpers<br/>image/video/PDF output previews"]
   end
 
-  User -->|"HTTPS or direct localhost"| Caddy
+  User -->|"HTTPS Caddy origin only"| Caddy
   Caddy -->|"frontend requests"| App
   Caddy -->|"backend paths"| App
   App --> Web

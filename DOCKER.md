@@ -9,45 +9,67 @@ This project runs fully in Docker (frontend, backend, PostgreSQL, Redis) behind 
 - `postgres` - PostgreSQL 18
 - `redis` - Valkey (Redis-compatible, service/volume names kept as `redis` for compatibility)
 
+## How to open the app
+
+Docker is **one HTTPS origin** (Caddy). The browser must load the UI and call `/graphql`, `/image/*`, `/video/*`, and the rest on that same origin. Session cookies are origin-scoped, so the frontend on `:3000` and the API on `:4000` are **not** a working app.
+
+| Open this | What it is |
+|---|---|
+| `https://<MDA_HOSTNAME>/login` | Login / first-time admin |
+| `https://<MDA_HOSTNAME>` | App (UI + API) |
+| `https://<MDA_HOSTNAME>/graphiql` | GraphiQL |
+
+`MDA_HOSTNAME` defaults to `localhost` (so `https://localhost/login`). On a Raspberry Pi or another machine, set it to the hostname or LAN IP you will type in the browser.
+
+If you remapped HTTPS (for example `CADDY_HTTPS_PORT=8443`), include that port: `https://<MDA_HOSTNAME>:8443/login`.
+
+| Do not open in a browser | Why |
+|---|---|
+| `http://<host>:3000` | Production frontend only. `/graphql` 404s. The login **page** can render; sign-in cannot. |
+| `http://<host>:4000` | Backend only. No UI. Cookies from another origin will not be sent. |
+
+`:3000` and `:4000` are published for debugging (`curl http://<host>:4000/health`). They are not product URLs.
+
+Local `npm run dev` is different: Vite on `:3000` **proxies** API paths to the backend, so `http://localhost:3000` is the right origin in that mode only.
+
 ## Quick Start
 
 From the repo root:
 
 ```bash
+cp .env.example .env   # skip if .env already exists
 docker compose up --build
 ```
 
-Optional: set hostname/IP used for TLS certificate in `.env`:
+On this machine, open `https://localhost/login`.
+
+On a Raspberry Pi / LAN, set the address you will type, then recreate Caddy:
 
 ```bash
+# Use your Pi hostname or LAN IP — must match the browser URL host
 echo "MDA_HOSTNAME=192.168.1.50" >> .env
-```
-
-Use your Raspberry Pi hostname or LAN IP.
-
-Once started:
-
-- App (frontend + API via proxy): https://localhost
-- GraphiQL: https://localhost/graphiql
-- PostgreSQL (host): `localhost:5433`
-- Redis (host): `localhost:6379`
-
-For remote access, replace `localhost` with your configured `MDA_HOSTNAME`.
-
-If host port 443 (or 80) is already in use, set ports in `.env` and recreate Caddy:
-
-```bash
-echo "CADDY_HTTPS_PORT=8443" >> .env
-docker compose up -d caddy
-```
-
-Then open `https://<MDA_HOSTNAME>:8443` (and `https://<MDA_HOSTNAME>:8443/graphiql`). `MDA_HOSTNAME` must be the same hostname or LAN IP you type in the browser. After changing `.env`, recreate Caddy so it picks up the new values:
-
-```bash
 docker compose up -d --force-recreate caddy
 ```
 
-Do not use `http://<host>:3000` — that bypasses Caddy and GraphQL will 404 (the login page can render, but sign-in cannot). The first HTTPS visit will warn about Caddy's internal certificate; that is expected until you trust `caddy-root.crt` below.
+Then open `https://192.168.1.50/login` (or `https://<MDA_HOSTNAME>:8443/login` if HTTPS is remapped).
+
+If host port 443 or 80 is already in use, set **both** Caddy ports and recreate:
+
+```bash
+# example: 80/443 taken on a Pi
+echo "CADDY_HTTP_PORT=8080" >> .env
+echo "CADDY_HTTPS_PORT=8443" >> .env
+docker compose up -d --force-recreate caddy
+```
+
+Any change to `MDA_HOSTNAME` or `CADDY_*_PORT` requires `--force-recreate caddy`. `docker compose up -d caddy` alone will keep the old container env.
+
+The first HTTPS visit warns about Caddy's internal certificate. That is expected until you trust `caddy-root.crt` below.
+
+Other host ports (not the app):
+
+- PostgreSQL: `localhost:5433`
+- Redis: `localhost:6379`
 
 ## Trust Local TLS Certificate (for PWA install)
 
@@ -62,6 +84,32 @@ docker compose exec caddy cat /data/caddy/pki/authorities/local/root.crt > caddy
 Install `caddy-root.crt` as a trusted root CA on your remote device/browser.
 
 After trusting, open `https://<MDA_HOSTNAME>` and install the PWA.
+
+## Troubleshooting
+
+### Login page loads on port 3000 but sign-in fails / GraphQL 404s
+You opened the frontend process directly. In Docker, GraphQL is only on the Caddy origin. Use `https://<MDA_HOSTNAME>/login`.
+
+### `https://<ip>:8443` never loads, but `:3000` does
+Caddy is up; the TLS handshake is failing. Set `MDA_HOSTNAME` to **that same IP**, then:
+
+```bash
+docker compose up -d --force-recreate caddy
+```
+
+Browsers connecting by raw IP often omit TLS SNI; Caddy uses `MDA_HOSTNAME` as the default certificate name. The first visit still warns about the internal certificate — click through, or trust `caddy-root.crt` below.
+
+### `docker compose` cannot bind port 80 or 443
+Something else on the host owns those ports. Set `CADDY_HTTP_PORT` and `CADDY_HTTPS_PORT` in `.env` and recreate Caddy (see Quick Start).
+
+### Confirm the stack is healthy
+```bash
+docker compose ps
+docker compose logs -f caddy app
+curl -k https://<MDA_HOSTNAME>:<CADDY_HTTPS_PORT>/health
+```
+
+`/health` should return JSON with `"status":"ok"`. If Caddy is up but `/health` fails, the `app` container is not ready yet (first build on a Pi can take a long time).
 
 ## Notes
 
