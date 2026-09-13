@@ -41,7 +41,13 @@ echo "CADDY_HTTPS_PORT=8443" >> .env
 docker compose up -d caddy
 ```
 
-Then open `https://<MDA_HOSTNAME>:8443` (and `https://<MDA_HOSTNAME>:8443/graphiql`). Do not use `http://<host>:3000` — that bypasses Caddy and GraphQL will 404.
+Then open `https://<MDA_HOSTNAME>:8443` (and `https://<MDA_HOSTNAME>:8443/graphiql`). `MDA_HOSTNAME` must be the same hostname or LAN IP you type in the browser. After changing `.env`, recreate Caddy so it picks up the new values:
+
+```bash
+docker compose up -d --force-recreate caddy
+```
+
+Do not use `http://<host>:3000` — that bypasses Caddy and GraphQL will 404 (the login page can render, but sign-in cannot). The first HTTPS visit will warn about Caddy's internal certificate; that is expected until you trust `caddy-root.crt` below.
 
 ## Trust Local TLS Certificate (for PWA install)
 
