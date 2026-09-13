@@ -8,7 +8,7 @@ flowchart TB
   User["User Browser"]
 
   subgraph Docker["Docker Compose"]
-    Caddy["Caddy reverse proxy<br/>ports 80 and 443"]
+    Caddy["Caddy reverse proxy<br/>HTTP/HTTPS (default 80/443, configurable)"]
     App["mda-app container<br/>runs web :3000 and backend :4000"]
     Postgres[("PostgreSQL<br/>users, assets, tags, audit")]
     Redis[("Redis<br/>BullMQ queues and queue state")]

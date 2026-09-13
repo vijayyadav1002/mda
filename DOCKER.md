@@ -34,6 +34,15 @@ Once started:
 
 For remote access, replace `localhost` with your configured `MDA_HOSTNAME`.
 
+If host port 443 (or 80) is already in use, set ports in `.env` and recreate Caddy:
+
+```bash
+echo "CADDY_HTTPS_PORT=8443" >> .env
+docker compose up -d caddy
+```
+
+Then open `https://<MDA_HOSTNAME>:8443` (and `https://<MDA_HOSTNAME>:8443/graphiql`). Do not use `http://<host>:3000` — that bypasses Caddy and GraphQL will 404.
+
 ## Trust Local TLS Certificate (for PWA install)
 
 `caddy` uses an internal CA (`tls internal`). Browsers require trusted HTTPS for service worker + PWA install.

@@ -61,10 +61,11 @@ This starts frontend, backend, PostgreSQL, and Redis in containers.
 See [DOCKER.md](./DOCKER.md) for service details, ports, and commands.
 
 Default Docker ports:
-- Frontend: http://localhost:3000
-- Backend API: http://localhost:4000
-- GraphiQL: http://localhost:4000/graphiql
-- Caddy HTTPS proxy: https://localhost
+- App (use this): https://localhost (Caddy; GraphQL and UI same origin)
+- GraphiQL: https://localhost/graphiql
+- Caddy HTTP/HTTPS: 80 and 443 (set `CADDY_HTTP_PORT` / `CADDY_HTTPS_PORT` in `.env` if those are taken)
+- Frontend process (debug only; GraphQL 404s here): http://localhost:3000
+- Backend API (debug only): http://localhost:4000
 
 ### Option B: Run App Locally (without Docker)
 

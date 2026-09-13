@@ -20,7 +20,6 @@
 - `Authorization: Bearer` remains a fallback next to the cookie.
 - Do not implement later-phase code in an earlier task.
 - Current tree already has `apps/backend/src/lib/media-path.ts` (`isValidAssetId`, `resolveWithinRoot` only), split route files under `apps/backend/src/routes/`, and `@fastify/rate-limit`. Ignore the stale Aug 10 CodeQL plan file layout (`index.ts` handlers).
-- After each task that changes code files, run `graphify update .` if available; if it fails, note that instead of skipping silently.
 
 ---
 
@@ -766,8 +765,6 @@ Login, dashboard thumbs load, logout, thumbs 401. Application storage has `mda_s
 - [ ] **Step 3: Phase 3 health**
 
 Against a library large enough that index takes several seconds: immediately `GET /health` is 200 with `indexing: true`; `hasAdminUser` / login work. After index logs complete: `indexing: false`, `indexError: null`.
-
-- [ ] **Step 4: `graphify update .` if available**
 
 ---
 

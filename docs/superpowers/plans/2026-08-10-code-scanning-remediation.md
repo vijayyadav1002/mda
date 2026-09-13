@@ -4,11 +4,11 @@
 >
 > **Adaptation note:** This repo has no test framework wired up (`npm --workspace=@mda/backend run test` / `@mda/web run test` do not exist — see project `CLAUDE.md`, "Verification" section). The usual TDD "write failing test → make it pass" step is replaced everywhere in this plan with "reproduce the alert conditions" → "apply the fix" → "verify via build + targeted runtime check". Do not invent a test runner to satisfy the template; use `npm run build` (root or scoped) as the baseline gate, per repo convention.
 
-**Goal:** Close all 34 open GitHub code-scanning (CodeQL) alerts on `vijayyadav1002/mda` — 8 path-injection, 5 insecure-randomness, 3 tainted-format-string, 18 missing-rate-limiting — via small, independently-verifiable phases suited to a `/loop` + `graphify` workflow.
+**Goal:** Close all 34 open GitHub code-scanning (CodeQL) alerts on `vijayyadav1002/mda` — 8 path-injection, 5 insecure-randomness, 3 tainted-format-string, 18 missing-rate-limiting — via small, independently-verifiable phases suited to a `/loop` workflow.
 
-**Architecture:** Each phase attacks one CodeQL rule family with one consistent remediation pattern, so a fix generalizes across all its sites instead of being bespoke per alert. Phase 1 adds a shared path-safety helper used at every path-injection sink. Phase 2 adds one global Fastify plugin that clears all 18 rate-limiting alerts at once. Phase 3 removes the `Math.random()` fallback that CodeQL treats as insecure randomness. Phase 4 stops interpolating tainted values into log format strings. Phase 5 re-pulls the alert list to confirm closure and update the knowledge graph.
+**Architecture:** Each phase attacks one CodeQL rule family with one consistent remediation pattern, so a fix generalizes across all its sites instead of being bespoke per alert. Phase 1 adds a shared path-safety helper used at every path-injection sink. Phase 2 adds one global Fastify plugin that clears all 18 rate-limiting alerts at once. Phase 3 removes the `Math.random()` fallback that CodeQL treats as insecure randomness. Phase 4 stops interpolating tainted values into log format strings. Phase 5 re-pulls the alert list to confirm closure.
 
-**Tech Stack:** Fastify 5 (backend), Remix + Vite (frontend), raw `pg`, `gh` CLI for alert data, `graphify` for the knowledge-graph burndown.
+**Tech Stack:** Fastify 5 (backend), Remix + Vite (frontend), raw `pg`, `gh` CLI for alert data.
 
 ## Global Constraints
 
@@ -17,7 +17,6 @@
 - Preserve the raw `pg` data-access style; no ORM introduction.
 - `media_assets.id` is a Postgres `SERIAL` (positive integer), not a UUID — confirmed via `apps/backend/src/db/migrate.ts:17`. All `:id`/`assetId` validation in this plan uses a numeric-id check, not a UUID regex.
 - **Assumption (flag if wrong):** default rate limits proposed in Phase 2 are a starting point (global 300 req/min/IP, tighter per-route overrides for upload/compress/transcode/zip). Adjust the numbers to real traffic patterns before shipping if you have data; nothing else in the plan depends on the exact values.
-- After each phase's code changes, run `graphify update .` (per project `CLAUDE.md`) if the tool is available; note in the phase's final step if it isn't.
 - CodeQL runs on a schedule/push via GitHub's default setup (`gh api repos/vijayyadav1002/mda/code-scanning/default-setup` → `"schedule":"weekly"`, plus push-triggered analysis). Alerts will not clear instantly after a local fix — Phase 5 documents how to re-check once a scan has run against the pushed commit.
 
 ---
@@ -276,10 +275,6 @@ Both `updateCaptureDateForAsset(assetId, filePath)` and `indexFile(filePath, ...
 
 No code change. In Phase 5, after CodeQL re-scans the pushed commit, if alerts #6/#7 are still open, that means CodeQL's dataflow doesn't fully close the loop through Task 1.4's fix and these two sink sites need their own explicit guard (e.g., re-validate `filePath` is within `config.mediaLibraryPath` at the top of `indexFile` and `updateCaptureDateForAsset` using `resolveWithinRoot`). Flag this explicitly rather than guessing blind — Phase 5 has the concrete follow-up step.
 
-### Task 1.6: Update the knowledge graph
-
-- [ ] **Step 1:** Run `graphify update .` from the repo root. If the tool is unavailable or errors for environment reasons, note that in your final response instead of silently skipping it.
-
 ---
 
 ## Phase 2: Missing Rate Limiting (18 alerts, severity: warning)
@@ -363,10 +358,6 @@ Runtime check: hit `/api/upload` 11 times in under a minute with a valid token �
 git add apps/backend/src/index.ts
 git commit -m "security: tighten rate limits on upload/compress/transcode/zip endpoints"
 ```
-
-### Task 2.3: Update the knowledge graph
-
-- [ ] **Step 1:** Run `graphify update .`.
 
 ---
 
@@ -475,10 +466,6 @@ git add apps/web/app/routes/timeline.tsx
 git commit -m "security: use crypto.getRandomValues instead of Math.random for session id fallback"
 ```
 
-### Task 3.3: Update the knowledge graph
-
-- [ ] **Step 1:** Run `graphify update .`.
-
 ---
 
 ## Phase 4: Tainted Format String / Log Injection (3 alerts, severity: warning)
@@ -567,10 +554,6 @@ git add apps/backend/src/services/video-transcode.ts
 git commit -m "security: avoid interpolating tainted assetId into log format string"
 ```
 
-### Task 4.3: Update the knowledge graph
-
-- [ ] **Step 1:** Run `graphify update .`.
-
 ---
 
 ## Phase 5: Verify and Close
@@ -593,10 +576,6 @@ Compare against the Phase 0 baseline (34 alerts: #1-#34, listed at the top of th
 If `capture-date.ts:192` or `media-indexer.ts:135` (alerts #6/#7) are still open after Phase 1 lands, apply the explicit guard flagged in Task 1.5 Step 2: add `resolveWithinRoot(config.mediaLibraryPath, filePath)` checks at the top of `indexFile()` and `updateCaptureDateForAsset()`, returning/throwing on `null` the same way Task 1.4 does. Re-push and re-poll.
 
 If any other alert persists after its phase, re-read the specific alert via `gh api repos/vijayyadav1002/mda/code-scanning/alerts/<number>` for CodeQL's exact flagged code path (it includes a `codeFlows`/`instances` breakdown) rather than guessing — the fix pattern may need to move one hop further up or down the call chain.
-
-- [ ] **Step 4: Final graph update**
-
-Run `graphify update .` once more so `graphify-out/GRAPH_REPORT.md` reflects the final state (new `lib/media-path.ts` module, rate-limit plugin, etc.).
 
 ---
 
